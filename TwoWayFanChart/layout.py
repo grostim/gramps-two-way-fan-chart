@@ -280,7 +280,9 @@ def _ancestor_content_geometry(
     # SVG/PDF output is zoomable, and immediate ancestors must never disappear
     # before more distant ones. Generation five and beyond retain medallions or
     # sectors only when their angular lanes are too dense for useful labels.
-    show_text = sweep_angle >= 4.0 and name_size >= 0.65
+    show_text = sweep_angle >= 4.0 and (
+        generation <= 4 or name_size >= 1.4
+    )
     show_medallion = sweep_angle >= 2.0 and image_r >= 0.8
     return (
         portrait_r,

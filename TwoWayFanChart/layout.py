@@ -220,19 +220,6 @@ def _extract_initials(label: str) -> str:
     return (parts[0][0] + parts[-1][0]).upper()
 
 
-def _radial_rotation(deg: float) -> float:
-    """Compute rotation angle for radial text so it stays upright.
-
-    Mirrors the mockup's radial_rotation(): angles in the bottom half
-    (90°–270°) are flipped by 180° so text reads top-to-bottom.
-    """
-    rot = deg
-    normalized = rot % 360
-    if 90 < normalized < 270:
-        rot += 180
-    return rot
-
-
 def _outward_radial_rotation(deg: float) -> float:
     """Rotate a horizontal baseline onto the sector's radial axis.
 
@@ -245,6 +232,66 @@ def _outward_radial_rotation(deg: float) -> float:
     if 90 < normalized < 270:
         rot += 180
     return rot
+
+
+def _ancestor_content_geometry(
+    *,
+    generation: int,
+    inner_radius: float,
+    outer_radius: float,
+    fan_outer_radius: float,
+    sweep_angle: float,
+) -> tuple[float, float, float, float, float, float, bool, bool]:
+    """Return ring-relative placement and density-aware ancestor styling.
+
+    The original mockup coordinates were global fractions of a three-ring fan.
+    Reusing those fractions with a different generation count moved content into
+    neighbouring rings. Local fractions preserve the three-ring hierarchy while
+    adapting to every supported ring depth.
+    """
+    ring_depth = max(outer_radius - inner_radius, 0.0)
+    portrait_fractions = {1: 0.365, 2: 0.353, 3: 0.280}
+    name_fractions = {1: 0.652, 2: 0.684, 3: 0.630}
+    life_fractions = {1: 0.826, 2: 0.841, 3: 0.761}
+    portrait_r = inner_radius + ring_depth * portrait_fractions.get(generation, 0.28)
+    name_r = inner_radius + ring_depth * name_fractions.get(generation, 0.58)
+    life_r = inner_radius + ring_depth * life_fractions.get(generation, 0.78)
+
+    base_image_ratios = {1: 24 / 600, 2: 20 / 600, 3: 15 / 600}
+    base_name_ratios = {1: 12 / 600, 2: 12 / 600, 3: 10.5 / 600}
+    base_life_ratios = {1: 9.5 / 600, 2: 9.5 / 600, 3: 8.5 / 600}
+    base_image_r = base_image_ratios.get(
+        generation, (15 / 600) * (0.86 ** (generation - 3))
+    ) * fan_outer_radius
+    base_name_size = base_name_ratios.get(
+        generation, (10 / 600) * (0.90 ** (generation - 3))
+    ) * fan_outer_radius
+    base_life_size = base_life_ratios.get(
+        generation, (8.5 / 600) * (0.90 ** (generation - 3))
+    ) * fan_outer_radius
+
+    # Keep medallions inside both their radial ring and angular lane.
+    angular_lane = portrait_r * math.radians(max(sweep_angle, 0.0))
+    image_r = min(base_image_r, ring_depth * 0.24, angular_lane * 0.22)
+    name_size = min(base_name_size, ring_depth * 0.12, angular_lane * 0.36)
+    life_size = min(base_life_size, ring_depth * 0.10, angular_lane * 0.30)
+
+    # Keep the four nearest generations annotated even at the maximum depth:
+    # SVG/PDF output is zoomable, and immediate ancestors must never disappear
+    # before more distant ones. Generation five and beyond retain medallions or
+    # sectors only when their angular lanes are too dense for useful labels.
+    show_text = sweep_angle >= 4.0 and name_size >= 0.65
+    show_medallion = sweep_angle >= 2.0 and image_r >= 0.8
+    return (
+        portrait_r,
+        name_r,
+        life_r,
+        image_r,
+        name_size,
+        life_size,
+        show_text,
+        show_medallion,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -423,27 +470,28 @@ def _emit_ancestor_sector(
     if not label:
         return
 
-    # For narrow sectors (< 15°), use radial rotated text instead of arc text
+    (
+        med_r_pos,
+        name_r,
+        life_r,
+        image_r,
+        font_size,
+        life_font,
+        show_text,
+        show_medallion,
+    ) = _ancestor_content_geometry(
+        generation=gen,
+        inner_radius=inner_r,
+        outer_radius=outer_r,
+        fan_outer_radius=fan_outer_r,
+        sweep_angle=sweep,
+    )
+    # Narrow sectors need true radial text; broad sectors retain curved labels.
     use_radial = sweep < 15.0
-    # Exact mockup radii and type scale, normalized against its 600 px fan.
-    # Pull the first ring's portrait and text group inward so its date line no
-    # longer sits against the outer boundary; later rings retain the reference.
-    name_ratios = {1: 265 / 600, 2: 397 / 600, 3: 538 / 600}
-    life_ratios = {1: 285 / 600, 2: 417 / 600, 3: 558 / 600}
-    portrait_ratios = {1: 232 / 600, 2: 355 / 600, 3: 485 / 600}
-    portrait_size_ratios = {1: 24 / 600, 2: 20 / 600, 3: 15 / 600}
-    name_size_ratios = {1: 12 / 600, 2: 12 / 600, 3: 10.5 / 600}
-    life_size_ratios = {1: 9.5 / 600, 2: 9.5 / 600, 3: 8.5 / 600}
 
-    name_r = name_ratios.get(
-        gen, inner_r / fan_outer_r + 0.62 * (outer_r - inner_r) / fan_outer_r
-    ) * fan_outer_r
-    font_size = name_size_ratios.get(gen, 10 / 600) * fan_outer_r
-
-    if use_radial:
-        # Radial rotated text (like the mockup's radial_label)
+    if show_text and use_radial:
         tx, ty = _polar(cx, cy, name_r, mid_angle)
-        rot = _radial_rotation(mid_angle)
+        rot = _outward_radial_rotation(mid_angle)
         children.append(SceneText(
             x=tx, y=ty,
             content=label,
@@ -452,7 +500,7 @@ def _emit_ancestor_sector(
             anchor="middle",
             rotation=rot,
         ))
-    else:
+    elif show_text:
         path = _arc_text_path(cx, cy, name_r, start_angle, end_angle, lower=False)
         children.append(ScenePathText(
             path=path,
@@ -461,15 +509,10 @@ def _emit_ancestor_sector(
             fill=TEXT_DARK,
         ))
 
-    # Curved life-dates label — placed at 82% of ring depth (below the name).
-    if dates_label:
-        life_r = life_ratios.get(
-            gen, inner_r / fan_outer_r + 0.82 * (outer_r - inner_r) / fan_outer_r
-        ) * fan_outer_r
-        life_font = life_size_ratios.get(gen, 8.5 / 600) * fan_outer_r
+    if dates_label and show_text:
         if use_radial:
             ltx, lty = _polar(cx, cy, life_r, mid_angle)
-            lrot = _radial_rotation(mid_angle)
+            lrot = _outward_radial_rotation(mid_angle)
             children.append(SceneText(
                 x=ltx, y=lty,
                 content=dates_label,
@@ -487,13 +530,9 @@ def _emit_ancestor_sector(
                 fill=TEXT_GREY,
             ))
 
-    # Portrait/fallback medallion at the mockup's generation-specific radius.
-    image_r = portrait_size_ratios.get(gen, 15 / 600) * fan_outer_r
+    # Portrait/fallback medallion sized for this ring and angular lane.
     med_r = image_r * (26 / 24) if portrait else image_r
-    if med_r > 0.5:
-        med_r_pos = portrait_ratios.get(
-            gen, inner_r / fan_outer_r + 0.30 * (outer_r - inner_r) / fan_outer_r
-        ) * fan_outer_r
+    if show_medallion and med_r > 0.5:
         mx, my = _polar(cx, cy, med_r_pos, mid_angle)
         children.append(SceneCircle(
             cx=mx, cy=my, r=med_r,
@@ -716,7 +755,8 @@ def layout_titles(
     if ancestor_generations > 0:
         # Title above the top arc
         title_y = cy - outer_r - 4
-        title_text = f"ASCENDANTS · {ancestor_generations} GÉNÉRATIONS"
+        generation_word = "GÉNÉRATION" if ancestor_generations == 1 else "GÉNÉRATIONS"
+        title_text = f"ASCENDANTS · {ancestor_generations} {generation_word}"
         children.append(SceneText(
             x=cx, y=title_y,
             content=title_text,
@@ -728,7 +768,8 @@ def layout_titles(
     if descendant_generations > 0:
         # Title below the bottom arc
         title_y = cy + outer_r + 8
-        title_text = f"DESCENDANTS · {descendant_generations} GÉNÉRATIONS"
+        generation_word = "GÉNÉRATION" if descendant_generations == 1 else "GÉNÉRATIONS"
+        title_text = f"DESCENDANTS · {descendant_generations} {generation_word}"
         children.append(SceneText(
             x=cx, y=title_y,
             content=title_text,

@@ -6,7 +6,7 @@ A stable graphical-report add-on for **Gramps 6.0.x**. It renders a central coup
 
 ![Two-Way Fan Chart rendered from synthetic genealogy data](assets/two-way-fan-chart-synthetic-example.png)
 
-*Publication preset with entirely synthetic names and relationships. No real genealogy or portrait is shown.*
+*Publication preset with entirely synthetic names and relationships. The vintage portraits are AI-generated fictional identities; no real genealogy or person is shown.*
 
 ## Install as a Gramps add-on project
 
@@ -65,7 +65,7 @@ gramps -O "MyTree" -a report -p \
 
 Publication mode masks living/private people before names, facts, portraits, metadata, and diagnostics reach the renderer. Masked people use neutral visual markers; their source media is not loaded.
 
-No real genealogy database, family portrait, or generated chart based on private data is included in this public repository. The screenshot above was generated exclusively from synthetic fixtures.
+No real genealogy database, family portrait, or generated chart based on private data is included in this public repository. The screenshot above was generated exclusively from synthetic fixtures and AI-generated fictional portraits.
 
 ## Compatibility
 

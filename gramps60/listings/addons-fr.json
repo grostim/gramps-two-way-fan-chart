@@ -4,7 +4,7 @@
   "i": "TwoWayFanChart",
   "t": 0,
   "d": "Génère un éventail généalogique bidirectionnel avec ascendants, descendants et portraits autour d'un couple central.",
-  "v": "1.1.0",
+  "v": "1.1.1",
   "g": "6.0",
   "s": 3,
   "z": "TwoWayFanChart.addon.tgz",

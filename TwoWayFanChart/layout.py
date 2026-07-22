@@ -233,6 +233,20 @@ def _radial_rotation(deg: float) -> float:
     return rot
 
 
+def _outward_radial_rotation(deg: float) -> float:
+    """Rotate a horizontal baseline onto the sector's radial axis.
+
+    Chart angles use 0° at the top while SVG text starts horizontally. The
+    -90° correction aligns the baseline with the center-to-sector vector; the
+    optional half-turn then keeps labels upright on the left side.
+    """
+    rot = deg - 90.0
+    normalized = rot % 360
+    if 90 < normalized < 270:
+        rot += 180
+    return rot
+
+
 # ---------------------------------------------------------------------------
 # Ancestor fan placement
 # ---------------------------------------------------------------------------
@@ -412,9 +426,11 @@ def _emit_ancestor_sector(
     # For narrow sectors (< 15°), use radial rotated text instead of arc text
     use_radial = sweep < 15.0
     # Exact mockup radii and type scale, normalized against its 600 px fan.
-    name_ratios = {1: 285 / 600, 2: 397 / 600, 3: 538 / 600}
-    life_ratios = {1: 304 / 600, 2: 417 / 600, 3: 558 / 600}
-    portrait_ratios = {1: 250 / 600, 2: 355 / 600, 3: 485 / 600}
+    # Pull the first ring's portrait and text group inward so its date line no
+    # longer sits against the outer boundary; later rings retain the reference.
+    name_ratios = {1: 265 / 600, 2: 397 / 600, 3: 538 / 600}
+    life_ratios = {1: 285 / 600, 2: 417 / 600, 3: 558 / 600}
+    portrait_ratios = {1: 232 / 600, 2: 355 / 600, 3: 485 / 600}
     portrait_size_ratios = {1: 24 / 600, 2: 20 / 600, 3: 15 / 600}
     name_size_ratios = {1: 12 / 600, 2: 12 / 600, 3: 10.5 / 600}
     life_size_ratios = {1: 9.5 / 600, 2: 9.5 / 600, 3: 8.5 / 600}
@@ -518,6 +534,8 @@ def layout_center(
     *,
     left_label: str,
     right_label: str | None = None,
+    left_dates: str = "",
+    right_dates: str = "",
     left_portrait: str | None = None,
     right_portrait: str | None = None,
     left_fallback: str = "",
@@ -606,6 +624,26 @@ def layout_center(
             anchor="middle",
             font_weight="500",
         ))
+
+        # One life-span line per partner, aligned beneath the shared name line.
+        date_y = cy + r * (72.0 / 190.0)
+        date_size = r * (13.0 / 190.0)
+        if left_dates:
+            children.append(SceneText(
+                x=left_cx, y=date_y,
+                content=left_dates,
+                font_size=date_size,
+                fill=TEXT_GREY,
+                anchor="middle",
+            ))
+        if right_dates:
+            children.append(SceneText(
+                x=right_cx, y=date_y,
+                content=right_dates,
+                font_size=date_size,
+                fill=TEXT_GREY,
+                anchor="middle",
+            ))
     else:
         # Single medallion for incomplete couple
         med_r = r * (52.0 / 190.0)
@@ -637,6 +675,14 @@ def layout_center(
             anchor="middle",
             font_weight="500",
         ))
+        if left_dates:
+            children.append(SceneText(
+                x=cx, y=cy + r * (72.0 / 190.0),
+                content=left_dates,
+                font_size=r * (13.0 / 190.0),
+                fill=TEXT_GREY,
+                anchor="middle",
+            ))
 
     if statistics:
         children.append(SceneText(
@@ -1188,7 +1234,9 @@ def layout_descendants(
         # Curved label for depth 1 (children), straight for deeper
         if child_label:
             if depth == 1:
-                label_r = outer_r * (290 / 600)
+                # Spread the four possible child/couple lines over the whole
+                # first-ring depth so narrow side sectors do not concatenate.
+                label_r = outer_r * (278 / 600)
                 font_size = outer_r * (12 / 600)
                 path = _arc_text_path(
                     cx, cy, label_r,
@@ -1202,10 +1250,27 @@ def layout_descendants(
                     fill=TEXT_DARK,
                 ))
 
-                # Spouse label as a second curved arc, prefixed with "×".
-                # Placed slightly below (larger radius) the child's name.
+                child_dates = (
+                    dates_lookup(branch.person.handle)
+                    if dates_lookup is not None and branch.person
+                    else ""
+                )
+                if child_dates:
+                    child_dates_path = _arc_text_path(
+                        cx, cy, outer_r * (297 / 600),
+                        alloc_start, alloc_start + alloc_sweep,
+                        lower=True,
+                    )
+                    all_children.append(ScenePathText(
+                        path=child_dates_path,
+                        content=child_dates,
+                        font_size=outer_r * (9.5 / 600),
+                        fill=TEXT_GREY,
+                    ))
+
+                # Spouse name and life span each receive their own curved line.
                 if spouse_name:
-                    spouse_r = outer_r * (315 / 600)
+                    spouse_r = outer_r * (317 / 600)
                     spouse_path = _arc_text_path(
                         cx, cy, spouse_r,
                         alloc_start, alloc_start + alloc_sweep,
@@ -1217,37 +1282,28 @@ def layout_descendants(
                         font_size=font_size,
                         fill=TEXT_GREY,
                     ))
-
-                dates_label = (
-                    dates_lookup(branch.person.handle)
-                    if dates_lookup is not None and branch.person
-                    else ""
-                )
-                child_count = len(branch.children)
-                metadata = (
-                    f"{dates_label} · {child_count} enfant(s)"
-                    if dates_label
-                    else f"{child_count} enfant(s)"
-                )
-                metadata_path = _arc_text_path(
-                    cx,
-                    cy,
-                    outer_r * (338 / 600),
-                    alloc_start,
-                    alloc_start + alloc_sweep,
-                    lower=True,
-                )
-                all_children.append(ScenePathText(
-                    path=metadata_path,
-                    content=metadata,
-                    font_size=outer_r * (9.5 / 600),
-                    fill=TEXT_GREY,
-                ))
+                    spouse_dates = (
+                        dates_lookup(spouse_handle)
+                        if dates_lookup is not None and spouse_handle
+                        else ""
+                    )
+                    if spouse_dates:
+                        spouse_dates_path = _arc_text_path(
+                            cx, cy, outer_r * (337 / 600),
+                            alloc_start, alloc_start + alloc_sweep,
+                            lower=True,
+                        )
+                        all_children.append(ScenePathText(
+                            path=spouse_dates_path,
+                            content=spouse_dates,
+                            font_size=outer_r * (9.5 / 600),
+                            fill=TEXT_GREY,
+                        ))
             else:
-                # Grandchildren in the mockup use radial labels, not horizontal text.
-                text_r = outer_r * (487 / 600)
+                # The outer ring uses a compact radial name/date pair.
+                text_r = outer_r * (482 / 600)
                 tx, ty = _polar(cx, cy, text_r, mid_angle)
-                rot = _radial_rotation(mid_angle)
+                rot = _outward_radial_rotation(mid_angle)
                 font_size = outer_r * (10.5 / 600)
                 all_children.append(SceneText(
                     x=tx, y=ty,
@@ -1258,11 +1314,11 @@ def layout_descendants(
                     rotation=rot,
                 ))
 
-                # Grandchild life dates below the name when available.
+                # Life dates follow the same radial axis, directly below the name.
                 if dates_lookup is not None and branch.person:
                     dates_label = dates_lookup(branch.person.handle)
                     if dates_label:
-                        dt_r = outer_r * (568 / 600)
+                        dt_r = outer_r * (554 / 600)
                         dx, dy = _polar(cx, cy, dt_r, mid_angle)
                         all_children.append(SceneText(
                             x=dx, y=dy,

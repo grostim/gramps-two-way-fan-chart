@@ -317,6 +317,8 @@ def _build_scene(
     )
     left_portrait = _safe_portrait(center_left_handle)
     right_portrait = _safe_portrait(center_right_handle)
+    left_dates = _safe_dates(center_left_handle)
+    right_dates = _safe_dates(center_right_handle)
 
     # Statistics line is omitted (not needed for now)
     statistics = None
@@ -325,6 +327,8 @@ def _build_scene(
         canvas,
         left_label=left_label,
         right_label=right_label,
+        left_dates=left_dates,
+        right_dates=right_dates,
         left_portrait=left_portrait,
         right_portrait=right_portrait,
         left_fallback=_safe_fallback(center_left_handle, left_label),

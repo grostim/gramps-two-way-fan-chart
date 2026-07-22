@@ -1,0 +1,13 @@
+[
+ {
+  "n": "Éventail généalogique bidirectionnel",
+  "i": "TwoWayFanChart",
+  "t": 0,
+  "d": "Génère un éventail généalogique bidirectionnel avec ascendants, descendants et portraits autour d'un couple central.",
+  "v": "1.1.0",
+  "g": "6.0",
+  "s": 3,
+  "z": "TwoWayFanChart.addon.tgz",
+  "h": "https://github.com/grostim/gramps-two-way-fan-chart"
+ }
+]

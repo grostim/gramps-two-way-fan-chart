@@ -2,6 +2,12 @@
 
 A stable graphical-report add-on for **Gramps 6.0.x**. It renders a central couple, ancestors above, descendants below, and privacy-safe portrait medallions in a publication-ready fan chart.
 
+## Screenshot
+
+![Two-Way Fan Chart rendered from synthetic genealogy data](assets/two-way-fan-chart-synthetic-example.png)
+
+*Publication preset with entirely synthetic names and relationships. No real genealogy or portrait is shown.*
+
 ## Install as a Gramps add-on project
 
 The repository is directly consumable by the Gramps Addon Manager and supports automatic update discovery.
@@ -59,7 +65,7 @@ gramps -O "MyTree" -a report -p \
 
 Publication mode masks living/private people before names, facts, portraits, metadata, and diagnostics reach the renderer. Masked people use neutral visual markers; their source media is not loaded.
 
-No real genealogy database, family portrait, generated family chart, development plan, or internal test artifact is included in this public repository.
+No real genealogy database, family portrait, or generated chart based on private data is included in this public repository. The screenshot above was generated exclusively from synthetic fixtures.
 
 ## Compatibility
 

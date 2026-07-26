@@ -92,6 +92,20 @@ class CenterFamilyOption(FamilyOption):
         super().set_value(value)
 
 
+class _ExplicitOptionsDict(dict[str, object]):
+    """Record option keys explicitly assigned by the CLI/WebAPI parser."""
+
+    def __init__(self, values: dict[str, object]) -> None:
+        super().__init__(values)
+        self.explicit_keys: set[str] = set()
+        self.tracking_enabled = True
+
+    def __setitem__(self, key: str, value: object) -> None:
+        super().__setitem__(key, value)
+        if self.tracking_enabled:
+            self.explicit_keys.add(key)
+
+
 class TwoWayFanChartOptions(MenuReportOptions):
     """Expose stable, headless-safe report options through Gramps."""
 
@@ -99,13 +113,17 @@ class TwoWayFanChartOptions(MenuReportOptions):
         self._database = dbase
         self._applying_preset = False
         super().__init__(name, dbase)
+        self.options_dict = _ExplicitOptionsDict(self.options_dict)
 
     def load_previous_values(self) -> None:
         """Load persisted values and select a real family when none is stored."""
         self._applying_preset = True
+        self.options_dict.tracking_enabled = False
         try:
             super().load_previous_values()
         finally:
+            self.options_dict.explicit_keys.clear()
+            self.options_dict.tracking_enabled = True
             self._applying_preset = False
         center_option = self.menu.get_option_by_name("center_family")
         family_id = center_option.get_value()
@@ -543,10 +561,33 @@ class TwoWayFanChartOptions(MenuReportOptions):
         if preset is PresetName.CUSTOM:
             return
         values = self._preset_option_values(build_preset(preset))
+        # Gramps CLI/GrampsWeb applies request options in JSON insertion order.
+        # If explicit fields were parsed before ``preset``, the preset callback
+        # must not silently erase them. The tracked handler dictionary records
+        # exact request keys, including values equal to the persisted baseline.
+        handler = getattr(self, "handler", None)
+        handler_values = getattr(handler, "options_dict", {}) if handler else {}
+        explicit_names = getattr(handler_values, "explicit_keys", set())
+        explicit_overrides = {
+            name: handler_values[name]
+            for name, preset_value in values.items()
+            if name in explicit_names
+            and handler_values[name] != preset_value
+        }
         self._applying_preset = True
         try:
             for name, value in values.items():
                 self.menu.get_option_by_name(name).set_value(value)
+            for name, value in explicit_overrides.items():
+                self.menu.get_option_by_name(name).set_value(value)
+            if explicit_overrides:
+                preset_option = self.menu.get_option_by_name("preset")
+                preset_option.disable_signals()
+                try:
+                    preset_option.set_value(PresetName.CUSTOM.value)
+                finally:
+                    preset_option.enable_signals()
+                handler_values["preset"] = PresetName.CUSTOM.value
         finally:
             self._applying_preset = False
         self.refresh_dependencies()

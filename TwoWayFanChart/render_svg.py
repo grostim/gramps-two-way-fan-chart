@@ -17,6 +17,7 @@ try:
         SceneRect,
         SceneSector,
         SceneText,
+        estimate_text_width,
     )
 except ModuleNotFoundError:
     from geometry import arc_path, mm_to_pt, AnnularSector
@@ -30,6 +31,7 @@ except ModuleNotFoundError:
         SceneRect,
         SceneSector,
         SceneText,
+        estimate_text_width,
     )
 
 _SVG_NS = "http://www.w3.org/2000/svg"
@@ -103,6 +105,13 @@ def _render_text(text: SceneText) -> str:
         attrs.append(
             f'transform="rotate({_fmt(text.rotation)} {_fmt(text.x)} {_fmt(text.y)})"'
         )
+    if text.max_width is not None and text.max_width > 0:
+        fitted_width = min(
+            estimate_text_width(text.content, text.font_size),
+            text.max_width,
+        )
+        attrs.append(f'textLength="{_fmt(fitted_width)}"')
+        attrs.append('lengthAdjust="spacingAndGlyphs"')
     content = xml_escape(text.content)
     return f"<text {' '.join(attrs)}>{content}</text>"
 
@@ -139,9 +148,19 @@ def _render_path_text(pt: ScenePathText, path_id: str) -> str:
     Uses xlink:href for broad compatibility (Chromium, Firefox, Safari).
     """
     escaped = xml_escape(pt.content)
+    width_attrs = ""
+    if pt.max_width is not None and pt.max_width > 0:
+        fitted_width = min(
+            estimate_text_width(pt.content, pt.font_size),
+            pt.max_width,
+        )
+        width_attrs = (
+            f' textLength="{_fmt(fitted_width)}"'
+            ' lengthAdjust="spacingAndGlyphs"'
+        )
     return (
         f'<defs><path id="{path_id}" d="{pt.path}" fill="none" /></defs>'
-        f'<text font-size="{_fmt(pt.font_size)}" fill="{pt.fill}">'
+        f'<text font-size="{_fmt(pt.font_size)}" fill="{pt.fill}"{width_attrs}>'
         f'<textPath xlink:href="#{path_id}" href="#{path_id}" startOffset="50%" text-anchor="middle">'
         f'{escaped}</textPath></text>'
     )

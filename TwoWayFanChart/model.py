@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
+import unicodedata
 
 if TYPE_CHECKING:
     from .facts import EventFact, VitalDates
@@ -260,6 +261,7 @@ class SceneText:
     anchor: str | None = None
     font_weight: str | None = None
     rotation: float | None = None
+    max_width: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +272,35 @@ class ScenePathText:
     content: str
     font_size: float
     fill: str = "#141413"
+    max_width: float | None = None
+
+
+def estimate_text_width(content: str, font_size: float) -> float:
+    """Return a conservative backend-neutral text width in scene units.
+
+    Cairo measures the selected font at render time. The pure SVG scene still
+    needs a deterministic capacity estimate before a browser is available, so
+    this Unicode-aware estimate is paired with SVG ``textLength`` enforcement.
+    """
+    units = 0.0
+    for character in content:
+        if character.isspace():
+            units += 0.34
+        elif unicodedata.east_asian_width(character) in {"W", "F"}:
+            units += 1.0
+        elif character in "MW@#%&ŒÆœæ":
+            units += 0.92
+        elif character in "ilIjtfr.,:;'|!()[]{}":
+            units += 0.36
+        elif character.isupper():
+            units += 0.70
+        elif character.isdigit():
+            units += 0.60
+        elif unicodedata.category(character).startswith("P"):
+            units += 0.42
+        else:
+            units += 0.58
+    return units * max(font_size, 0.0)
 
 
 @dataclass(frozen=True, slots=True)

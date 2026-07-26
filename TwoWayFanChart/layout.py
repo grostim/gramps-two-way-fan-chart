@@ -18,6 +18,7 @@ try:
         SceneSector,
         SceneText,
         ScenePathText,
+        estimate_text_width,
     )
     from TwoWayFanChart.styles import (
         ancestor_fill,
@@ -42,6 +43,7 @@ except ModuleNotFoundError:
         SceneSector,
         SceneText,
         ScenePathText,
+        estimate_text_width,
     )
     from styles import (  # type: ignore[no-redef]
         ancestor_fill,
@@ -234,6 +236,87 @@ def _outward_radial_rotation(deg: float) -> float:
     return rot
 
 
+def _tangent_offset(
+    x: float,
+    y: float,
+    angle_deg: float,
+    offset: float,
+) -> tuple[float, float]:
+    """Move a polar point along its local clockwise tangent."""
+    angle = math.radians(angle_deg)
+    return x + math.cos(angle) * offset, y + math.sin(angle) * offset
+
+
+def _fit_text_to_width(
+    content: str,
+    *,
+    target_size: float,
+    minimum_size: float,
+    max_width: float,
+    allow_ellipsis: bool = True,
+) -> tuple[str, float, float]:
+    """Fit text to a physical lane while retaining both identity ends."""
+    available = max(max_width, 0.5 if not allow_ellipsis else 0.0)
+    if not content or available <= 0:
+        return "", max(minimum_size, 0.0), available
+
+    natural_at_one = estimate_text_width(content, 1.0)
+    size = target_size
+    if natural_at_one > 0:
+        size = min(target_size, available / natural_at_one)
+    size = max(minimum_size, size)
+
+    fitted = content
+    if allow_ellipsis and estimate_text_width(fitted, size) > available:
+        left = (len(content) + 1) // 2
+        right = len(content) - left
+        while left + right > 1:
+            candidate = content[:left].rstrip() + "…" + content[len(content) - right:].lstrip()
+            if estimate_text_width(candidate, size) <= available:
+                fitted = candidate
+                break
+            if left >= right:
+                left -= 1
+            else:
+                right -= 1
+        else:
+            fitted = "…" if estimate_text_width("…", size) <= available else ""
+    return fitted, size, available
+
+
+def _maximum_medallion_radius(
+    *,
+    inner_radius: float,
+    outer_radius: float,
+    sweep_angle: float,
+    occupants: int = 1,
+    edge: str = "outer",
+    margin: float = 0.8,
+) -> float:
+    """Solve the largest border radius fitting a sector at one ring edge."""
+    radial_cap = max(0.0, (outer_radius - inner_radius - 2 * margin) / 2.0)
+    low, high = 0.0, radial_cap
+    occupants = max(1, occupants)
+    for _ in range(32):
+        radius = (low + high) / 2.0
+        center_radius = (
+            outer_radius - margin - radius
+            if edge == "outer"
+            else inner_radius + margin + radius
+        )
+        tangent_capacity = max(
+            0.0,
+            2.0 * center_radius * math.sin(math.radians(max(sweep_angle, 0.0) / 2.0))
+            - 2.0 * margin,
+        )
+        required = 2.0 * radius if occupants == 1 else (4.3 * radius)
+        if required <= tangent_capacity:
+            low = radius
+        else:
+            high = radius
+    return low
+
+
 def _ancestor_content_geometry(
     *,
     generation: int,
@@ -270,18 +353,38 @@ def _ancestor_content_geometry(
         generation, (8.5 / 600) * (0.90 ** (generation - 3))
     ) * fan_outer_radius
 
-    # Keep medallions inside both their radial ring and angular lane.
+    # Keep medallions inside both their radial ring and angular lane. For the
+    # dense fourth and fifth rings, solve against the actual sector and hug the
+    # inner edge so the remaining radial depth is reserved for labels.
     angular_lane = portrait_r * math.radians(max(sweep_angle, 0.0))
-    image_r = min(base_image_r, ring_depth * 0.24, angular_lane * 0.22)
+    if generation >= 4:
+        image_r = _maximum_medallion_radius(
+            inner_radius=inner_radius,
+            outer_radius=outer_radius,
+            sweep_angle=sweep_angle,
+            edge="inner",
+            margin=0.8,
+        )
+        portrait_r = inner_radius + 0.8 + image_r
+    else:
+        image_r = min(base_image_r, ring_depth * 0.24, angular_lane * 0.22)
     name_size = min(base_name_size, ring_depth * 0.12, angular_lane * 0.36)
     life_size = min(base_life_size, ring_depth * 0.10, angular_lane * 0.30)
+    if generation <= 5:
+        name_size = max(min(name_size, 5.5), 2.8)
+        life_size = max(min(life_size, 4.4), 2.5)
 
-    # Keep the four nearest generations annotated even at the maximum depth:
-    # SVG/PDF output is zoomable, and immediate ancestors must never disappear
-    # before more distant ones. Generation five and beyond retain medallions or
-    # sectors only when their angular lanes are too dense for useful labels.
-    show_text = sweep_angle >= 4.0 and (
-        generation <= 4 or name_size >= 1.4
+    text_start = portrait_r + image_r + 2.0
+    text_available = max(0.0, outer_radius - 1.5 - text_start)
+    # A0 has ample radial depth in generation five despite its 2.688° sweep.
+    # Protect names through generation five whenever a useful radial lane exists;
+    # deeper rings retain the stricter density degradation policy.
+    show_text = (
+        generation <= 4
+    ) or (
+        generation == 5 and text_available >= 12.0 and angular_lane >= 4.0
+    ) or (
+        generation > 5 and sweep_angle >= 4.0 and name_size >= 1.4
     )
     show_medallion = sweep_angle >= 2.0 and image_r >= 0.8
     return (
@@ -490,8 +593,61 @@ def _emit_ancestor_sector(
     )
     # Narrow sectors need true radial text; broad sectors retain curved labels.
     use_radial = sweep < 15.0
+    adaptive_tracks = use_radial and gen >= 3
+    if gen >= 4:
+        med_r = image_r
+        portrait_image_r = image_r * (24 / 26)
+    else:
+        med_r = image_r * (26 / 24) if portrait else image_r
+        portrait_image_r = image_r
 
-    if show_text and use_radial:
+    if show_text and adaptive_tracks:
+        text_start = med_r_pos + med_r + 2.0
+        text_end = outer_r - 1.5
+        text_width = max(0.0, text_end - text_start)
+        text_r = (text_start + text_end) / 2.0
+        base_x, base_y = _polar(cx, cy, text_r, mid_angle)
+        rot = _outward_radial_rotation(mid_angle)
+        lane_offset = max(font_size, life_font) * 0.58
+        name_x, name_y = _tangent_offset(base_x, base_y, mid_angle, -lane_offset)
+        fitted_name, fitted_name_size, name_width = _fit_text_to_width(
+            label,
+            target_size=font_size,
+            minimum_size=2.8,
+            max_width=text_width,
+            allow_ellipsis=False,
+        )
+        if fitted_name:
+            children.append(SceneText(
+                x=name_x,
+                y=name_y,
+                content=fitted_name,
+                font_size=fitted_name_size,
+                fill=TEXT_DARK,
+                anchor="middle",
+                rotation=rot,
+                max_width=name_width,
+            ))
+        if dates_label:
+            date_x, date_y = _tangent_offset(base_x, base_y, mid_angle, lane_offset)
+            fitted_dates, fitted_date_size, date_width = _fit_text_to_width(
+                dates_label,
+                target_size=life_font,
+                minimum_size=2.5,
+                max_width=text_width,
+            )
+            if fitted_dates:
+                children.append(SceneText(
+                    x=date_x,
+                    y=date_y,
+                    content=fitted_dates,
+                    font_size=fitted_date_size,
+                    fill=TEXT_GREY,
+                    anchor="middle",
+                    rotation=rot,
+                    max_width=date_width,
+                ))
+    elif show_text and use_radial:
         tx, ty = _polar(cx, cy, name_r, mid_angle)
         rot = _outward_radial_rotation(mid_angle)
         children.append(SceneText(
@@ -502,6 +658,16 @@ def _emit_ancestor_sector(
             anchor="middle",
             rotation=rot,
         ))
+        if dates_label:
+            ltx, lty = _polar(cx, cy, life_r, mid_angle)
+            children.append(SceneText(
+                x=ltx, y=lty,
+                content=dates_label,
+                font_size=life_font,
+                fill=TEXT_GREY,
+                anchor="middle",
+                rotation=rot,
+            ))
     elif show_text:
         path = _arc_text_path(cx, cy, name_r, start_angle, end_angle, lower=False)
         children.append(ScenePathText(
@@ -510,20 +676,7 @@ def _emit_ancestor_sector(
             font_size=font_size,
             fill=TEXT_DARK,
         ))
-
-    if dates_label and show_text:
-        if use_radial:
-            ltx, lty = _polar(cx, cy, life_r, mid_angle)
-            lrot = _outward_radial_rotation(mid_angle)
-            children.append(SceneText(
-                x=ltx, y=lty,
-                content=dates_label,
-                font_size=life_font,
-                fill=TEXT_GREY,
-                anchor="middle",
-                rotation=lrot,
-            ))
-        else:
+        if dates_label:
             life_path = _arc_text_path(cx, cy, life_r, start_angle, end_angle, lower=False)
             children.append(ScenePathText(
                 path=life_path,
@@ -533,7 +686,6 @@ def _emit_ancestor_sector(
             ))
 
     # Portrait/fallback medallion sized for this ring and angular lane.
-    med_r = image_r * (26 / 24) if portrait else image_r
     if show_medallion and med_r > 0.5:
         mx, my = _polar(cx, cy, med_r_pos, mid_angle)
         children.append(SceneCircle(
@@ -546,7 +698,7 @@ def _emit_ancestor_sector(
             children.append(SceneImage(
                 cx=mx,
                 cy=my,
-                r=image_r,
+                r=portrait_image_r,
                 data_uri=portrait,
             ))
         else:
@@ -1085,6 +1237,34 @@ def _spouse_label(union, name_lookup) -> str | None:
     return name_lookup(union.spouse_handle)
 
 
+def _descendant_ring_bounds(
+    inner_radius: float,
+    outer_radius: float,
+    generation_count: int,
+    depth: int,
+) -> tuple[float, float]:
+    """Return ring-local descendant bounds for one supported depth."""
+    if generation_count < 1 or depth < 1 or depth > generation_count:
+        raise ValueError("descendant depth must be inside the configured generation range")
+    total_depth = outer_radius - inner_radius
+    if generation_count == 1:
+        widths = [total_depth]
+    elif generation_count == 2:
+        # Freeze the exact two-ring reference geometry.
+        exact_inner = (202 / 600, 355 / 600)
+        exact_outer = (350 / 600, 598 / 600)
+        return (
+            outer_radius * exact_inner[depth - 1],
+            outer_radius * exact_outer[depth - 1],
+        )
+    else:
+        weights = [1.0 + 0.35 * index for index in range(generation_count)]
+        total_weight = sum(weights)
+        widths = [total_depth * weight / total_weight for weight in weights]
+    ring_inner = inner_radius + sum(widths[: depth - 1])
+    return ring_inner, ring_inner + widths[depth - 1] - _RING_GAP_MM
+
+
 def layout_descendants(
     canvas: ChartCanvas,
     branches: tuple[DescendantBranch, ...],
@@ -1151,6 +1331,81 @@ def layout_descendants(
         except Exception:
             return None
 
+    # Capacity is a generation-wide contract: every medallion in one ring uses
+    # the largest common size admitted by that generation's narrowest sector.
+    placements: list[tuple[DescendantBranch, float, float, int, int]] = []
+
+    def _collect_placements(
+        branch: DescendantBranch,
+        start: float,
+        sweep: float,
+        depth: int,
+        branch_index: int,
+    ) -> None:
+        placements.append((branch, start, sweep, depth, branch_index))
+        if branch.children:
+            child_allocations = allocate_descendant_branches(
+                canvas,
+                leaf_counts=[_count_leaves(child) for child in branch.children],
+                start_angle=start,
+                total_sweep=sweep,
+            )
+            for child, allocation in zip(branch.children, child_allocations):
+                _collect_placements(
+                    child,
+                    allocation.start_angle,
+                    allocation.sweep_angle,
+                    depth + 1,
+                    branch_index,
+                )
+
+    for branch_index, (branch, allocation) in enumerate(zip(branches, allocations)):
+        _collect_placements(
+            branch,
+            allocation.start_angle,
+            allocation.sweep_angle,
+            1,
+            branch_index,
+        )
+
+    generation_medallion_radii: dict[int, float] = {}
+    if max_gen >= 3:
+        for branch, _start, sweep, depth, _index in placements:
+            ring_inner, ring_outer = _descendant_ring_bounds(
+                inner_r, outer_r, max_gen, depth
+            )
+            has_spouse = depth == 1 and any(
+                union.spouse_handle for union in branch.unions
+            )
+            candidate = _maximum_medallion_radius(
+                inner_radius=ring_inner,
+                outer_radius=ring_outer,
+                sweep_angle=sweep,
+                occupants=2 if has_spouse else 1,
+                edge="outer",
+                margin=0.8,
+            )
+            ring_depth = ring_outer - ring_inner
+            reserved_text_depth = (
+                min(36.0, ring_depth * 0.58)
+                if depth == 1
+                else min(
+                    max(28.0, ring_depth * 0.45),
+                    ring_depth * 0.58,
+                )
+            )
+            radial_text_cap = max(
+                0.0,
+                (ring_depth - 1.6 - reserved_text_depth) / 2.0,
+            )
+            candidate = min(candidate, radial_text_cap)
+            if depth not in generation_medallion_radii:
+                generation_medallion_radii[depth] = candidate
+            else:
+                generation_medallion_radii[depth] = min(
+                    generation_medallion_radii[depth], candidate
+                )
+
     def _emit_medallion(
         x: float,
         y: float,
@@ -1195,7 +1450,12 @@ def layout_descendants(
         """Recursively place a branch and its children."""
         mid_angle = alloc_start + alloc_sweep / 2.0
 
-        if max_gen == 2 and depth <= 2:
+        if max_gen >= 3:
+            gen_inner, gen_outer = _descendant_ring_bounds(
+                inner_r, outer_r, max_gen, depth
+            )
+            ring_width = gen_outer - gen_inner
+        elif max_gen == 2 and depth <= 2:
             exact_inner_ratios = (202 / 600, 355 / 600)
             exact_outer_ratios = (350 / 600, 598 / 600)
             gen_inner = outer_r * exact_inner_ratios[depth - 1]
@@ -1240,87 +1500,212 @@ def layout_descendants(
             child_label = "Personnes privées"
             spouse_name = None
 
-        # Place one portrait medallion, or a tangent child/spouse pair like
-        # the reference mockup's first descendant ring.
-        med_r = outer_r * ((20 / 600) if depth == 1 else (14 / 600))
-        if med_r > 0.5:
+        # Place one portrait medallion, or a tangent child/spouse pair. Dense
+        # layouts use one border diameter per generation, derived from its
+        # narrowest sector, and align every medallion to the outer ring edge.
+        adaptive_dense = max_gen >= 3
+        if adaptive_dense:
+            med_border_r = generation_medallion_radii[depth]
+            pair_offset = med_border_r * 1.075
+            target_center_radius = gen_outer - 0.8 - med_border_r
+            med_text_inner = target_center_radius - med_border_r
+            med_r_pos = (
+                math.sqrt(max(0.0, target_center_radius**2 - pair_offset**2))
+                if spouse_handle and spouse_medallion_label
+                else target_center_radius
+            )
+        else:
+            med_border_r = outer_r * ((20 / 600) if depth == 1 else (14 / 600))
             med_r_pos = outer_r * ((245 / 600) if depth == 1 else (397 / 600))
+            pair_offset = outer_r * (20 / 600)
+            med_text_inner = med_r_pos - med_border_r
+
+        if med_border_r > 0.5:
             mx, my = _polar(cx, cy, med_r_pos, mid_angle)
+            child_portrait_data = _portrait(
+                branch.person.handle if branch.person else None
+            )
             if spouse_handle and spouse_medallion_label:
                 angle_rad = math.radians(mid_angle)
                 tangent_x = math.cos(angle_rad)
                 tangent_y = math.sin(angle_rad)
-                pair_offset = outer_r * (20 / 600)
+                spouse_portrait_data = _portrait(spouse_handle)
+                child_radius = (
+                    med_border_r / 1.1
+                    if adaptive_dense and child_portrait_data
+                    else med_border_r
+                )
+                spouse_radius = (
+                    med_border_r / 1.1
+                    if adaptive_dense and spouse_portrait_data
+                    else med_border_r
+                )
                 _emit_medallion(
                     mx - tangent_x * pair_offset,
                     my - tangent_y * pair_offset,
-                    med_r,
+                    child_radius,
                     child_label or raw_label,
-                    _portrait(branch.person.handle if branch.person else None),
+                    child_portrait_data,
                 )
                 _emit_medallion(
                     mx + tangent_x * pair_offset,
                     my + tangent_y * pair_offset,
-                    med_r,
+                    spouse_radius,
                     spouse_medallion_label,
-                    _portrait(spouse_handle),
+                    spouse_portrait_data,
                 )
             else:
+                child_radius = (
+                    med_border_r / 1.1
+                    if adaptive_dense and child_portrait_data
+                    else med_border_r
+                )
                 _emit_medallion(
                     mx,
                     my,
-                    med_r,
+                    child_radius,
                     child_label or raw_label,
-                    _portrait(branch.person.handle if branch.person else None),
+                    child_portrait_data,
                 )
 
-        # Curved label for depth 1 (children), straight for deeper
-        if child_label:
+        # Labels use ring-local capacity in dense reports. The standard two-ring
+        # publication geometry remains byte-for-byte compatible below.
+        if child_label and adaptive_dense:
+            child_dates = (
+                dates_lookup(branch.person.handle)
+                if dates_lookup is not None and branch.person
+                else ""
+            )
             if depth == 1:
-                # Spread the four possible child/couple lines over the whole
-                # first-ring depth so narrow side sectors do not concatenate.
+                spouse_dates = (
+                    dates_lookup(spouse_handle)
+                    if dates_lookup is not None and spouse_handle
+                    else ""
+                )
+                lines = [
+                    (child_label, True, TEXT_DARK),
+                    (child_dates, False, TEXT_GREY),
+                    (f"× {spouse_name}" if spouse_name else "", True, TEXT_GREY),
+                    (spouse_dates if spouse_name else "", False, TEXT_GREY),
+                ]
+                lines = [line for line in lines if line[0]]
+                text_start = gen_inner + 2.0
+                text_end = med_text_inner - 2.0
+                radial_span = max(0.0, text_end - text_start)
+                for line_index, (content, is_name, fill_color) in enumerate(lines):
+                    line_r = text_start + radial_span * (line_index + 1) / (len(lines) + 1)
+                    angular_width = max(
+                        0.0,
+                        line_r * math.radians(max(alloc_sweep - 1.0, 0.0)) - 2.0,
+                    )
+                    fitted, fitted_size, width_limit = _fit_text_to_width(
+                        content,
+                        target_size=5.5 if is_name else 4.2,
+                        minimum_size=3.2 if is_name else 2.5,
+                        max_width=angular_width,
+                    )
+                    if not fitted:
+                        continue
+                    all_children.append(ScenePathText(
+                        path=_arc_text_path(
+                            cx,
+                            cy,
+                            line_r,
+                            alloc_start,
+                            alloc_start + alloc_sweep,
+                            lower=True,
+                        ),
+                        content=fitted,
+                        font_size=fitted_size,
+                        fill=fill_color,
+                        max_width=width_limit,
+                    ))
+            else:
+                text_start = gen_inner + 2.0
+                text_end = med_text_inner - 2.0
+                text_width = max(0.0, text_end - text_start)
+                text_r = (text_start + text_end) / 2.0
+                name_target = 5.2 if depth == 2 else 4.8
+                fitted_name, name_size, name_width = _fit_text_to_width(
+                    child_label,
+                    target_size=name_target,
+                    minimum_size=2.8,
+                    max_width=text_width,
+                )
+                fitted_dates, date_size, date_width = _fit_text_to_width(
+                    child_dates,
+                    target_size=4.2,
+                    minimum_size=2.5,
+                    max_width=text_width,
+                )
+                lane_offset = max(name_size, date_size) * 0.58
+                base_x, base_y = _polar(cx, cy, text_r, mid_angle)
+                rot = _outward_radial_rotation(mid_angle)
+                if fitted_name:
+                    name_x, name_y = _tangent_offset(
+                        base_x, base_y, mid_angle, -lane_offset
+                    )
+                    all_children.append(SceneText(
+                        x=name_x,
+                        y=name_y,
+                        content=fitted_name,
+                        font_size=name_size,
+                        fill=TEXT_DARK,
+                        anchor="middle",
+                        rotation=rot,
+                        max_width=name_width,
+                    ))
+                if fitted_dates:
+                    date_x, date_y = _tangent_offset(
+                        base_x, base_y, mid_angle, lane_offset
+                    )
+                    all_children.append(SceneText(
+                        x=date_x,
+                        y=date_y,
+                        content=fitted_dates,
+                        font_size=date_size,
+                        fill=TEXT_GREY,
+                        anchor="middle",
+                        rotation=rot,
+                        max_width=date_width,
+                    ))
+        elif child_label:
+            if depth == 1:
                 label_r = outer_r * (278 / 600)
                 font_size = outer_r * (12 / 600)
-                path = _arc_text_path(
-                    cx, cy, label_r,
-                    alloc_start, alloc_start + alloc_sweep,
-                    lower=True,
-                )
                 all_children.append(ScenePathText(
-                    path=path,
+                    path=_arc_text_path(
+                        cx, cy, label_r,
+                        alloc_start, alloc_start + alloc_sweep,
+                        lower=True,
+                    ),
                     content=child_label,
                     font_size=font_size,
                     fill=TEXT_DARK,
                 ))
-
                 child_dates = (
                     dates_lookup(branch.person.handle)
                     if dates_lookup is not None and branch.person
                     else ""
                 )
                 if child_dates:
-                    child_dates_path = _arc_text_path(
-                        cx, cy, outer_r * (297 / 600),
-                        alloc_start, alloc_start + alloc_sweep,
-                        lower=True,
-                    )
                     all_children.append(ScenePathText(
-                        path=child_dates_path,
+                        path=_arc_text_path(
+                            cx, cy, outer_r * (297 / 600),
+                            alloc_start, alloc_start + alloc_sweep,
+                            lower=True,
+                        ),
                         content=child_dates,
                         font_size=outer_r * (9.5 / 600),
                         fill=TEXT_GREY,
                     ))
-
-                # Spouse name and life span each receive their own curved line.
                 if spouse_name:
-                    spouse_r = outer_r * (317 / 600)
-                    spouse_path = _arc_text_path(
-                        cx, cy, spouse_r,
-                        alloc_start, alloc_start + alloc_sweep,
-                        lower=True,
-                    )
                     all_children.append(ScenePathText(
-                        path=spouse_path,
+                        path=_arc_text_path(
+                            cx, cy, outer_r * (317 / 600),
+                            alloc_start, alloc_start + alloc_sweep,
+                            lower=True,
+                        ),
                         content=f"× {spouse_name}",
                         font_size=font_size,
                         fill=TEXT_GREY,
@@ -1331,38 +1716,32 @@ def layout_descendants(
                         else ""
                     )
                     if spouse_dates:
-                        spouse_dates_path = _arc_text_path(
-                            cx, cy, outer_r * (337 / 600),
-                            alloc_start, alloc_start + alloc_sweep,
-                            lower=True,
-                        )
                         all_children.append(ScenePathText(
-                            path=spouse_dates_path,
+                            path=_arc_text_path(
+                                cx, cy, outer_r * (337 / 600),
+                                alloc_start, alloc_start + alloc_sweep,
+                                lower=True,
+                            ),
                             content=spouse_dates,
                             font_size=outer_r * (9.5 / 600),
                             fill=TEXT_GREY,
                         ))
             else:
-                # The outer ring uses a compact radial name/date pair.
                 text_r = outer_r * (482 / 600)
                 tx, ty = _polar(cx, cy, text_r, mid_angle)
                 rot = _outward_radial_rotation(mid_angle)
-                font_size = outer_r * (10.5 / 600)
                 all_children.append(SceneText(
                     x=tx, y=ty,
                     content=child_label,
-                    font_size=font_size,
+                    font_size=outer_r * (10.5 / 600),
                     fill=TEXT_DARK,
                     anchor="middle",
                     rotation=rot,
                 ))
-
-                # Life dates follow the same radial axis, directly below the name.
                 if dates_lookup is not None and branch.person:
                     dates_label = dates_lookup(branch.person.handle)
                     if dates_label:
-                        dt_r = outer_r * (554 / 600)
-                        dx, dy = _polar(cx, cy, dt_r, mid_angle)
+                        dx, dy = _polar(cx, cy, outer_r * (554 / 600), mid_angle)
                         all_children.append(SceneText(
                             x=dx, y=dy,
                             content=dates_label,

@@ -20,6 +20,7 @@ try:
         SceneLegend,
         SceneNode,
         ScenePage,
+        ScenePathText,
         SceneSector,
         SceneText,
     )
@@ -31,6 +32,7 @@ except ModuleNotFoundError:
         SceneLegend,
         SceneNode,
         ScenePage,
+        ScenePathText,
         SceneSector,
         SceneText,
     )
@@ -47,11 +49,13 @@ def _parse_hex_color(hex_color: str) -> tuple[float, float, float]:
 
 
 def _render_sector(ctx: cairo.Context, sector: SceneSector) -> None:
-    """Render an annular sector centered at origin."""
+    """Render an annular sector around its declared scene center."""
+    ctx.save()
+    ctx.translate(sector.cx, sector.cy)
     r_in = sector.inner_radius
     r_out = sector.outer_radius
-    a0 = deg2rad(sector.start_angle)
-    a1 = deg2rad(sector.start_angle + sector.sweep_angle)
+    a0 = deg2rad(sector.start_angle - 90.0)
+    a1 = deg2rad(sector.start_angle + sector.sweep_angle - 90.0)
 
     if r_in <= 0:
         # Pie slice
@@ -77,6 +81,7 @@ def _render_sector(ctx: cairo.Context, sector: SceneSector) -> None:
         ctx.set_source_rgb(r, g, b)
         ctx.set_line_width(sector.stroke_width)
         ctx.stroke()
+    ctx.restore()
 
 
 def _render_circle(ctx: cairo.Context, circle: SceneCircle) -> None:
@@ -97,13 +102,126 @@ def _render_circle(ctx: cairo.Context, circle: SceneCircle) -> None:
 
 
 def _render_text(ctx: cairo.Context, text: SceneText) -> None:
-    """Render text (basic, no Pango yet)."""
+    """Render anchored, rotated text with a measured width constraint."""
+    ctx.save()
     if text.fill:
         r, g, b = _parse_hex_color(text.fill)
         ctx.set_source_rgb(r, g, b)
     ctx.set_font_size(text.font_size)
-    ctx.move_to(text.x, text.y)
+    extents = ctx.text_extents(text.content)
+    width = extents.width
+    scale_x = 1.0
+    if text.max_width is not None and text.max_width > 0 and width > text.max_width:
+        scale_x = text.max_width / width
+    ctx.translate(text.x, text.y)
+    if text.rotation is not None:
+        ctx.rotate(math.radians(text.rotation))
+    ctx.scale(scale_x, 1.0)
+    x = 0.0
+    if text.anchor == "middle":
+        x = -(extents.x_bearing + width / 2.0)
+    elif text.anchor == "end":
+        x = -(extents.x_bearing + width)
+    ctx.move_to(x, 0.0)
     ctx.show_text(text.content)
+    ctx.restore()
+
+
+def _parse_circular_arc(path: str) -> tuple[float, float, float, float, float] | None:
+    """Parse the circular SVG arc emitted by ``layout._arc_text_path``.
+
+    Return ``(cx, cy, radius, start_angle, delta_angle)`` in Cairo's
+    clockwise-positive, y-down coordinate system.
+    """
+    parts = path.split()
+    if len(parts) != 11 or parts[0] != "M" or parts[3] != "A":
+        return None
+    try:
+        x1, y1 = float(parts[1]), float(parts[2])
+        rx, ry = float(parts[4]), float(parts[5])
+        rotation = float(parts[6])
+        large_arc = int(parts[7])
+        sweep = int(parts[8])
+        x2, y2 = float(parts[9]), float(parts[10])
+    except (TypeError, ValueError):
+        return None
+    if rx <= 0 or ry <= 0 or abs(rx - ry) > 1e-6 or abs(rotation) > 1e-6:
+        return None
+
+    dx = (x1 - x2) / 2.0
+    dy = (y1 - y2) / 2.0
+    half_chord_sq = dx * dx + dy * dy
+    if half_chord_sq <= 1e-12:
+        return None
+    radius = max(rx, math.sqrt(half_chord_sq))
+    center_factor = math.sqrt(
+        max(0.0, (radius * radius - half_chord_sq) / half_chord_sq)
+    )
+    if large_arc == sweep:
+        center_factor = -center_factor
+    center_x = (x1 + x2) / 2.0 + center_factor * dy
+    center_y = (y1 + y2) / 2.0 - center_factor * dx
+
+    start_angle = math.atan2(y1 - center_y, x1 - center_x)
+    end_angle = math.atan2(y2 - center_y, x2 - center_x)
+    delta_angle = end_angle - start_angle
+    if sweep and delta_angle < 0:
+        delta_angle += 2.0 * math.pi
+    elif not sweep and delta_angle > 0:
+        delta_angle -= 2.0 * math.pi
+    return center_x, center_y, radius, start_angle, delta_angle
+
+
+def _render_path_text(ctx: cairo.Context, text: ScenePathText) -> None:
+    """Render centered text glyph-by-glyph along one circular arc."""
+    arc = _parse_circular_arc(text.path)
+    if arc is None or not text.content:
+        return
+    center_x, center_y, radius, start_angle, delta_angle = arc
+    arc_length = abs(delta_angle) * radius
+    if arc_length <= 1e-9:
+        return
+
+    ctx.save()
+    if text.fill:
+        red, green, blue = _parse_hex_color(text.fill)
+        ctx.set_source_rgb(red, green, blue)
+    ctx.set_font_size(text.font_size)
+    glyphs = []
+    natural_width = 0.0
+    for character in text.content:
+        extents = ctx.text_extents(character)
+        advance = max(extents.x_advance, extents.width, 0.0)
+        glyphs.append((character, extents, advance))
+        natural_width += advance
+    if natural_width <= 1e-9:
+        ctx.restore()
+        return
+
+    scale_x = 1.0
+    if text.max_width is not None and text.max_width > 0:
+        scale_x = min(scale_x, text.max_width / natural_width)
+    rendered_width = natural_width * scale_x
+    distance = (arc_length - rendered_width) / 2.0
+    direction = 1.0 if delta_angle > 0 else -1.0
+
+    for character, extents, advance in glyphs:
+        rendered_advance = advance * scale_x
+        glyph_midpoint = distance + rendered_advance / 2.0
+        angle = start_angle + direction * glyph_midpoint / radius
+        x = center_x + radius * math.cos(angle)
+        y = center_y + radius * math.sin(angle)
+        tangent = angle + direction * math.pi / 2.0
+
+        ctx.save()
+        ctx.translate(x, y)
+        ctx.rotate(tangent)
+        ctx.scale(scale_x, 1.0)
+        ctx.move_to(-(extents.x_bearing + extents.width / 2.0), 0.0)
+        ctx.show_text(character)
+        ctx.restore()
+        distance += rendered_advance
+    ctx.restore()
 
 
 def _render_image(ctx: cairo.Context, img: SceneImage) -> None:
@@ -171,6 +289,8 @@ def _render_child(ctx: cairo.Context, child) -> None:
         _render_circle(ctx, child)
     elif isinstance(child, SceneText):
         _render_text(ctx, child)
+    elif isinstance(child, ScenePathText):
+        _render_path_text(ctx, child)
     elif isinstance(child, SceneImage):
         _render_image(ctx, child)
     elif isinstance(child, SceneLegend):

@@ -89,6 +89,18 @@ def _lighten(hex_color: str, factor: float) -> str:
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
+def _mix(hex_start: str, hex_end: str, factor: float) -> str:
+    """Blend two hex colors while clamping *factor* to the 0..1 interval."""
+    factor = max(0.0, min(1.0, factor))
+    start = tuple(int(hex_start[index:index + 2], 16) for index in (1, 3, 5))
+    end = tuple(int(hex_end[index:index + 2], 16) for index in (1, 3, 5))
+    channels = tuple(
+        _clamp_byte(round(left + (right - left) * factor))
+        for left, right in zip(start, end)
+    )
+    return "#" + "".join(f"{channel:02X}" for channel in channels)
+
+
 def generation_shade(base_color: str, *, generation: int) -> str:
     """Lighten a color based on generation depth.
 
@@ -107,7 +119,9 @@ def generation_shade(base_color: str, *, generation: int) -> str:
 
 # Ancestor sector fills per generation and lineage.
 # Paternal (lineage "a") = coral shades; Maternal (lineage "b") = sage shades.
-# Generation 1 (parents), 2 (grandparents), 3 (great-grandparents).
+# Generations 1–3 reproduce the reference mockup exactly. Deeper generations
+# are derived by ``ancestor_fill`` so populated sectors never use the neutral
+# empty-slot color.
 ANCESTOR_FILLS: dict[tuple[int, str], str] = {
     (1, "a"): "#F8ECE7",
     (1, "b"): "#EEF2E8",
@@ -137,8 +151,21 @@ RING_GAP = 0.3  # mm between rings
 
 def ancestor_fill(generation: int, lineage: str) -> str:
     """Return the sector fill color for an ancestor at the given generation and lineage."""
-    key = (generation, lineage.lower())
-    return ANCESTOR_FILLS.get(key, "#F0EEE6")
+    normalized_lineage = lineage.lower()
+    key = (generation, normalized_lineage)
+    if key in ANCESTOR_FILLS:
+        return ANCESTOR_FILLS[key]
+    if generation > 3 and normalized_lineage in {"a", "b"}:
+        third_generation = ANCESTOR_FILLS[(3, normalized_lineage)]
+        lineage_base = (
+            _MOCKUP_PALETTE.lineage_a
+            if normalized_lineage == "a"
+            else _MOCKUP_PALETTE.lineage_b
+        )
+        # Generation 4 starts one fifth of the way toward the stronger lineage
+        # color; generation 8 reaches it. This keeps all supported rings distinct.
+        return _mix(third_generation, lineage_base, (generation - 3) / 5)
+    return _MOCKUP_PALETTE.light_gray
 
 
 def descendant_fill(index: int) -> str:

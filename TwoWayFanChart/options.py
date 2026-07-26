@@ -609,6 +609,10 @@ class TwoWayFanChartOptions(MenuReportOptions):
         self._applying_preset = True
         try:
             preset_option.set_value(PresetName.CUSTOM.value)
+            handler = getattr(self, "handler", None)
+            handler_values = getattr(handler, "options_dict", None) if handler else None
+            if handler_values is not None:
+                handler_values["preset"] = PresetName.CUSTOM.value
         finally:
             self._applying_preset = False
 

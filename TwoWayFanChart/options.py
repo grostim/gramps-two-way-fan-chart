@@ -593,15 +593,22 @@ class TwoWayFanChartOptions(MenuReportOptions):
         self.refresh_dependencies()
 
     def mark_configuration_custom(self) -> None:
-        """Reflect a manual change without recursively reapplying a preset."""
+        """Reflect a manual change only when it differs from the active preset."""
         if self._applying_preset:
             return
-        preset = self.menu.get_option_by_name("preset")
-        if preset.get_value() == PresetName.CUSTOM.value:
+        preset_option = self.menu.get_option_by_name("preset")
+        preset = PresetName(preset_option.get_value())
+        if preset is PresetName.CUSTOM:
+            return
+        expected_values = self._preset_option_values(build_preset(preset))
+        if all(
+            self.menu.get_option_by_name(name).get_value() == expected
+            for name, expected in expected_values.items()
+        ):
             return
         self._applying_preset = True
         try:
-            preset.set_value(PresetName.CUSTOM.value)
+            preset_option.set_value(PresetName.CUSTOM.value)
         finally:
             self._applying_preset = False
 

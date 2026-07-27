@@ -67,7 +67,7 @@ except ModuleNotFoundError:
 #   gen 1 (parents):         "Surname, FirstName"      max 25 chars
 #   gen 2 (grandparents):   "Surname, First"          max 20 chars (first given word)
 #   gen 3 (great-grandparents): "Surname, F."          max 15 chars (first letter only)
-_ANCESTOR_GEN_LIMITS = {1: 22, 2: 22, 3: 18}
+_ANCESTOR_GEN_LIMITS = {1: 22, 2: 22, 3: 18, 4: 30, 5: 30}
 
 # Descendant label max lengths per generation depth.
 _DESC_GEN_LIMITS = {1: 17, 2: 16}

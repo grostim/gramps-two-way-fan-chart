@@ -370,9 +370,17 @@ def _ancestor_content_geometry(
         image_r = min(base_image_r, ring_depth * 0.24, angular_lane * 0.22)
     name_size = min(base_name_size, ring_depth * 0.12, angular_lane * 0.36)
     life_size = min(base_life_size, ring_depth * 0.10, angular_lane * 0.30)
-    if generation <= 5:
-        name_size = max(min(name_size, 5.5), 2.8)
-        life_size = max(min(life_size, 4.4), 2.5)
+    # Per-generation caps ensure a monotonic font hierarchy: deeper
+    # generations always have a strictly smaller maximum name size than
+    # shallower ones, regardless of how much radial width the medallion
+    # leaves.  Without this, G4/G5 (small medallions, more text width)
+    # can render at a larger font than G3 (large medallion, less width).
+    _name_caps = {1: 7.0, 2: 6.0, 3: 5.0, 4: 4.2, 5: 3.5}
+    _life_caps = {1: 5.5, 2: 4.8, 3: 4.0, 4: 3.4, 5: 2.8}
+    name_cap = _name_caps.get(generation, 3.0)
+    life_cap = _life_caps.get(generation, 2.5)
+    name_size = max(min(name_size, name_cap), 2.8)
+    life_size = max(min(life_size, life_cap), 2.5)
 
     text_start = portrait_r + image_r + 2.0
     text_available = max(0.0, outer_radius - 1.5 - text_start)
@@ -609,7 +617,14 @@ def _emit_ancestor_sector(
         base_x, base_y = _polar(cx, cy, text_r, mid_angle)
         rot = _outward_radial_rotation(mid_angle)
         lane_offset = max(font_size, life_font) * 0.58
-        name_x, name_y = _tangent_offset(base_x, base_y, mid_angle, -lane_offset)
+
+        # --- Name fitting -------------------------------------------------
+        # Fit the full label on one line first.  If the result is badly
+        # shrunk (the large G3 medallion eats radial width), split into two
+        # lines: given name above, surname below.  Each shorter line fits
+        # at a larger font size, which keeps the hierarchy monotonic across
+        # generations instead of letting G4/G5 (small medallions, more
+        # text width) render larger than G3.
         fitted_name, fitted_name_size, name_width = _fit_text_to_width(
             label,
             target_size=font_size,
@@ -617,7 +632,64 @@ def _emit_ancestor_sector(
             max_width=text_width,
             allow_ellipsis=False,
         )
-        if fitted_name:
+        use_two_lines = False
+        two_line_size = 0.0
+        fitted_given = ""
+        fitted_surname = ""
+        given_width = 0.0
+        surname_width = 0.0
+        if fitted_name_size < font_size * 0.75 and ", " in label:
+            surname_part, given_part = label.split(", ", 1)
+            fitted_given, given_size, given_width = _fit_text_to_width(
+                given_part,
+                target_size=font_size,
+                minimum_size=2.8,
+                max_width=text_width,
+                allow_ellipsis=False,
+            )
+            fitted_surname, surname_size, surname_width = _fit_text_to_width(
+                surname_part,
+                target_size=font_size,
+                minimum_size=2.8,
+                max_width=text_width,
+                allow_ellipsis=False,
+            )
+            two_line_size = min(given_size, surname_size)
+            if two_line_size > fitted_name_size * 1.15:
+                use_two_lines = True
+
+        effective_name_size = (
+            two_line_size if use_two_lines else fitted_name_size
+        )
+
+        if use_two_lines:
+            line_h = two_line_size * 1.3
+            gx, gy = _tangent_offset(base_x, base_y, mid_angle, -line_h)
+            sx, sy = _tangent_offset(base_x, base_y, mid_angle, 0.0)
+            if fitted_given:
+                children.append(SceneText(
+                    x=gx, y=gy,
+                    content=fitted_given,
+                    font_size=two_line_size,
+                    fill=TEXT_DARK,
+                    anchor="middle",
+                    rotation=rot,
+                    max_width=given_width,
+                ))
+            if fitted_surname:
+                children.append(SceneText(
+                    x=sx, y=sy,
+                    content=fitted_surname,
+                    font_size=two_line_size,
+                    fill=TEXT_DARK,
+                    anchor="middle",
+                    rotation=rot,
+                    max_width=surname_width,
+                ))
+        elif fitted_name:
+            name_x, name_y = _tangent_offset(
+                base_x, base_y, mid_angle, -lane_offset,
+            )
             children.append(SceneText(
                 x=name_x,
                 y=name_y,
@@ -628,18 +700,30 @@ def _emit_ancestor_sector(
                 rotation=rot,
                 max_width=name_width,
             ))
+
+        # --- Dates --------------------------------------------------------
+        # Date font must never exceed the name font.
         if dates_label:
-            date_x, date_y = _tangent_offset(base_x, base_y, mid_angle, lane_offset)
+            date_target = min(life_font, effective_name_size)
+            if use_two_lines:
+                dx, dy = _tangent_offset(
+                    base_x, base_y, mid_angle, line_h,
+                )
+            else:
+                dx, dy = _tangent_offset(
+                    base_x, base_y, mid_angle, lane_offset,
+                )
             fitted_dates, fitted_date_size, date_width = _fit_text_to_width(
                 dates_label,
-                target_size=life_font,
+                target_size=date_target,
                 minimum_size=2.5,
                 max_width=text_width,
             )
+            fitted_date_size = min(fitted_date_size, effective_name_size)
             if fitted_dates:
                 children.append(SceneText(
-                    x=date_x,
-                    y=date_y,
+                    x=dx,
+                    y=dy,
                     content=fitted_dates,
                     font_size=fitted_date_size,
                     fill=TEXT_GREY,
@@ -663,7 +747,7 @@ def _emit_ancestor_sector(
             children.append(SceneText(
                 x=ltx, y=lty,
                 content=dates_label,
-                font_size=life_font,
+                font_size=min(life_font, font_size),
                 fill=TEXT_GREY,
                 anchor="middle",
                 rotation=rot,
@@ -681,7 +765,7 @@ def _emit_ancestor_sector(
             children.append(ScenePathText(
                 path=life_path,
                 content=dates_label,
-                font_size=life_font,
+                font_size=min(life_font, font_size),
                 fill=TEXT_GREY,
             ))
 
@@ -1600,7 +1684,7 @@ def layout_descendants(
                     )
                     fitted, fitted_size, width_limit = _fit_text_to_width(
                         content,
-                        target_size=5.5 if is_name else 4.2,
+                        target_size=4.5 if is_name else 3.4,
                         minimum_size=3.2 if is_name else 2.5,
                         max_width=angular_width,
                     )
@@ -1625,7 +1709,7 @@ def layout_descendants(
                 text_end = med_text_inner - 2.0
                 text_width = max(0.0, text_end - text_start)
                 text_r = (text_start + text_end) / 2.0
-                name_target = 5.2 if depth == 2 else 4.8
+                name_target = 4.2 if depth == 2 else 3.5
                 fitted_name, name_size, name_width = _fit_text_to_width(
                     child_label,
                     target_size=name_target,
@@ -1634,7 +1718,7 @@ def layout_descendants(
                 )
                 fitted_dates, date_size, date_width = _fit_text_to_width(
                     child_dates,
-                    target_size=4.2,
+                    target_size=min(3.4, name_target),
                     minimum_size=2.5,
                     max_width=text_width,
                 )

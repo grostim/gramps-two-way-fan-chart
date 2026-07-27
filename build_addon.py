@@ -17,7 +17,7 @@ import glob
 
 ADDON = "TwoWayFanChart"
 GRAMPS_VERSION = "6.0"
-VERSION = "1.1.8"
+VERSION = "1.1.9"
 
 # ── Build .addon.tgz ──
 

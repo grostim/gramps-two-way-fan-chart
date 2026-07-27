@@ -1570,7 +1570,7 @@ def layout_descendants(
         spouse_handle: str | None = None
         spouse_name: str | None = None
         spouse_medallion_label: str | None = None
-        if depth == 1:
+        if depth == 1 or (depth < max_gen and max_gen > 1):
             for union in branch.unions:
                 if union.spouse_handle:
                     sp_raw = _spouse_label(union, name_lookup)
@@ -1710,49 +1710,101 @@ def layout_descendants(
                 text_width = max(0.0, text_end - text_start)
                 text_r = (text_start + text_end) / 2.0
                 name_target = 4.2 if depth == 2 else 3.5
-                fitted_name, name_size, name_width = _fit_text_to_width(
-                    child_label,
-                    target_size=name_target,
-                    minimum_size=2.8,
-                    max_width=text_width,
-                )
-                fitted_dates, date_size, date_width = _fit_text_to_width(
-                    child_dates,
-                    target_size=min(3.4, name_target),
-                    minimum_size=2.5,
-                    max_width=text_width,
-                )
-                lane_offset = max(name_size, date_size) * 0.58
-                base_x, base_y = _polar(cx, cy, text_r, mid_angle)
-                rot = _outward_radial_rotation(mid_angle)
-                if fitted_name:
-                    name_x, name_y = _tangent_offset(
-                        base_x, base_y, mid_angle, -lane_offset
+
+                # Resolve spouse dates for depth >= 2 when a spouse exists.
+                spouse_dates_label = ""
+                if spouse_handle:
+                    spouse_dates_label = (
+                        dates_lookup(spouse_handle)
+                        if dates_lookup is not None
+                        else ""
                     )
-                    all_children.append(SceneText(
-                        x=name_x,
-                        y=name_y,
-                        content=fitted_name,
-                        font_size=name_size,
-                        fill=TEXT_DARK,
-                        anchor="middle",
-                        rotation=rot,
-                        max_width=name_width,
-                    ))
-                if fitted_dates:
-                    date_x, date_y = _tangent_offset(
-                        base_x, base_y, mid_angle, lane_offset
+
+                # Build line list: name, dates, spouse name, spouse dates.
+                lines_d2 = [
+                    (child_label, True, TEXT_DARK),
+                    (child_dates, False, TEXT_GREY),
+                    (f"× {spouse_name}" if spouse_name else "", True, TEXT_GREY),
+                    (spouse_dates_label if spouse_name else "", False, TEXT_GREY),
+                ]
+                lines_d2 = [ln for ln in lines_d2 if ln[0]]
+
+                if len(lines_d2) <= 2:
+                    # No spouse or just name+dates: use the original two-lane layout.
+                    fitted_name, name_size, name_width = _fit_text_to_width(
+                        child_label,
+                        target_size=name_target,
+                        minimum_size=2.8,
+                        max_width=text_width,
                     )
-                    all_children.append(SceneText(
-                        x=date_x,
-                        y=date_y,
-                        content=fitted_dates,
-                        font_size=date_size,
-                        fill=TEXT_GREY,
-                        anchor="middle",
-                        rotation=rot,
-                        max_width=date_width,
-                    ))
+                    fitted_dates, date_size, date_width = _fit_text_to_width(
+                        child_dates,
+                        target_size=min(3.4, name_target),
+                        minimum_size=2.5,
+                        max_width=text_width,
+                    )
+                    lane_offset = max(name_size, date_size) * 0.58
+                    base_x, base_y = _polar(cx, cy, text_r, mid_angle)
+                    rot = _outward_radial_rotation(mid_angle)
+                    if fitted_name:
+                        name_x, name_y = _tangent_offset(
+                            base_x, base_y, mid_angle, -lane_offset
+                        )
+                        all_children.append(SceneText(
+                            x=name_x,
+                            y=name_y,
+                            content=fitted_name,
+                            font_size=name_size,
+                            fill=TEXT_DARK,
+                            anchor="middle",
+                            rotation=rot,
+                            max_width=name_width,
+                        ))
+                    if fitted_dates:
+                        date_x, date_y = _tangent_offset(
+                            base_x, base_y, mid_angle, lane_offset
+                        )
+                        all_children.append(SceneText(
+                            x=date_x,
+                            y=date_y,
+                            content=fitted_dates,
+                            font_size=date_size,
+                            fill=TEXT_GREY,
+                            anchor="middle",
+                            rotation=rot,
+                            max_width=date_width,
+                        ))
+                else:
+                    # Spouse lines present: use radial arc lines like depth==1.
+                    radial_span = max(0.0, text_end - text_start)
+                    for line_index, (content, is_name, fill_color) in enumerate(lines_d2):
+                        line_r = text_start + radial_span * (line_index + 1) / (len(lines_d2) + 1)
+                        angular_width = max(
+                            0.0,
+                            line_r * math.radians(max(alloc_sweep - 1.0, 0.0)) - 2.0,
+                        )
+                        fitted, fitted_size, width_limit = _fit_text_to_width(
+                            content,
+                            target_size=name_target if is_name else min(3.4, name_target),
+                            minimum_size=3.2 if is_name else 2.5,
+                            max_width=angular_width,
+                        )
+                        if not fitted:
+                            continue
+                        all_children.append(ScenePathText(
+                            path=_arc_text_path(
+                                cx,
+                                cy,
+                                line_r,
+                                alloc_start,
+                                alloc_start + alloc_sweep,
+                                lower=True,
+                            ),
+                            content=fitted,
+                            font_size=fitted_size,
+                            fill=fill_color,
+                            max_width=width_limit,
+                        ))
         elif child_label:
             if depth == 1:
                 label_r = outer_r * (278 / 600)

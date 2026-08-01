@@ -170,12 +170,12 @@ class TwoWayFanChartOptions(MenuReportOptions):
         menu.add_option(
             _(CATEGORY_SUBJECT),
             "ancestor_generations",
-            NumberOption(_("Ancestor generations"), 3, 0, 8),
+            NumberOption(_("Ancestor generations"), 5, 0, 8),
         )
         menu.add_option(
             _(CATEGORY_SUBJECT),
             "descendant_generations",
-            NumberOption(_("Descendant generations"), 2, 0, 5),
+            NumberOption(_("Descendant generations"), 3, 0, 5),
         )
         menu.add_option(
             _(CATEGORY_SUBJECT),
@@ -394,7 +394,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "paper_size",
             _enum(
                 "Paper size",
-                "A2",
+                "A0",
                 tuple((value, value) for value in ("A5", "A4", "A3", "A2", "A1", "A0", "Letter", "Legal", "Tabloid", "Custom")),
             ),
         )
@@ -437,7 +437,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "privacy_mode",
             _enum(
                 "Privacy mode",
-                "publication_safe",
+                "include_all",
                 (
                     ("include_all", "Include all"),
                     ("full_name_only", "Full name only"),
@@ -448,11 +448,11 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 ),
             ),
         )
-        stdoptions.add_private_data_option(menu, _(CATEGORY_PRIVACY), default=False)
+        stdoptions.add_private_data_option(menu, _(CATEGORY_PRIVACY), default=True)
         stdoptions.add_living_people_option(
             menu,
             _(CATEGORY_PRIVACY),
-            mode=LivingProxyDb.MODE_REPLACE_COMPLETE_NAME,
+            mode=LivingProxyDb.MODE_INCLUDE_ALL,
             after_death_years=0,
         )
 

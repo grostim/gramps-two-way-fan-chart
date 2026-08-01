@@ -1471,7 +1471,7 @@ def layout_descendants(
     - Sub-sectors for grandchildren
     - Curved text labels for children (shortened via *shortener*)
     - A second curved arc with the spouse name prefixed by ``×``
-    - Medallions at the midpoint of each sector
+    - Medallions at the midpoint of first-generation sectors only
     - Straight text for grandchildren
     """
     if not branches:
@@ -1632,8 +1632,12 @@ def layout_descendants(
         # Place one portrait medallion or a tangent couple pair when the local
         # sector can sustain a readable circle. A narrow sector falls back to
         # text-only without shrinking every other medallion in its generation.
+        # The requested default keeps the descendant GEN1 medallions as the
+        # visual entry points, but removes every medallion from GEN2 onward.
+        # Text and couple labels remain available in those rings.
+        show_medallion = depth == 1
         adaptive_dense = max_gen >= 3
-        if adaptive_dense:
+        if show_medallion and adaptive_dense:
             has_spouse = bool(spouse_handle and spouse_medallion_label)
             med_capacity = _maximum_medallion_radius(
                 inner_radius=gen_inner,
@@ -1660,11 +1664,17 @@ def layout_descendants(
             else:
                 med_text_inner = gen_outer
                 med_r_pos = gen_outer
-        else:
+        elif show_medallion:
             med_border_r = outer_r * ((20 / 600) if depth == 1 else (14 / 600))
             med_r_pos = outer_r * ((245 / 600) if depth == 1 else (397 / 600))
             pair_offset = outer_r * (20 / 600)
             med_text_inner = med_r_pos - med_border_r
+        else:
+            med_border_r = 0.0
+            med_r_pos = gen_outer
+            pair_offset = 0.0
+            # Without a GEN2+ medallion, let the text use the complete ring.
+            med_text_inner = gen_outer
 
         if med_border_r > 0.5:
             mx, my = _polar(cx, cy, med_r_pos, mid_angle)

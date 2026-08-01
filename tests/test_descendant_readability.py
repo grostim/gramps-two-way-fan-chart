@@ -149,6 +149,31 @@ class DescendantReadabilityTests(unittest.TestCase):
         self.assertFalse(any("Middle Spouse" in content for content in curved))
         self.assertFalse(any("Last Spouse" in content for content in straight + curved))
 
+    def test_descendant_medallions_stop_before_generation_two(self):
+        last = branch("last", 3)
+        middle = branch("middle", 2, children=(last,), spouse="middle-spouse")
+        root = branch("root", 1, children=(middle,), spouse="root-spouse")
+        portrait_calls = []
+
+        def portrait_lookup(handle):
+            portrait_calls.append(handle)
+            return f"data:image/png;base64,{handle}"
+
+        scene = layout_descendants(
+            a0_canvas(descendant_generations=3),
+            (root,),
+            name_lookup=lambda handle: handle.replace("-", " ").title(),
+            dates_lookup=lambda _handle: "1900–1980",
+            portrait_lookup=portrait_lookup,
+        )
+        circles = [node for node in scene.children if isinstance(node, SceneCircle)]
+
+        self.assertEqual(len(circles), 2)  # root person + root spouse only
+        self.assertEqual(
+            portrait_calls,
+            ["root", "root-spouse"],
+        )
+
     def test_pipeline_preserves_full_descendant_name_for_layout(self):
         source = Path("TwoWayFanChart/pipeline.py").read_text(encoding="utf-8")
         module = ast.parse(source)

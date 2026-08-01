@@ -65,15 +65,15 @@ class ChartConfig:
 
     center_family: str = ""
     preset: PresetName = PresetName.PUBLICATION
-    ancestor_generations: int = 3
-    descendant_generations: int = 2
-    paper_size: PaperSize = PaperSize.A2
+    ancestor_generations: int = 5
+    descendant_generations: int = 3
+    paper_size: PaperSize = PaperSize.A0
     orientation: Orientation = Orientation.LANDSCAPE
     margin_mm: float = 12.0
     custom_width_mm: float | None = None
     custom_height_mm: float | None = None
     output_format: OutputFormat = OutputFormat.SVG
-    privacy_mode: PrivacyMode = PrivacyMode.PUBLICATION_SAFE
+    privacy_mode: PrivacyMode = PrivacyMode.INCLUDE_ALL
     palette: PaletteName = PaletteName.MOCKUP
     background_color: str = "#FAF9F5"
     show_center_as_couple: bool = True
@@ -104,8 +104,8 @@ class ChartConfig:
     portrait_scale: float = 1.0
     fit_one_page: bool = True
     outline_width: float = 1.0
-    include_private: bool = False
-    living_people_mode: int = 3
+    include_private: bool = True
+    living_people_mode: int = 99
     years_past_death: int = 0
     title_mode: str = "automatic"
     custom_title: str = ""

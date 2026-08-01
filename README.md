@@ -64,7 +64,7 @@ gramps -O "MyTree" -a report -p \
 
 ## Privacy
 
-Publication mode masks living/private people before names, facts, portraits, metadata, and diagnostics reach the renderer. Masked people use neutral visual markers; their source media is not loaded.
+By default, the chart includes all individuals, including private and living people, as requested for family use. The **Safe publication** privacy mode remains available when an export must mask living/private people before names, facts, portraits, metadata, and diagnostics reach the renderer. Masked people use neutral visual markers; their source media is not loaded.
 
 No real genealogy database, family portrait, or generated chart based on private data is included in this public repository. The screenshot above was generated exclusively from synthetic fixtures and AI-generated fictional portraits.
 

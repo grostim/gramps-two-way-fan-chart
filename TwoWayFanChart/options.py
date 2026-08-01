@@ -18,7 +18,6 @@ from gramps.gen.plug.menu import (
     EnumeratedListOption,
     FamilyOption,
     NumberOption,
-    StringOption,
 )
 from gramps.gen.plug.report import MenuReportOptions, stdoptions
 from gramps.gen.proxy import LivingProxyDb
@@ -28,7 +27,6 @@ try:
         ChartConfig,
         Orientation,
         OutputFormat,
-        PaletteName,
         PaperSize,
         PresetName,
         PrivacyMode,
@@ -44,7 +42,6 @@ except ImportError:
         ChartConfig,
         Orientation,
         OutputFormat,
-        PaletteName,
         PaperSize,
         PresetName,
         PrivacyMode,
@@ -60,13 +57,11 @@ _ = _trans.gettext
 
 CATEGORY_SUBJECT = "Subject and generations"
 CATEGORY_FAMILIES = "People and families"
-CATEGORY_NAMES = "Names and information"
 CATEGORY_PORTRAITS = "Portraits and medallions"
 CATEGORY_PAPER = "Paper and layout"
 CATEGORY_COLORS = "Colors and styles"
 CATEGORY_PRIVACY = "Privacy"
-CATEGORY_OUTPUT = "Title, legend and output"
-CATEGORY_ADVANCED = "Advanced options"
+CATEGORY_OUTPUT = "Output"
 
 
 def _enum(label: str, value: str, items: tuple[tuple[str, str], ...]):
@@ -152,14 +147,13 @@ class TwoWayFanChartOptions(MenuReportOptions):
         self.refresh_dependencies()
 
     def add_menu_options(self, menu) -> None:
-        """Build nine specification-aligned categories without GTK widgets."""
+        """Build the supported option categories without GTK widgets."""
         preset = _enum(
             "Preset",
             "publication",
             (
                 ("publication", "Publication — mockup"),
                 ("family", "Family — mockup"),
-                ("monochrome", "Monochrome print"),
                 ("compact", "Compact view"),
                 ("custom", "Custom"),
             ),
@@ -177,17 +171,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "descendant_generations",
             NumberOption(_("Descendant generations"), 3, 0, 5),
         )
-        menu.add_option(
-            _(CATEGORY_SUBJECT),
-            "show_center_as_couple",
-            BooleanOption(_("Double center medallion"), True),
-        )
-        menu.add_option(
-            _(CATEGORY_SUBJECT),
-            "include_center_children",
-            BooleanOption(_("Show center children"), True),
-        )
-
         menu.add_option(
             _(CATEGORY_FAMILIES),
             "parent_family_policy",
@@ -215,132 +198,9 @@ class TwoWayFanChartOptions(MenuReportOptions):
             ),
         )
         menu.add_option(
-            _(CATEGORY_FAMILIES),
-            "show_spouses",
-            _enum(
-                "Show spouses",
-                "all",
-                (("none", "None"), ("first", "First"), ("all", "All")),
-            ),
-        )
-        menu.add_option(
-            _(CATEGORY_FAMILIES),
-            "child_order",
-            _enum(
-                "Child order",
-                "gramps",
-                (("gramps", "Gramps order"), ("birth", "Birth"), ("name", "Name")),
-            ),
-        )
-
-        stdoptions.add_name_format_option(menu, _(CATEGORY_NAMES))
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "given_name_strategy",
-            _enum(
-                "Given-name strategy",
-                "call_then_first",
-                (
-                    ("complete", "Complete given names"),
-                    ("first", "First given name"),
-                    ("call_then_first", "Call name, then first name"),
-                    ("nickname", "Nickname"),
-                    ("call_and_complete", "Call name and complete given names"),
-                    ("nickname_and_call", "Nickname and call name"),
-                    ("gramps", "Gramps name format"),
-                ),
-            ),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "name_case",
-            _enum(
-                "Name case",
-                "stored",
-                (("stored", "As stored"), ("small_caps", "Small capitals"), ("upper", "Uppercase")),
-            ),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "date_format",
-            _enum(
-                "Date format",
-                "years",
-                (("years", "Years only"), ("short", "Localized short date"), ("full", "Localized full date")),
-            ),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES), "show_places", BooleanOption(_("Show places"), False)
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "place_strategy",
-            _enum(
-                "Place detail",
-                "locality",
-                (
-                    ("gramps", "Full Gramps place"),
-                    ("locality", "Locality only"),
-                    ("locality_region", "Locality and region"),
-                    ("locality_country", "Locality and country"),
-                ),
-            ),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "show_occupation",
-            BooleanOption(_("Show occupation"), False),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "occupation_strategy",
-            _enum(
-                "Occupation selection",
-                "last_dated",
-                (
-                    ("first_dated", "First dated occupation"),
-                    ("last_dated", "Last dated occupation"),
-                    ("closest_union", "Closest to main union"),
-                    ("distinct", "Distinct occupations"),
-                    ("first_nonempty", "First non-empty occupation"),
-                ),
-            ),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "occupation_maximum",
-            NumberOption(_("Maximum occupations"), 1, 1, 5),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "show_sosa",
-            BooleanOption(_("Show Sosa numbers"), False),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "show_daboville",
-            BooleanOption(_("Show d'Aboville numbers"), False),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "show_residence",
-            BooleanOption(_("Show residence"), False),
-        )
-        menu.add_option(
-            _(CATEGORY_NAMES),
-            "show_union",
-            BooleanOption(_("Show union facts"), False),
-        )
-
-        menu.add_option(
             _(CATEGORY_PORTRAITS),
             "show_portraits",
             BooleanOption(_("Show portraits"), True),
-        )
-        menu.add_option(
-            _(CATEGORY_PORTRAITS),
-            "portrait_scale",
-            NumberOption(_("Relative portrait size"), 1.0, 0.25, 2.0, 0.05),
         )
         menu.add_option(
             _(CATEGORY_PORTRAITS),
@@ -362,11 +222,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
         )
         menu.add_option(
             _(CATEGORY_PORTRAITS),
-            "portrait_shape",
-            _enum("Portrait shape", "circle", (("circle", "Circle"), ("rounded_square", "Rounded square"))),
-        )
-        menu.add_option(
-            _(CATEGORY_PORTRAITS),
             "portrait_treatment",
             _enum(
                 "Portrait treatment",
@@ -374,21 +229,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 (("color", "Color"), ("grayscale", "Grayscale"), ("sepia", "Sepia")),
             ),
         )
-        menu.add_option(
-            _(CATEGORY_PORTRAITS),
-            "missing_portrait",
-            _enum(
-                "Missing portrait",
-                "initials",
-                (
-                    ("initials", "Initials"),
-                    ("neutral", "Neutral silhouette"),
-                    ("gender", "Gender silhouette"),
-                    ("empty", "Empty"),
-                ),
-            ),
-        )
-
         menu.add_option(
             _(CATEGORY_PAPER),
             "paper_size",
@@ -417,21 +257,8 @@ class TwoWayFanChartOptions(MenuReportOptions):
             _(CATEGORY_PAPER), "custom_height_mm", NumberOption(_("Custom height (mm)"), 420, 1, 2000)
         )
         menu.add_option(
-            _(CATEGORY_PAPER), "fit_one_page", BooleanOption(_("Fit on one page"), True)
-        )
-
-        menu.add_option(
             _(CATEGORY_COLORS), "background_color", ColorOption(_("Background color"), "#FAF9F5")
         )
-        menu.add_option(
-            _(CATEGORY_COLORS),
-            "palette",
-            _enum("Palette", "mockup", (("mockup", "Ivory, earth and olive"), ("monochrome", "Monochrome"))),
-        )
-        menu.add_option(
-            _(CATEGORY_COLORS), "outline_width", NumberOption(_("Outline width"), 1.0, 0.1, 10.0)
-        )
-
         menu.add_option(
             _(CATEGORY_PRIVACY),
             "privacy_mode",
@@ -458,38 +285,10 @@ class TwoWayFanChartOptions(MenuReportOptions):
 
         menu.add_option(
             _(CATEGORY_OUTPUT),
-            "title_mode",
-            _enum("Title", "automatic", (("automatic", "Automatic"), ("custom", "Custom"), ("none", "None"))),
-        )
-        menu.add_option(
-            _(CATEGORY_OUTPUT), "custom_title", StringOption(_("Custom title"), "")
-        )
-        menu.add_option(
-            _(CATEGORY_OUTPUT), "show_legend", BooleanOption(_("Show legend"), True)
-        )
-        menu.add_option(
-            _(CATEGORY_OUTPUT),
             "output_format",
             _enum("Output format", "svg", (("svg", "SVG"), ("pdf", "PDF"))),
         )
-        menu.add_option(
-            _(CATEGORY_OUTPUT),
-            "open_after_generation",
-            BooleanOption(_("Open after generation"), True),
-        )
-        stdoptions.add_localization_option(menu, _(CATEGORY_OUTPUT))
-
-        menu.add_option(
-            _(CATEGORY_ADVANCED),
-            "debug_diagnostics",
-            BooleanOption(_("Write debug diagnostics"), False),
-        )
-        for controller in (
-            "paper_size",
-            "show_portraits",
-            "show_places",
-            "show_occupation",
-        ):
+        for controller in ("paper_size", "show_portraits"):
             menu.get_option_by_name(controller).connect(
                 "value-changed", self.refresh_dependencies
             )
@@ -508,49 +307,21 @@ class TwoWayFanChartOptions(MenuReportOptions):
         return {
             "ancestor_generations": config.ancestor_generations,
             "descendant_generations": config.descendant_generations,
-            "show_center_as_couple": config.show_center_as_couple,
-            "include_center_children": config.include_center_children,
             "parent_family_policy": config.parent_family_policy,
             "descendant_family_policy": config.descendant_family_policy,
-            "show_spouses": config.show_spouses,
-            "child_order": config.child_order,
-            "name_format": config.name_format,
-            "given_name_strategy": config.given_name_strategy,
-            "name_case": config.name_case,
-            "date_format": config.date_format,
-            "show_places": config.show_places,
-            "place_strategy": config.place_strategy,
-            "show_occupation": config.show_occupation,
-            "occupation_strategy": config.occupation_strategy,
-            "occupation_maximum": config.occupation_maximum,
-            "show_sosa": config.show_sosa,
-            "show_daboville": config.show_daboville,
-            "show_residence": config.show_residence,
-            "show_union": config.show_union,
             "show_portraits": config.show_portraits,
-            "portrait_scale": config.portrait_scale,
             "portrait_source": config.portrait_source,
             "respect_media_crop": config.respect_media_crop,
-            "portrait_shape": config.portrait_shape,
             "portrait_treatment": config.portrait_treatment,
-            "missing_portrait": config.missing_portrait,
             "paper_size": config.paper_size.value,
             "orientation": config.orientation.value,
             "margin_mm": config.margin_mm,
-            "fit_one_page": config.fit_one_page,
             "background_color": config.background_color,
-            "palette": config.palette.value,
-            "outline_width": config.outline_width,
             "privacy_mode": config.privacy_mode.value,
             "incl_private": config.include_private,
             "living_people": config.living_people_mode,
             "years_past_death": config.years_past_death,
-            "title_mode": config.title_mode,
-            "custom_title": config.custom_title,
-            "show_legend": config.show_legend,
             "output_format": config.output_format.value,
-            "open_after_generation": config.open_after_generation,
-            "debug_diagnostics": config.debug_diagnostics,
         }
 
     def apply_selected_preset(self) -> None:
@@ -627,24 +398,11 @@ class TwoWayFanChartOptions(MenuReportOptions):
             menu.get_option_by_name("show_portraits").get_value()
         )
         for name in (
-            "portrait_scale",
             "portrait_source",
             "respect_media_crop",
-            "portrait_shape",
             "portrait_treatment",
-            "missing_portrait",
         ):
             menu.get_option_by_name(name).set_available(portraits_enabled)
-
-        occupation_enabled = bool(
-            menu.get_option_by_name("show_occupation").get_value()
-        )
-        for name in ("occupation_strategy", "occupation_maximum"):
-            menu.get_option_by_name(name).set_available(occupation_enabled)
-
-        menu.get_option_by_name("place_strategy").set_available(
-            bool(menu.get_option_by_name("show_places").get_value())
-        )
 
     def build_chart_config(self) -> ChartConfig:
         """Project the complete Gramps menu into one validated value object."""
@@ -673,52 +431,23 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 preset=PresetName(value("preset")),
                 ancestor_generations=value("ancestor_generations"),
                 descendant_generations=value("descendant_generations"),
-                show_center_as_couple=value("show_center_as_couple"),
-                include_center_children=value("include_center_children"),
                 parent_family_policy=value("parent_family_policy"),
                 descendant_family_policy=value("descendant_family_policy"),
-                show_spouses=value("show_spouses"),
-                child_order=value("child_order"),
-                name_format=value("name_format"),
-                given_name_strategy=value("given_name_strategy"),
-                name_case=value("name_case"),
-                date_format=value("date_format"),
-                show_places=value("show_places"),
-                place_strategy=value("place_strategy"),
-                show_occupation=value("show_occupation"),
-                occupation_strategy=value("occupation_strategy"),
-                occupation_maximum=value("occupation_maximum"),
-                show_sosa=value("show_sosa"),
-                show_daboville=value("show_daboville"),
-                show_residence=value("show_residence"),
-                show_union=value("show_union"),
                 show_portraits=value("show_portraits"),
-                portrait_scale=value("portrait_scale"),
                 portrait_source=value("portrait_source"),
                 respect_media_crop=value("respect_media_crop"),
-                portrait_shape=value("portrait_shape"),
                 portrait_treatment=value("portrait_treatment"),
-                missing_portrait=value("missing_portrait"),
                 paper_size=paper_size,
                 orientation=Orientation(value("orientation")),
                 margin_mm=value("margin_mm"),
                 custom_width_mm=custom_width,
                 custom_height_mm=custom_height,
-                fit_one_page=value("fit_one_page"),
                 background_color=value("background_color"),
-                palette=PaletteName(value("palette")),
-                outline_width=value("outline_width"),
                 privacy_mode=PrivacyMode(value("privacy_mode")),
                 include_private=value("incl_private"),
                 living_people_mode=value("living_people"),
                 years_past_death=value("years_past_death"),
-                title_mode=value("title_mode"),
-                custom_title=value("custom_title"),
-                show_legend=value("show_legend"),
                 output_format=OutputFormat(value("output_format")),
-                open_after_generation=value("open_after_generation"),
-                locale=str(value("trans") or ""),
-                debug_diagnostics=value("debug_diagnostics"),
             )
         except (TypeError, ValueError) as error:
             raise ReportError(

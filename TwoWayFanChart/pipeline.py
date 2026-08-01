@@ -28,7 +28,6 @@ try:
         layout_center,
         layout_descendants,
         layout_titles,
-        layout_legend,
         layout_stats,
     )
     from TwoWayFanChart.model import SceneNode, ScenePage, VisibilityState
@@ -51,7 +50,6 @@ except ModuleNotFoundError:
         layout_center,
         layout_descendants,
         layout_titles,
-        layout_legend,
         layout_stats,
     )
     from model import SceneNode, ScenePage, VisibilityState  # type: ignore[no-redef]
@@ -361,15 +359,11 @@ def _build_scene(
         portrait_lookup=_safe_portrait,
     )
 
-    # --- Titles and legend ---
+    # --- Titles and scene statistics ---
     titles_node = layout_titles(
         canvas,
         ancestor_generations=config.ancestor_generations,
         descendant_generations=config.descendant_generations,
-    )
-    legend_node = layout_legend(
-        canvas,
-        show_legend=config.show_legend,
     )
 
     # --- Stats block ---
@@ -386,8 +380,7 @@ def _build_scene(
         descendant_generations=config.descendant_generations,
     )
 
-    # --- Combine all scene nodes ---
-    # Legend and stats blocks are omitted (not needed for now)
+    # --- Combine the rendered scene nodes ---
     children = (
         list(titles_node.children)
         + list(ancestors_node.children)

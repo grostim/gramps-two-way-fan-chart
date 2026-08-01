@@ -564,8 +564,19 @@ def build_person_view(
     labels = derive_name_labels(
         seed,
         formatter,
-        short_strategy=config.given_name_strategy,
+        short_strategy=getattr(config, "given_name_strategy", "call_then_first"),
     )
+
+    date_format = getattr(config, "date_format", "years")
+    place_strategy = getattr(config, "place_strategy", "locality")
+    show_places = bool(getattr(config, "show_places", False))
+    show_occupation = bool(getattr(config, "show_occupation", False))
+    occupation_strategy = getattr(config, "occupation_strategy", "last_dated")
+    occupation_maximum = getattr(config, "occupation_maximum", 1)
+    show_residence = bool(getattr(config, "show_residence", False))
+    show_union = bool(getattr(config, "show_union", False))
+    show_sosa = bool(getattr(config, "show_sosa", False))
+    show_daboville = bool(getattr(config, "show_daboville", False))
 
     vitals = _EMPTY_VITALS
     birth_place = death_place = ""
@@ -574,38 +585,38 @@ def build_person_view(
     union = None
     number_label = ""
     if seed.visibility is VisibilityState.VISIBLE:
-        vitals = extract_vital_dates(database, person, config.date_format, locale)
-        if config.show_places:
+        vitals = extract_vital_dates(database, person, date_format, locale)
+        if show_places:
             birth_place, death_place = extract_vital_places(
-                database, person, config.place_strategy
+                database, person, place_strategy
             )
-        if config.show_occupation:
+        if show_occupation:
             occupations = select_occupations(
                 database,
                 person,
-                config.occupation_strategy,
-                limit=config.occupation_maximum,
+                occupation_strategy,
+                limit=occupation_maximum,
                 reference_year=union_year,
             )
-        if config.show_residence:
+        if show_residence:
             residence = extract_residence(
                 database,
                 person,
-                config.place_strategy,
-                config.date_format,
+                place_strategy,
+                date_format,
                 locale=locale,
             )
-        if config.show_union and family is not None:
+        if show_union and family is not None:
             union = extract_union(
                 database,
                 family,
-                config.date_format,
-                config.place_strategy,
+                date_format,
+                place_strategy,
                 locale=locale,
             )
-        if config.show_sosa and ancestor_slot is not None:
+        if show_sosa and ancestor_slot is not None:
             number_label = f"Sosa {sosa_number(*ancestor_slot)}"
-        elif config.show_daboville and descendant_path is not None:
+        elif show_daboville and descendant_path is not None:
             number_label = f"d’Aboville {daboville_number(descendant_path)}"
     else:
         family_summary = ""
@@ -624,14 +635,14 @@ def build_person_view(
         number_label=number_label,
         residence=residence,
         union=union,
-        include_places=config.show_places and seed.visibility is VisibilityState.VISIBLE,
+        include_places=show_places and seed.visibility is VisibilityState.VISIBLE,
         include_occupation=(
-            config.show_occupation and seed.visibility is VisibilityState.VISIBLE
+            show_occupation and seed.visibility is VisibilityState.VISIBLE
         ),
         include_residence=(
-            config.show_residence and seed.visibility is VisibilityState.VISIBLE
+            show_residence and seed.visibility is VisibilityState.VISIBLE
         ),
-        include_union=config.show_union and seed.visibility is VisibilityState.VISIBLE,
+        include_union=show_union and seed.visibility is VisibilityState.VISIBLE,
     )
     return PersonView(
         seed=seed,

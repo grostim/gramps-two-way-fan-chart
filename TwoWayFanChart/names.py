@@ -64,8 +64,8 @@ class NameFormatter:
         return cls(
             locale=locale,
             name_formats=name_formats,
-            default_format=config.name_format,
-            name_case=config.name_case,
+            default_format=getattr(config, "name_format", None),
+            name_case=getattr(config, "name_case", "stored"),
         )
 
     @staticmethod

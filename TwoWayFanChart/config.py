@@ -16,7 +16,6 @@ except ImportError:  # Gramps loads add-ons as top-level modules.
 class PresetName(StrEnum):
     PUBLICATION = "publication"
     FAMILY = "family"
-    MONOCHROME = "monochrome"
     COMPACT = "compact"
     CUSTOM = "custom"
 
@@ -54,11 +53,6 @@ class PrivacyMode(StrEnum):
     PUBLICATION_SAFE = "publication_safe"
 
 
-class PaletteName(StrEnum):
-    MOCKUP = "mockup"
-    MONOCHROME = "monochrome"
-
-
 @dataclass(frozen=True, slots=True)
 class ChartConfig:
     """Validated settings consumed by all later report layers."""
@@ -74,45 +68,16 @@ class ChartConfig:
     custom_height_mm: float | None = None
     output_format: OutputFormat = OutputFormat.SVG
     privacy_mode: PrivacyMode = PrivacyMode.INCLUDE_ALL
-    palette: PaletteName = PaletteName.MOCKUP
     background_color: str = "#FAF9F5"
-    show_center_as_couple: bool = True
-    include_center_children: bool = True
     parent_family_policy: str = "primary"
     descendant_family_policy: str = "all"
-    show_spouses: str = "all"
-    child_order: str = "gramps"
-    name_format: int = 0
-    given_name_strategy: str = "call_then_first"
-    name_case: str = "stored"
-    date_format: str = "years"
-    show_places: bool = False
-    place_strategy: str = "locality"
-    show_occupation: bool = False
-    occupation_strategy: str = "last_dated"
-    occupation_maximum: int = 1
-    show_sosa: bool = False
-    show_daboville: bool = False
-    show_residence: bool = False
-    show_union: bool = False
     show_portraits: bool = True
     portrait_source: str = "first_image"
     respect_media_crop: bool = True
-    portrait_shape: str = "circle"
     portrait_treatment: str = "color"
-    missing_portrait: str = "initials"
-    portrait_scale: float = 1.0
-    fit_one_page: bool = True
-    outline_width: float = 1.0
     include_private: bool = True
     living_people_mode: int = 99
     years_past_death: int = 0
-    title_mode: str = "automatic"
-    custom_title: str = ""
-    show_legend: bool = True
-    open_after_generation: bool = True
-    locale: str = ""
-    debug_diagnostics: bool = False
 
     def __post_init__(self) -> None:
         enum_fields = (
@@ -121,7 +86,6 @@ class ChartConfig:
             ("orientation", self.orientation, Orientation),
             ("output format", self.output_format, OutputFormat),
             ("privacy mode", self.privacy_mode, PrivacyMode),
-            ("palette", self.palette, PaletteName),
         )
         for label, value, enum_type in enum_fields:
             if not isinstance(value, enum_type):
@@ -130,43 +94,12 @@ class ChartConfig:
         choices = {
             "parent_family_policy": {"primary", "biological", "first"},
             "descendant_family_policy": {"all", "primary", "first"},
-            "show_spouses": {"none", "first", "all"},
-            "child_order": {"gramps", "birth", "name"},
-            "given_name_strategy": {
-                "complete",
-                "first",
-                "call_then_first",
-                "nickname",
-                "call_and_complete",
-                "nickname_and_call",
-                "gramps",
-            },
-            "name_case": {"stored", "small_caps", "upper"},
-            "date_format": {"years", "short", "full"},
-            "place_strategy": {
-                "gramps",
-                "locality",
-                "locality_region",
-                "locality_country",
-            },
-            "occupation_strategy": {
-                "first_dated",
-                "last_dated",
-                "closest_union",
-                "distinct",
-                "first_nonempty",
-            },
             "portrait_source": {"first_image", "tagged_portrait", "primary"},
-            "portrait_shape": {"circle", "rounded_square"},
             "portrait_treatment": {"color", "grayscale", "sepia"},
-            "missing_portrait": {"initials", "neutral", "gender", "empty"},
-            "title_mode": {"automatic", "custom", "none"},
         }
         for field_name, allowed in choices.items():
             if getattr(self, field_name) not in allowed:
                 raise ValueError(f"invalid {field_name}")
-        if not isinstance(self.name_format, int):
-            raise ValueError("name format must be a Gramps format number")
         if self.living_people_mode not in {0, 1, 2, 3, 99}:
             raise ValueError("invalid living people mode")
 
@@ -179,12 +112,6 @@ class ChartConfig:
             PaperDimensions(self.custom_width_mm, self.custom_height_mm)
         elif self.custom_width_mm is not None or self.custom_height_mm is not None:
             raise ValueError("custom paper dimensions require Custom paper size")
-        if self.portrait_scale <= 0:
-            raise ValueError("portrait scale must be positive")
-        if self.outline_width <= 0:
-            raise ValueError("outline width must be positive")
-        if not 1 <= self.occupation_maximum <= 5:
-            raise ValueError("occupation maximum must be between 1 and 5")
         if self.years_past_death < 0:
             raise ValueError("years past death must not be negative")
 
@@ -206,19 +133,11 @@ def build_preset(preset: PresetName) -> ChartConfig:
             privacy_mode=PrivacyMode.INCLUDE_ALL,
             living_people_mode=99,
         )
-    if preset is PresetName.MONOCHROME:
-        return ChartConfig(
-            preset=preset,
-            palette=PaletteName.MONOCHROME,
-            background_color="#FFFFFF",
-            outline_width=1.5,
-        )
     if preset is PresetName.COMPACT:
         return ChartConfig(
             preset=preset,
             paper_size=PaperSize.A4,
             ancestor_generations=2,
             descendant_generations=1,
-            portrait_scale=0.75,
         )
     raise ValueError(f"Unknown preset: {preset}")

@@ -69,8 +69,9 @@ except ModuleNotFoundError:
 #   gen 3 (great-grandparents): "Surname, F."          max 15 chars (first letter only)
 _ANCESTOR_GEN_LIMITS = {1: 22, 2: 22, 3: 18, 4: 30, 5: 30}
 
-# Descendant label max lengths per generation depth.
-_DESC_GEN_LIMITS = {1: 17, 2: 16}
+# Descendant names are intentionally not character-truncated here. The layout
+# owns physical capacity and can drop dates or medallions before shortening a
+# name; pre-truncation would destroy information needed by those decisions.
 
 
 def _shorten_name(label: str, max_len: int, *, mode: str = "first_word") -> str:
@@ -123,19 +124,9 @@ def _ancestor_short_label(label: str, generation: int) -> str:
 
 
 def _descendant_short_label(label: str, depth: int) -> str:
-    """Shorten a descendant display name according to depth.
-
-    The mockup is much more economical in descendant rings than in ancestor
-    rings. Children can keep a fuller label, but grandchildren should prefer
-    the call name alone to avoid collisions in narrow outer sectors.
-    """
-    max_len = _DESC_GEN_LIMITS.get(depth, 16)
-    if depth >= 2 and label == "Personne privée":
-        return ""
-    ordered = _mockup_name_order(label)
-    if len(ordered) <= max_len:
-        return ordered
-    return ordered[: max_len - 1].rstrip() + "…"
+    """Return the complete privacy-safe descendant name for physical fitting."""
+    del depth  # physical capacity is owned by the layout layer
+    return _mockup_name_order(label)
 
 
 def _label_initials(label: str) -> str:

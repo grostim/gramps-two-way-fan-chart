@@ -19,6 +19,7 @@ from TwoWayFanChart.model import (
     SceneText,
     UnionBranch,
 )
+from TwoWayFanChart.styles import TEXT_DARK, TEXT_GREY
 
 
 def person(handle: str) -> PersonNode:
@@ -142,12 +143,28 @@ class DescendantReadabilityTests(unittest.TestCase):
             name_lookup=labels.__getitem__,
             dates_lookup=lambda _handle: "1900–1980",
         )
-        straight = [node.content for node in scene.children if isinstance(node, SceneText)]
-        curved = [node.content for node in scene.children if isinstance(node, ScenePathText)]
+        straight_nodes = [node for node in scene.children if isinstance(node, SceneText)]
+        curved_nodes = [node for node in scene.children if isinstance(node, ScenePathText)]
+        straight = [node.content for node in straight_nodes]
+        curved = [node.content for node in curved_nodes]
 
         self.assertTrue(any("Middle Spouse" in content for content in straight))
         self.assertFalse(any("Middle Spouse" in content for content in curved))
         self.assertFalse(any("Last Spouse" in content for content in straight + curved))
+        spouse_nodes = [
+            node
+            for node in (*straight_nodes, *curved_nodes)
+            if "Spouse" in node.content
+        ]
+        self.assertTrue(spouse_nodes)
+        self.assertTrue(all(node.fill == TEXT_DARK for node in spouse_nodes))
+        date_nodes = [
+            node
+            for node in (*straight_nodes, *curved_nodes)
+            if "1900–1980" in node.content
+        ]
+        self.assertTrue(date_nodes)
+        self.assertTrue(all(node.fill == TEXT_GREY for node in date_nodes))
 
     def test_descendant_medallions_stop_before_generation_two(self):
         last = branch("last", 3)
@@ -173,6 +190,38 @@ class DescendantReadabilityTests(unittest.TestCase):
             portrait_calls,
             ["root", "root-spouse"],
         )
+
+    def test_narrow_couple_label_keeps_both_names_dark(self):
+        roots = tuple(
+            branch(
+                f"root-{index}",
+                1,
+                children=(
+                    branch(
+                        f"child-{index}",
+                        2,
+                        children=(branch(f"leaf-{index}", 3),),
+                        spouse=f"child-spouse-{index}",
+                    ),
+                ),
+                spouse=f"root-spouse-{index}",
+            )
+            for index in range(64)
+        )
+        scene = layout_descendants(
+            a0_canvas(descendant_generations=4),
+            roots,
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        compact = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText) and " × " in node.content
+        ]
+
+        self.assertTrue(compact)
+        self.assertTrue(all(node.fill == TEXT_DARK for node in compact))
 
     def test_pipeline_preserves_full_descendant_name_for_layout(self):
         source = Path("TwoWayFanChart/pipeline.py").read_text(encoding="utf-8")

@@ -1741,7 +1741,7 @@ def layout_descendants(
                 lines = [
                     (child_label, True, TEXT_DARK),
                     (child_dates, False, TEXT_GREY),
-                    (f"× {spouse_name}" if spouse_name else "", True, TEXT_GREY),
+                    (f"× {spouse_name}" if spouse_name else "", True, TEXT_DARK),
                     (spouse_dates if spouse_name else "", False, TEXT_GREY),
                 ]
                 lines = [line for line in lines if line[0]]
@@ -1811,7 +1811,7 @@ def layout_descendants(
                         lane_offset = max(child_size, spouse_size) * 0.68
                         for content, size, width, offset, color in (
                             (child_fit, child_size, child_width, -lane_offset, TEXT_DARK),
-                            (spouse_fit, spouse_size, spouse_width, lane_offset, TEXT_GREY),
+                            (spouse_fit, spouse_size, spouse_width, lane_offset, TEXT_DARK),
                         ):
                             if not content:
                                 continue
@@ -1934,7 +1934,7 @@ def layout_descendants(
                         ),
                         content=f"× {spouse_name}",
                         font_size=font_size,
-                        fill=TEXT_GREY,
+                        fill=TEXT_DARK,
                     ))
                     spouse_dates = (
                         dates_lookup(spouse_handle)

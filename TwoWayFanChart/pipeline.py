@@ -61,15 +61,9 @@ except ModuleNotFoundError:
 # Label shortening helpers
 # ---------------------------------------------------------------------------
 
-# Per-generation max lengths and truncation modes for ancestor labels.
-#   gen 1 (parents):         "Surname, FirstName"      max 25 chars
-#   gen 2 (grandparents):   "Surname, First"          max 20 chars (first given word)
-#   gen 3 (great-grandparents): "Surname, F."          max 15 chars (first letter only)
-_ANCESTOR_GEN_LIMITS = {1: 22, 2: 22, 3: 18, 4: 30, 5: 30}
-
-# Descendant names are intentionally not character-truncated here. The layout
-# owns physical capacity and can drop dates or medallions before shortening a
-# name; pre-truncation would destroy information needed by those decisions.
+# Ancestor labels are preserved in full until the geometry layer measures them.
+# Character limits caused identity loss (especially for names with nicknames);
+# narrow radial lanes already apply physical fitting without destroying the label.
 
 
 def _shorten_name(label: str, max_len: int, *, mode: str = "first_word") -> str:
@@ -113,12 +107,9 @@ def _shorten_name(label: str, max_len: int, *, mode: str = "first_word") -> str:
 
 
 def _ancestor_short_label(label: str, generation: int) -> str:
-    """Shorten an ancestor display name according to generation depth."""
-    max_len = _ANCESTOR_GEN_LIMITS.get(generation, 10)
-    ordered = _mockup_name_order(label)
-    if len(ordered) <= max_len:
-        return ordered
-    return ordered[: max_len - 1].rstrip() + "…"
+    """Return the complete ancestor label for physical layout fitting."""
+    del generation  # retained for the pipeline's stable call signature
+    return _mockup_name_order(label)
 
 
 def _descendant_short_label(label: str, depth: int) -> str:

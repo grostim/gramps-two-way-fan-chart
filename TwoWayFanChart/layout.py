@@ -841,6 +841,29 @@ def _emit_ancestor_sector(
 
 _LABEL_FILL = TEXT_DARK
 _STATS_FILL = TEXT_GREY
+_CENTER_NAME_MIN_SIZE = 5.5
+
+
+def _center_name_style(content: str, radius: float) -> tuple[float, float]:
+    """Return an adaptive font size and the safe center-label width.
+
+    The label sits below the center medallions. Its available width is the
+    horizontal chord of the inner white circle at that baseline, minus a
+    proportional side margin. Keeping the full label and passing this width
+    to the renderer prevents long couples from being clipped at the circle's
+    edge while avoiding a fixed-size label that only works for short names.
+    """
+    baseline_offset = radius * (48.0 / 190.0)
+    inner_radius = radius * 0.94
+    half_chord = math.sqrt(
+        max(0.0, inner_radius**2 - baseline_offset**2)
+    )
+    max_width = max(1.0, 2.0 * half_chord - radius * 0.12)
+    target_size = radius * (23.0 / 190.0)
+    natural_at_one = estimate_text_width(content, 1.0)
+    if natural_at_one > 0:
+        target_size = min(target_size, max_width / natural_at_one)
+    return max(_CENTER_NAME_MIN_SIZE, target_size), max_width
 
 
 def layout_center(
@@ -928,15 +951,18 @@ def layout_center(
             anchor="middle",
         ))
 
-        # Combined name below the medallions
+        # Combined name below the medallions. Fit against the actual white
+        # circle chord instead of using one fixed size for every couple.
         combined = f"{left_label} & {right_label}"
+        name_size, name_max_width = _center_name_style(combined, r)
         children.append(SceneText(
             x=cx, y=cy + r * (48.0 / 190.0),
             content=combined,
-            font_size=r * (23.0 / 190.0),
+            font_size=name_size,
             fill=_LABEL_FILL,
             anchor="middle",
             font_weight="500",
+            max_width=name_max_width,
         ))
 
         # One life-span line per partner, aligned beneath the shared name line.
@@ -981,13 +1007,15 @@ def layout_center(
                 data_uri=left_portrait,
                 fallback_text=left_fallback,
             ))
+        name_size, name_max_width = _center_name_style(left_label, r)
         children.append(SceneText(
             x=cx, y=cy + r * (48.0 / 190.0),
             content=left_label,
-            font_size=r * (23.0 / 190.0),
+            font_size=name_size,
             fill=_LABEL_FILL,
             anchor="middle",
             font_weight="500",
+            max_width=name_max_width,
         ))
         if left_dates:
             children.append(SceneText(

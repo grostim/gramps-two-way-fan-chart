@@ -1,7 +1,7 @@
 import unittest
 
 from TwoWayFanChart.facts import simple_name
-from TwoWayFanChart.pipeline import _mockup_name_order
+from TwoWayFanChart.pipeline import _ancestor_short_label, _mockup_name_order
 
 
 class FakeName:
@@ -83,7 +83,54 @@ class NicknameFormattingTests(unittest.TestCase):
 
         self.assertEqual(
             simple_name(database, "person-1"),
-            "Roche Durand, Alexandre « Toto »",
+            "Roche Durand, « Toto »",
+        )
+
+    def test_nickname_without_call_name_uses_nickname_only(self):
+        database = FakeDatabase(
+            FakePerson(
+                FakeName(
+                    first_name="Louis André Marie",
+                    nick_name="Germain",
+                    surnames=("Roque",),
+                )
+            )
+        )
+
+        self.assertEqual(
+            _mockup_name_order(simple_name(database, "person-1")),
+            "« Germain » Roque",
+        )
+
+    def test_call_name_without_nickname_is_call_name_plus_surname(self):
+        database = FakeDatabase(
+            FakePerson(
+                FakeName(
+                    first_name="Alexandre Théodore",
+                    call_name="Alexandre",
+                    surnames=("Roche",),
+                )
+            )
+        )
+
+        self.assertEqual(
+            _mockup_name_order(simple_name(database, "person-1")),
+            "Alexandre Roche",
+        )
+
+    def test_without_call_name_or_nickname_uses_last_given_name(self):
+        database = FakeDatabase(
+            FakePerson(
+                FakeName(
+                    first_name="Louis André Marie",
+                    surnames=("Roque",),
+                )
+            )
+        )
+
+        self.assertEqual(
+            _mockup_name_order(simple_name(database, "person-1")),
+            "Marie Roque",
         )
 
     def test_missing_nickname_keeps_existing_label(self):
@@ -94,6 +141,14 @@ class NicknameFormattingTests(unittest.TestCase):
         )
 
         self.assertEqual(simple_name(database, "person-1"), "Roche, Alexandre")
+
+    def test_ancestor_label_keeps_full_nickname_and_surname(self):
+        label = "Roque, Louis « Germain »"
+
+        self.assertEqual(
+            _ancestor_short_label(label, generation=3),
+            "Louis « Germain » Roque",
+        )
 
 
 if __name__ == "__main__":

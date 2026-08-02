@@ -1,7 +1,7 @@
 import unittest
 
 from TwoWayFanChart.facts import simple_name
-from TwoWayFanChart.pipeline import _mockup_name_order
+from TwoWayFanChart.pipeline import _ancestor_short_label, _mockup_name_order
 
 
 class FakeName:
@@ -94,6 +94,14 @@ class NicknameFormattingTests(unittest.TestCase):
         )
 
         self.assertEqual(simple_name(database, "person-1"), "Roche, Alexandre")
+
+    def test_ancestor_label_keeps_full_nickname_and_surname(self):
+        label = "Roque, Louis « Germain »"
+
+        self.assertEqual(
+            _ancestor_short_label(label, generation=3),
+            "Louis « Germain » Roque",
+        )
 
 
 if __name__ == "__main__":

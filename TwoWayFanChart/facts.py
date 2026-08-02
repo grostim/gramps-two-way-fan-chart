@@ -443,7 +443,8 @@ def simple_name(database, handle: str | None) -> str:
     """Return a short display name for a person handle, or empty string.
 
     Uses the call name (prénom d'usage) when available, falling back to
-    the first given name. This keeps labels short and publication-friendly.
+    the first given name. When a Gramps nickname exists, it is inserted
+    between the given name and surname using French guillemets.
     """
     if not handle:
         return ""
@@ -464,6 +465,14 @@ def simple_name(database, handle: str | None) -> str:
     # otherwise take only the first word of given to keep it short
     if not call and " " in given:
         given = given.split()[0]
+
+    nickname = ""
+    try:
+        nickname = name.get_nick_name().strip()
+    except Exception:
+        pass
+    if nickname:
+        given = f"{given} « {nickname} »".strip()
 
     surname = ""
     try:

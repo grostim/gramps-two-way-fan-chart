@@ -54,7 +54,7 @@ gramps -O "MyTree" -a report -p \
 
 - bidirectional ancestor/descendant fan layout;
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
-- call-name-first publication labels;
+- call-name-first publication labels, with a Gramps nickname rendered between the given name and surname in French guillemets;
 - privacy filtering before formatting and media loading;
 - circular portrait crops with neutral, gendered, or initials fallbacks;
 - weighted descendant sectors and narrow-sector radial labels;
@@ -71,7 +71,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.2**
+- Add-on version: **1.2.3**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

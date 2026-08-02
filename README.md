@@ -54,7 +54,7 @@ gramps -O "MyTree" -a report -p \
 
 - bidirectional ancestor/descendant fan layout;
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
-- call-name-first publication labels, with a Gramps nickname rendered between the given name and surname in French guillemets;
+- preferred-name labels: call name + nickname + surname when available; otherwise nickname + surname, or the call name / last given name + surname as fallback;
 - privacy filtering before formatting and media loading;
 - circular portrait crops with neutral, gendered, or initials fallbacks;
 - weighted descendant sectors and narrow-sector radial labels;

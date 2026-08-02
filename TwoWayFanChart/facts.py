@@ -440,11 +440,11 @@ _EMPTY_VITALS = VitalDates(
 
 
 def simple_name(database, handle: str | None) -> str:
-    """Return a short display name for a person handle, or empty string.
+    """Return the preferred short display name for a person handle.
 
-    Uses the call name (prénom d'usage) when available, falling back to
-    the first given name. When a Gramps nickname exists, it is inserted
-    between the given name and surname using French guillemets.
+    Priority is: call name + nickname, nickname alone, then call name or
+    the last given name. The surname is returned in Gramps' ``Surname, Given``
+    order and is reordered by the layout layer when needed.
     """
     if not handle:
         return ""
@@ -453,26 +453,25 @@ def simple_name(database, handle: str | None) -> str:
         return ""
     name = person.get_primary_name()
 
-    # Try to get the call name (prénom d'usage) from the Gramps name object
-    call = ""
     try:
         call = name.get_call_name().strip()
     except Exception:
-        pass
+        call = ""
 
-    given = call or name.get_first_name().strip()
-    # If first_name is still multiple words and we have a call name, use call;
-    # otherwise take only the first word of given to keep it short
-    if not call and " " in given:
-        given = given.split()[0]
-
-    nickname = ""
     try:
         nickname = name.get_nick_name().strip()
     except Exception:
-        pass
-    if nickname:
-        given = f"{given} « {nickname} »".strip()
+        nickname = ""
+
+    if call:
+        given = call
+        if nickname:
+            given = f"{call} « {nickname} »"
+    elif nickname:
+        given = f"« {nickname} »"
+    else:
+        first_name = name.get_first_name().strip()
+        given = first_name.split()[-1] if first_name else ""
 
     surname = ""
     try:

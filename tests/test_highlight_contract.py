@@ -12,6 +12,7 @@ from TwoWayFanChart.model import (
     SceneMarker,
     SceneNode,
     ScenePage,
+    ScenePathText,
     UnionBranch,
 )
 from TwoWayFanChart.highlight import resolve_highlight_tag_handle
@@ -125,6 +126,35 @@ class HighlightContractTests(unittest.TestCase):
         self.assertIn("7C2F3A", svg)
         self.assertIn("stroke-linejoin", svg)
         self.assertIn("<path", svg)
+
+    def test_svg_serializes_arc_labels_as_visible_vector_text(self):
+        svg = render_svg(
+            ScenePage(100, 100),
+            SceneNode((
+                ScenePathText(
+                    path="M 10 80 A 30 30 0 0 1 70 80",
+                    content="Full Name 1781–1846",
+                    font_size=6,
+                ),
+            )),
+        )
+        self.assertNotIn("<textPath", svg)
+        self.assertRegex(svg, r'<text x="[^"]+" y="[^"]+"')
+        self.assertIn('transform="rotate(', svg)
+        self.assertIn("Full Name 1781–1846", svg)
+
+    def test_svg_rejects_non_circular_arc_paths_instead_of_hiding_labels(self):
+        with self.assertRaises(ValueError):
+            render_svg(
+                ScenePage(100, 100),
+                SceneNode((
+                    ScenePathText(
+                        path="M 10 80 L 70 80",
+                        content="Unsupported path",
+                        font_size=6,
+                    ),
+                )),
+            )
 
     def test_cairo_serializes_highlight_marker_when_available(self):
         try:

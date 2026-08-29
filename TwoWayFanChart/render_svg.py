@@ -10,6 +10,7 @@ try:
     from TwoWayFanChart.model import (
         SceneCircle,
         SceneImage,
+        SceneMarker,
         SceneLegend,
         SceneNode,
         ScenePage,
@@ -24,6 +25,7 @@ except ModuleNotFoundError:
     from model import (
         SceneCircle,
         SceneImage,
+        SceneMarker,
         SceneLegend,
         SceneNode,
         ScenePage,
@@ -138,6 +140,25 @@ def _render_image(image: SceneImage) -> str:
     return ""
 
 
+
+def _render_marker(marker: SceneMarker) -> str:
+    """Render a diamond marker that remains distinct in grayscale."""
+    r = marker.radius
+    points = (
+        (marker.cx, marker.cy - r),
+        (marker.cx + r, marker.cy),
+        (marker.cx, marker.cy + r),
+        (marker.cx - r, marker.cy),
+    )
+    path = "M " + " L ".join(f"{_fmt(x)} {_fmt(y)}" for x, y in points) + " Z"
+    fill = marker.fill if marker.fill else "none"
+    return (
+        f'<path d="{path}" fill="{fill}" stroke="{marker.stroke}" '
+        f'stroke-width="{_fmt(marker.stroke_width)}" '
+        'stroke-linejoin="round" />'
+    )
+
+
 _path_text_counter = 0
 
 
@@ -217,6 +238,8 @@ def _render_child(child) -> str:
         return _render_text(child)
     if isinstance(child, SceneImage):
         return _render_image(child)
+    if isinstance(child, SceneMarker):
+        return _render_marker(child)
     if isinstance(child, ScenePathText):
         global _path_text_counter
         _path_text_counter += 1

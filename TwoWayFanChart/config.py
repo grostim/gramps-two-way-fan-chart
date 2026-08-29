@@ -59,8 +59,8 @@ class ChartConfig:
 
     center_family: str = ""
     preset: PresetName = PresetName.PUBLICATION
-    ancestor_generations: int = 5
-    descendant_generations: int = 3
+    ancestor_generations: int = 3
+    descendant_generations: int = 2
     paper_size: PaperSize = PaperSize.A0
     orientation: Orientation = Orientation.LANDSCAPE
     margin_mm: float = 12.0
@@ -78,6 +78,7 @@ class ChartConfig:
     include_private: bool = True
     living_people_mode: int = 99
     years_past_death: int = 0
+    highlight_tag: str = ""
 
     def __post_init__(self) -> None:
         enum_fields = (
@@ -100,6 +101,8 @@ class ChartConfig:
         for field_name, allowed in choices.items():
             if getattr(self, field_name) not in allowed:
                 raise ValueError(f"invalid {field_name}")
+        if not isinstance(self.highlight_tag, str):
+            raise ValueError("highlight_tag must be a string")
         if self.living_people_mode not in {0, 1, 2, 3, 99}:
             raise ValueError("invalid living people mode")
 

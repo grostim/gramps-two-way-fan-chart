@@ -20,8 +20,8 @@ class DefaultConfigurationTests(unittest.TestCase):
 
         self.assertEqual(config.output_format, OutputFormat.SVG)
         self.assertEqual(config.paper_size, PaperSize.A0)
-        self.assertEqual(config.ancestor_generations, 5)
-        self.assertEqual(config.descendant_generations, 3)
+        self.assertEqual(config.ancestor_generations, 3)
+        self.assertEqual(config.descendant_generations, 2)
         self.assertEqual(config.privacy_mode, PrivacyMode.INCLUDE_ALL)
         self.assertTrue(config.include_private)
         self.assertEqual(config.living_people_mode, 99)
@@ -48,8 +48,8 @@ class DefaultConfigurationTests(unittest.TestCase):
         ast.parse(source)
 
         for expected in (
-            'NumberOption(_("Ancestor generations"), 5, 0, 8)',
-            'NumberOption(_("Descendant generations"), 3, 0, 5)',
+            'NumberOption(_("Ancestor generations"), 3, 0, 8)',
+            'NumberOption(_("Descendant generations"), 2, 0, 5)',
             '_enum("Output format", "svg"',
             '"Paper size",\n                "A0"',
             '"Privacy mode",\n                "include_all"',

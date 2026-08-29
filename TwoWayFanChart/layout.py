@@ -12,6 +12,7 @@ try:
         DescendantBranch,
         SceneCircle,
         SceneImage,
+        SceneMarker,
         SceneLegend,
         SceneNode,
         SceneRect,
@@ -37,6 +38,7 @@ except ModuleNotFoundError:
         DescendantBranch,
         SceneCircle,
         SceneImage,
+        SceneMarker,
         SceneLegend,
         SceneNode,
         SceneRect,
@@ -479,20 +481,23 @@ def layout_ancestors(
 
     # Parse all slots to get
     # (pid, lineage, generation, label, dates_label, portrait_data_uri).
-    parsed: list[tuple[str, str, int, str, str, str | None]] = []
+    parsed: list[tuple[str, str, int, str, str, str | None, bool]] = []
     for entry in ancestor_slots:
         if len(entry) >= 4:
             pid, label, dates_label, portrait = (
                 entry[0], entry[1], entry[2], entry[3]
             )
+            highlighted = bool(entry[4]) if len(entry) >= 5 else False
         elif len(entry) == 3:
             pid, label, dates_label = entry[0], entry[1], entry[2]
             portrait = None
+            highlighted = False
         elif len(entry) >= 2:
             # Backward-compatible 2-tuple (position_id, label)
             pid, label = entry[0], entry[1]
             dates_label = ""
             portrait = None
+            highlighted = False
         else:
             continue
         info = _parse_position_id(pid)
@@ -502,10 +507,10 @@ def layout_ancestors(
             # Fallback: determine from position in list
             lineage = "a"
             gen = 1
-        parsed.append((pid, lineage, gen, label, dates_label, portrait))
+        parsed.append((pid, lineage, gen, label, dates_label, portrait, highlighted))
 
     # Determine actual generations present
-    max_gen = max(g for _, _, g, _, _, _ in parsed) if parsed else 1
+    max_gen = max(g for _, _, g, _, _, _, _ in parsed) if parsed else 1
     num_gens = max_gen
 
     total_depth = outer_r - inner_r
@@ -523,7 +528,7 @@ def layout_ancestors(
 
     # Collect the gen-1 surname per lineage for the LIGNÉE labels.
     lineage_surnames: dict[str, str] = {}
-    for pid, lineage, gen, label, _dates, _portrait in parsed:
+    for pid, lineage, gen, label, _dates, _portrait, _highlighted in parsed:
         if gen == 1 and label:
             # Label is "Surname, Given…" — take the part before the comma.
             if ", " in label:
@@ -544,8 +549,8 @@ def layout_ancestors(
         gen_outer = gen_inner + ring_width - _RING_GAP_MM
 
         gen_slots = [
-            (pid, lin, lbl, dt, portrait)
-            for pid, lin, g, lbl, dt, portrait in parsed
+            (pid, lin, lbl, dt, portrait, highlighted)
+            for pid, lin, g, lbl, dt, portrait, highlighted in parsed
             if g == gen
         ]
         if not gen_slots:
@@ -565,21 +570,21 @@ def layout_ancestors(
         sweep_b = _ANCESTOR_HALF_SPAN_DEG / max(len(slots_b), 1) if slots_b else 0
 
         # Place lineage a (paternal, left side: -90° to 0°)
-        for i, (pid, _, label, dates_label, portrait) in enumerate(slots_a):
+        for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_a):
             start_angle = -_ANCESTOR_HALF_SPAN_DEG + i * sweep_a
             _emit_ancestor_sector(
                 children, cx, cy, gen_inner, gen_outer,
                 start_angle, sweep_a, outer_r,
-                gen, "a", label, dates_label, portrait,
+                gen, "a", label, dates_label, portrait, highlighted,
             )
 
         # Place lineage b (maternal, right side: 0° to 90°)
-        for i, (pid, _, label, dates_label, portrait) in enumerate(slots_b):
+        for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_b):
             start_angle = 0.0 + i * sweep_b
             _emit_ancestor_sector(
                 children, cx, cy, gen_inner, gen_outer,
                 start_angle, sweep_b, outer_r,
-                gen, "b", label, dates_label, portrait,
+                gen, "b", label, dates_label, portrait, highlighted,
             )
 
     return SceneNode(children=tuple(children))
@@ -595,6 +600,7 @@ def _emit_ancestor_sector(
     label: str,
     dates_label: str = "",
     portrait: str | None = None,
+    highlighted: bool = False,
 ) -> None:
     """Emit one ancestor sector with fill, curved label, dates, and medallion."""
     end_angle = start_angle + sweep
@@ -807,8 +813,10 @@ def _emit_ancestor_sector(
             ))
 
     # Portrait/fallback medallion sized for this ring and angular lane.
+    marker_position: tuple[float, float, float] | None = None
     if show_medallion and med_r > 0.5:
         mx, my = _polar(cx, cy, med_r_pos, mid_angle)
+        marker_position = (mx, my, med_r + 1.25)
         children.append(SceneCircle(
             cx=mx, cy=my, r=med_r,
             fill=MEDALLION_FILL,
@@ -833,6 +841,20 @@ def _emit_ancestor_sector(
                     fill=TEXT_DARK,
                     anchor="middle",
                 ))
+
+    if highlighted:
+        if marker_position is None:
+            marker_x, marker_y = _polar(
+                cx, cy, max(inner_r, outer_r - 1.5), mid_angle
+            )
+            marker_radius = min(2.0, max(0.9, sweep * 0.04))
+        else:
+            marker_x, marker_y, marker_radius = marker_position
+        children.append(SceneMarker(
+            cx=marker_x,
+            cy=marker_y,
+            radius=marker_radius,
+        ))
 
 
 # ---------------------------------------------------------------------------
@@ -877,6 +899,8 @@ def layout_center(
     right_portrait: str | None = None,
     left_fallback: str = "",
     right_fallback: str = "",
+    left_highlighted: bool = False,
+    right_highlighted: bool = False,
     statistics: str | None = None,
 ) -> SceneNode:
     """Place the center family medallion with labels, portraits and stats.
@@ -942,6 +966,11 @@ def layout_center(
                 fallback_text=right_fallback,
             ))
 
+        if left_highlighted:
+            children.append(SceneMarker(cx=left_cx, cy=med_cy, radius=med_r + 1.25))
+        if right_highlighted:
+            children.append(SceneMarker(cx=right_cx, cy=med_cy, radius=med_r + 1.25))
+
         # "&" symbol between the two medallions (mockup uses clay color)
         children.append(SceneText(
             x=cx, y=med_cy + med_r * 0.20,
@@ -1006,6 +1035,12 @@ def layout_center(
                 r=med_r * 0.92,
                 data_uri=left_portrait,
                 fallback_text=left_fallback,
+            ))
+        if left_highlighted:
+            children.append(SceneMarker(
+                cx=cx,
+                cy=cy - r * (28.0 / 190.0),
+                radius=med_r + 1.25,
             ))
         name_size, name_max_width = _center_name_style(left_label, r)
         children.append(SceneText(
@@ -1276,6 +1311,8 @@ def layout_descendant_node(
     spouse_portrait: str | None = None,
     child_fallback: str = "",
     spouse_fallback: str = "",
+    child_highlighted: bool = False,
+    spouse_highlighted: bool = False,
     cx: float | None = None,
     cy: float | None = None,
     r: float | None = None,
@@ -1315,6 +1352,8 @@ def layout_descendant_node(
             data_uri=child_portrait,
             fallback_text=child_fallback,
         ))
+    if child_highlighted:
+        children.append(SceneMarker(cx=child_cx, cy=_cy, radius=_r + 1.25))
     children.append(SceneText(
         x=child_cx, y=_cy + _r + 2,
         content=child_label,
@@ -1341,6 +1380,8 @@ def layout_descendant_node(
                 data_uri=sp_data,
                 fallback_text=sp_fb,
             ))
+        if spouse_highlighted and i == 0:
+            children.append(SceneMarker(cx=sp_cx, cy=_cy, radius=_r + 1.25))
         children.append(SceneText(
             x=sp_cx, y=_cy + _r + 2,
             content=sp_label,
@@ -1491,6 +1532,7 @@ def layout_descendants(
     dates_lookup=None,
     shortener=None,
     portrait_lookup=None,
+    highlight_lookup=None,
 ) -> SceneNode:
     """Place all descendant medallions in the lower half-circle.
 
@@ -1549,6 +1591,14 @@ def layout_descendants(
         except Exception:
             return None
 
+    def _highlight(handle: str | None) -> bool:
+        if highlight_lookup is None or not handle:
+            return False
+        try:
+            return bool(highlight_lookup(handle))
+        except Exception:
+            return False
+
     def _target_medallion_radius(depth: int, ring_depth: float) -> float:
         """Return a readable target; individual narrow sectors may omit it."""
         ideal = {1: 8.2, 2: 5.4, 3: 4.0, 4: 3.4, 5: 3.2}.get(depth, 3.2)
@@ -1569,6 +1619,7 @@ def layout_descendants(
         radius: float,
         label: str,
         portrait: str | None,
+        highlighted: bool = False,
     ) -> None:
         all_children.append(SceneCircle(
             cx=x,
@@ -1578,6 +1629,12 @@ def layout_descendants(
             stroke=MEDALLION_BORDER,
             stroke_width=0.3,
         ))
+        if highlighted:
+            all_children.append(SceneMarker(
+                cx=x,
+                cy=y,
+                radius=radius + 1.25,
+            ))
         if portrait:
             all_children.append(SceneImage(
                 cx=x,
@@ -1730,6 +1787,7 @@ def layout_descendants(
                     child_radius,
                     child_label or raw_label,
                     child_portrait_data,
+                    _highlight(branch.person.handle),
                 )
                 _emit_medallion(
                     mx + tangent_x * pair_offset,
@@ -1737,6 +1795,7 @@ def layout_descendants(
                     spouse_radius,
                     spouse_medallion_label,
                     spouse_portrait_data,
+                    _highlight(spouse_handle),
                 )
             else:
                 child_radius = (
@@ -1750,7 +1809,31 @@ def layout_descendants(
                     child_radius,
                     child_label or raw_label,
                     child_portrait_data,
+                    _highlight(branch.person.handle),
                 )
+        else:
+            # Later-generation people are text-only by design. Keep their
+            # citation signal visible with a small diamond in the same sector
+            # instead of silently dropping it with the medallion.
+            marker_radius = min(2.0, max(1.1, ring_width * 0.08))
+            marker_distance = max(
+                gen_inner + marker_radius + 1.0,
+                gen_outer - marker_radius - 1.0,
+            )
+            highlighted_handles = []
+            if _highlight(branch.person.handle if branch.person else None):
+                highlighted_handles.append(mid_angle)
+            if _highlight(spouse_handle):
+                highlighted_handles.append(mid_angle + min(2.0, alloc_sweep * 0.12))
+            for marker_angle in highlighted_handles:
+                marker_x, marker_y = _polar(
+                    cx, cy, marker_distance, marker_angle
+                )
+                all_children.append(SceneMarker(
+                    cx=marker_x,
+                    cy=marker_y,
+                    radius=marker_radius,
+                ))
 
         # Labels use ring-local capacity in dense reports. The standard two-ring
         # publication geometry remains byte-for-byte compatible below.

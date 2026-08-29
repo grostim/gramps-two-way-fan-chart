@@ -29,6 +29,7 @@ ACTIVE_CONFIG_FIELDS = {
     "include_private",
     "living_people_mode",
     "years_past_death",
+    "highlight_tag",
 }
 
 ACTIVE_MENU_KEYS = {
@@ -50,6 +51,7 @@ ACTIVE_MENU_KEYS = {
     "background_color",
     "privacy_mode",
     "output_format",
+    "highlight_tag",
 }
 
 

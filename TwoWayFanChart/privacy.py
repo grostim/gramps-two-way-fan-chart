@@ -135,6 +135,16 @@ def decision_for_state(state: VisibilityState) -> VisibilityDecision:
     return _DECISIONS[state]
 
 
+def highlighted_for_state(tagged: bool, state: VisibilityState) -> bool:
+    """Keep a cited-person marker only for states that expose identity."""
+    if not isinstance(state, VisibilityState):
+        raise ValueError("visibility state must be a VisibilityState")
+    return bool(tagged) and state in {
+        VisibilityState.VISIBLE,
+        VisibilityState.NAME_ONLY,
+    }
+
+
 def visibility_for_policy(
     mode: PrivacyMode, *, protected: bool
 ) -> VisibilityState:
@@ -219,6 +229,7 @@ def project_person_seed(
     *,
     living_people_mode: int,
     surname_only: bool = False,
+    highlighted: bool = False,
 ) -> PersonViewSeed | None:
     """Consume sensitive values and return only data authorized for rendering."""
     if not position_id:
@@ -243,6 +254,7 @@ def project_person_seed(
             details=(),
             media_reference=None,
             masked_label="Personne privée",
+            is_highlighted=False,
         )
     if state is VisibilityState.NAME_ONLY:
         given_name = "" if surname_only else source.given_name
@@ -259,6 +271,7 @@ def project_person_seed(
             suffix="" if surname_only else source.suffix,
             family_nick_name="" if surname_only else source.family_nick_name,
             surname_parts=source.surname_parts,
+            is_highlighted=highlighted_for_state(highlighted, state),
         )
     return PersonViewSeed(
         position_id=position_id,
@@ -273,6 +286,7 @@ def project_person_seed(
         suffix=source.suffix,
         family_nick_name=source.family_nick_name,
         surname_parts=source.surname_parts,
+        is_highlighted=highlighted_for_state(highlighted, state),
     )
 
 
@@ -284,6 +298,7 @@ def sanitize_person_for_rendering(
     privacy_mode: PrivacyMode,
     include_private: bool,
     living_people_mode: int,
+    highlighted: bool = False,
 ) -> PersonViewSeed | None:
     """Authoritative boundary: classify first, then emit one sanitized seed."""
     state = classify_visibility(
@@ -304,4 +319,5 @@ def sanitize_person_for_rendering(
         state,
         living_people_mode=living_people_mode,
         surname_only=private_surname_only or living_surname_only,
+        highlighted=highlighted,
     )

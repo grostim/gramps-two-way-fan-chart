@@ -10,15 +10,21 @@ specialized modules built in gates G2 through G8.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 try:
     from TwoWayFanChart.config import ChartConfig, OutputFormat
     from TwoWayFanChart.extract import extract_chart_graph
     from TwoWayFanChart.facts import simple_name, simple_name_full, simple_dates
+    from TwoWayFanChart.highlight import (
+        resolve_highlight_tag_handle,
+        tagged_person_is_highlighted,
+    )
     from TwoWayFanChart.media import prepare_portrait_data_uri, select_portrait
     from TwoWayFanChart.privacy import (
         classify_visibility,
         decision_for_state,
+        highlighted_for_state,
         privacy_facts_from_gramps,
     )
     from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
@@ -37,10 +43,15 @@ except ModuleNotFoundError:
     from config import ChartConfig, OutputFormat  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
     from facts import simple_name, simple_name_full, simple_dates  # type: ignore[no-redef]
+    from highlight import (  # type: ignore[no-redef]
+        resolve_highlight_tag_handle,
+        tagged_person_is_highlighted,
+    )
     from media import prepare_portrait_data_uri, select_portrait  # type: ignore[no-redef]
     from privacy import (  # type: ignore[no-redef]
         classify_visibility,
         decision_for_state,
+        highlighted_for_state,
         privacy_facts_from_gramps,
     )
     from geometry import Orientation, PaperRegion, PaperSize  # type: ignore[no-redef]
@@ -220,10 +231,16 @@ def _build_scene(
     # Resolve every person's visibility before formatting names, dates or
     # opening media. Results are cached because the same handle can occur in
     # several positions through unions or pedigree collapse.
-    visibility_cache: dict[str, tuple[object | None, VisibilityState]] = {}
+    visibility_cache: dict[str, tuple[Any | None, VisibilityState]] = {}
     portrait_cache: dict[str, str | None] = {}
 
-    def _person_visibility(handle: str | None):
+    def _resolve_highlight_tag_handle() -> str | None:
+        """Resolve the configured tag by its name without retaining its label."""
+        return resolve_highlight_tag_handle(db, config.highlight_tag)
+
+    highlight_tag_handle = _resolve_highlight_tag_handle()
+
+    def _person_visibility(handle: str | None) -> tuple[Any | None, VisibilityState]:
         if not handle:
             return None, VisibilityState.EXCLUDED
         if handle in visibility_cache:
@@ -282,6 +299,22 @@ def _build_scene(
         _person, state = _person_visibility(handle)
         return "•" if state is VisibilityState.MASKED else _label_initials(label)
 
+    def _safe_highlight(handle: str | None) -> bool:
+        """Project tag membership only after the privacy decision."""
+        if not handle or not highlight_tag_handle:
+            return False
+        person, state = _person_visibility(handle)
+        if not highlighted_for_state(True, state) or person is None:
+            return False
+        try:
+            return tagged_person_is_highlighted(
+                person,
+                highlight_tag_handle,
+                identity_exposed=highlighted_for_state(True, state),
+            )
+        except Exception:
+            return False
+
     # --- Center couple labels ---
     center_left_handle = (
         graph.center_people[0].handle if graph.center_people[0] else None
@@ -313,12 +346,14 @@ def _build_scene(
         right_portrait=right_portrait,
         left_fallback=_safe_fallback(center_left_handle, left_label),
         right_fallback=_safe_fallback(center_right_handle, right_label or ""),
+        left_highlighted=_safe_highlight(center_left_handle),
+        right_highlighted=_safe_highlight(center_right_handle),
         statistics=statistics,
     )
 
     # --- Ancestor fan with real person names ---
     # Each slot carries its privacy-safe label, dates and optional portrait.
-    ancestor_slots: list[tuple[str, str, str, str | None]] = []
+    ancestor_slots: list[tuple[str, str, str, str | None, bool]] = []
     for slot in graph.ancestor_slots:
         if slot.person is not None:
             full_label = _safe_name(slot.person.handle)
@@ -329,7 +364,15 @@ def _build_scene(
             label = ""
             dates_label = ""
             portrait = None
-        ancestor_slots.append((slot.position_id, label, dates_label, portrait))
+        ancestor_slots.append(
+            (
+                slot.position_id,
+                label,
+                dates_label,
+                portrait,
+                _safe_highlight(slot.person.handle) if slot.person else False,
+            )
+        )
     ancestors_node = layout_ancestors(
         canvas, ancestor_slots=tuple(ancestor_slots)
     )
@@ -348,6 +391,7 @@ def _build_scene(
         dates_lookup=_dates_lookup,
         shortener=_descendant_short_label,
         portrait_lookup=_safe_portrait,
+        highlight_lookup=_safe_highlight,
     )
 
     # --- Titles and scene statistics ---

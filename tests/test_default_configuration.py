@@ -15,6 +15,15 @@ from TwoWayFanChart.privacy import PersonPrivacyFacts, classify_visibility
 
 
 class DefaultConfigurationTests(unittest.TestCase):
+    def test_registration_and_builder_versions_are_aligned(self):
+        registration = Path("TwoWayFanChart/TwoWayFanChart.gpr.py").read_text(
+            encoding="utf-8"
+        )
+        builder = Path("build_addon.py").read_text(encoding="utf-8")
+
+        self.assertIn('version="1.2.6"', registration)
+        self.assertIn('VERSION = "1.2.6"', builder)
+
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
 

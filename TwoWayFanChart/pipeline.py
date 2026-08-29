@@ -15,7 +15,7 @@ from typing import Any
 try:
     from TwoWayFanChart.config import ChartConfig, OutputFormat
     from TwoWayFanChart.extract import extract_chart_graph
-    from TwoWayFanChart.facts import simple_name, simple_name_full, simple_dates
+    from TwoWayFanChart.facts import simple_name_full, simple_dates
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -42,7 +42,7 @@ try:
 except ModuleNotFoundError:
     from config import ChartConfig, OutputFormat  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
-    from facts import simple_name, simple_name_full, simple_dates  # type: ignore[no-redef]
+    from facts import simple_name_full, simple_dates  # type: ignore[no-redef]
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -156,6 +156,21 @@ def _mockup_name_order(label: str) -> str:
 def _center_name_order(label: str) -> str:
     """Keep the public helper name used by center-layout tests."""
     return _mockup_name_order(label)
+
+
+UNKNOWN_DATES_LABEL = "dates inconnues"
+
+
+def _public_name(database, handle: str | None) -> str:
+    """Return the complete given-name/surname label used in public output."""
+    return simple_name_full(database, handle)
+
+
+def _public_dates(database, handle: str | None) -> str:
+    """Return life years, explicitly marking a record with no known dates."""
+    if not handle:
+        return ""
+    return simple_dates(database, handle) or UNKNOWN_DATES_LABEL
 
 
 def _center_portrait_data_uri(config: ChartConfig, db, handle: str | None) -> str | None:
@@ -274,13 +289,13 @@ def _build_scene(
             return "Personne privée"
         if state is VisibilityState.EXCLUDED:
             return ""
-        return simple_name(db, handle)
+        return _public_name(db, handle)
 
     def _safe_dates(handle: str | None) -> str:
         _person, state = _person_visibility(handle)
         if not decision_for_state(state).expose_details:
             return ""
-        return simple_dates(db, handle)
+        return _public_dates(db, handle)
 
     def _safe_portrait(handle: str | None) -> str | None:
         if not handle or not config.show_portraits:

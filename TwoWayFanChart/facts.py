@@ -488,7 +488,7 @@ def simple_name(database, handle: str | None) -> str:
 
 
 def simple_name_full(database, handle: str | None) -> str:
-    """Return a full display name (all given names) for the center couple."""
+    """Return a full display name (all given names) for a person."""
     if not handle:
         return ""
     person = database.get_person_from_handle(handle)

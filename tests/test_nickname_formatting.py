@@ -1,7 +1,12 @@
 import unittest
 
 from TwoWayFanChart.facts import simple_name
-from TwoWayFanChart.pipeline import _ancestor_short_label, _mockup_name_order
+from TwoWayFanChart.pipeline import (
+    _ancestor_short_label,
+    _mockup_name_order,
+    _public_dates,
+    _public_name,
+)
 
 
 class FakeName:
@@ -49,6 +54,29 @@ class FakeDatabase:
 
 
 class NicknameFormattingTests(unittest.TestCase):
+    def test_public_report_name_keeps_all_given_names_and_surname(self):
+        database = FakeDatabase(
+            FakePerson(
+                FakeName(
+                    first_name="Alexandre Théodore",
+                    call_name="Alexandre",
+                    surnames=("Roche",),
+                )
+            )
+        )
+
+        self.assertEqual(
+            _public_name(database, "person-1"),
+            "Alexandre Théodore Roche",
+        )
+
+    def test_public_report_marks_missing_dates_without_inventing_them(self):
+        database = FakeDatabase(
+            FakePerson(FakeName(first_name="Alexandre", surnames=("Roche",)))
+        )
+
+        self.assertEqual(_public_dates(database, "person-1"), "dates inconnues")
+
     def test_nickname_is_inserted_between_call_name_and_surname(self):
         database = FakeDatabase(
             FakePerson(

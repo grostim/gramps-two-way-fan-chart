@@ -88,7 +88,7 @@ class HighlightContractTests(unittest.TestCase):
         self.assertFalse(highlighted_for_state(True, VisibilityState.EXCLUDED))
         self.assertFalse(highlighted_for_state(False, VisibilityState.VISIBLE))
 
-    def test_ancestor_marker_is_emitted_from_the_sanitized_flag(self):
+    def test_ancestor_marker_is_opt_in_for_the_fan_view(self):
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
             ancestor_generations=1,
@@ -99,10 +99,18 @@ class HighlightContractTests(unittest.TestCase):
             (("ancestor-a-1-0", "Coste, Benoît", "1781–1846", None, True),),
         )
         markers = [node for node in scene.children if isinstance(node, SceneMarker)]
+        self.assertEqual(markers, [])
+
+        scene = layout_ancestors(
+            canvas,
+            (("ancestor-a-1-0", "Coste, Benoît", "1781–1846", None, True),),
+            show_highlight_markers=True,
+        )
+        markers = [node for node in scene.children if isinstance(node, SceneMarker)]
         self.assertEqual(len(markers), 1)
         self.assertGreater(markers[0].radius, 0)
 
-    def test_descendant_child_and_spouse_markers_are_emitted(self):
+    def test_descendant_markers_are_opt_in_for_the_fan_view(self):
         root = branch("root", 1, spouse="root-spouse", children=(branch("child", 2),))
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
@@ -114,6 +122,16 @@ class HighlightContractTests(unittest.TestCase):
             (root,),
             name_lookup=lambda handle: handle.replace("-", " "),
             highlight_lookup=lambda handle: handle in {"root", "root-spouse", "child"},
+        )
+        markers = [node for node in scene.children if isinstance(node, SceneMarker)]
+        self.assertEqual(markers, [])
+
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: handle.replace("-", " "),
+            highlight_lookup=lambda handle: handle in {"root", "root-spouse", "child"},
+            show_highlight_markers=True,
         )
         markers = [node for node in scene.children if isinstance(node, SceneMarker)]
         self.assertGreaterEqual(len(markers), 3)

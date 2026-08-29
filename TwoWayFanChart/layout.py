@@ -456,6 +456,8 @@ _ANCESTOR_HALF_SPAN_DEG = 86.0  # mockup: 172° total, 4° waist gap per side
 def layout_ancestors(
     canvas: ChartCanvas,
     ancestor_slots: tuple[tuple, ...],
+    *,
+    show_highlight_markers: bool = False,
 ) -> SceneNode:
     """Place ancestor fan sectors in the upper half-circle.
 
@@ -470,6 +472,9 @@ def layout_ancestors(
     - A second curved arc with life-year dates
     - Small medallion circles with initials at the outer edge of each sector
     - Lineage labels (LIGNÉE <surname>) at the gap between the two halves
+
+    Highlight markers are opt-in so publication views do not expose tag
+    annotations unless explicitly requested.
     """
     if not ancestor_slots:
         return SceneNode(children=())
@@ -487,7 +492,11 @@ def layout_ancestors(
             pid, label, dates_label, portrait = (
                 entry[0], entry[1], entry[2], entry[3]
             )
-            highlighted = bool(entry[4]) if len(entry) >= 5 else False
+            highlighted = (
+                bool(entry[4])
+                if show_highlight_markers and len(entry) >= 5
+                else False
+            )
         elif len(entry) == 3:
             pid, label, dates_label = entry[0], entry[1], entry[2]
             portrait = None
@@ -901,6 +910,7 @@ def layout_center(
     right_fallback: str = "",
     left_highlighted: bool = False,
     right_highlighted: bool = False,
+    show_highlight_markers: bool = False,
     statistics: str | None = None,
 ) -> SceneNode:
     """Place the center family medallion with labels, portraits and stats.
@@ -913,6 +923,8 @@ def layout_center(
     cx = canvas.center_cx_mm
     cy = canvas.center_cy_mm
     r = canvas.center_radius_mm  # the full center zone (ivory circle)
+    left_highlighted = left_highlighted and show_highlight_markers
+    right_highlighted = right_highlighted and show_highlight_markers
 
     children: list = []
 
@@ -1533,6 +1545,7 @@ def layout_descendants(
     shortener=None,
     portrait_lookup=None,
     highlight_lookup=None,
+    show_highlight_markers: bool = False,
 ) -> SceneNode:
     """Place all descendant medallions in the lower half-circle.
 
@@ -1543,6 +1556,9 @@ def layout_descendants(
     - A second curved arc with the spouse name prefixed by ``×``
     - Medallions at the midpoint of first-generation sectors only
     - Straight text for grandchildren
+
+    Highlight markers are opt-in so publication views do not expose tag
+    annotations unless explicitly requested.
     """
     if not branches:
         return SceneNode(children=())
@@ -1592,7 +1608,7 @@ def layout_descendants(
             return None
 
     def _highlight(handle: str | None) -> bool:
-        if highlight_lookup is None or not handle:
+        if not show_highlight_markers or highlight_lookup is None or not handle:
             return False
         try:
             return bool(highlight_lookup(handle))
@@ -1812,9 +1828,9 @@ def layout_descendants(
                     _highlight(branch.person.handle),
                 )
         else:
-            # Later-generation people are text-only by design. Keep their
-            # citation signal visible with a small diamond in the same sector
-            # instead of silently dropping it with the medallion.
+            # Later-generation people are text-only by design. When highlight
+            # markers are enabled, keep their citation signal visible with a
+            # small diamond in the same sector instead of dropping it.
             marker_radius = min(2.0, max(1.1, ring_width * 0.08))
             marker_distance = max(
                 gen_inner + marker_radius + 1.0,

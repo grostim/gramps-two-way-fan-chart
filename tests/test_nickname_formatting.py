@@ -5,6 +5,7 @@ from TwoWayFanChart.pipeline import (
     _ancestor_short_label,
     _mockup_name_order,
     _public_dates,
+    _public_usage_name,
     _public_name,
 )
 
@@ -68,6 +69,22 @@ class NicknameFormattingTests(unittest.TestCase):
         self.assertEqual(
             _public_name(database, "person-1"),
             "Alexandre Théodore Roche",
+        )
+
+    def test_public_descendant_name_uses_the_call_name(self):
+        database = FakeDatabase(
+            FakePerson(
+                FakeName(
+                    first_name="Alexandre Théodore",
+                    call_name="Alexandre",
+                    surnames=("Roche",),
+                )
+            )
+        )
+
+        self.assertEqual(
+            _public_usage_name(database, "person-1"),
+            "Alexandre Roche",
         )
 
     def test_public_report_marks_missing_dates_without_inventing_them(self):

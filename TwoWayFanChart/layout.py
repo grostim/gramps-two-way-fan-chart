@@ -69,6 +69,11 @@ _LEGEND_ZONE_MM = 18.0  # legend at bottom
 _STATS_ZONE_MM = 6.0  # statistics line
 _MIN_CENTER_RADIUS_MM = 8.0  # minimum medallion radius
 _RING_GAP_MM = 0.3  # white space between generation rings
+# The publication composition gives the descendant quarter a smaller visual
+# footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
+# and its regression probes share one geometric contract.
+_DESCENDANT_OUTER_RADIUS_RATIO = 0.76
+_DESCENDANT_MEDALLION_TARGET_RATIO = 28 / 600
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,8 +104,8 @@ def calculate_canvas(
     """Calculate all page regions from paper size, margins, and generation counts.
 
     The layout fills the page: the center medallion occupies ~18% of the
-    available radius, and ancestor/descendant rings share the remaining depth
-    equally so both halves reach the same outer radius.
+    available radius, while the descendant quarter intentionally uses a
+    compact outer radius so it does not visually compete with the ancestor fan.
     """
     content_w = paper.content_width_mm
     content_h = paper.content_height_mm
@@ -122,11 +127,16 @@ def calculate_canvas(
     # The ancestor/descendant rings start at this radius.
     center_radius = max(_MIN_CENTER_RADIUS_MM, max_radius * (190.0 / 600.0))
 
-    # Each half-fan independently uses the complete radial depth. Ancestor and
-    # descendant generations occupy different angular halves, so dividing the
-    # depth by their combined generation count would shrink both fans.
+    # Ancestor generations use the full publication radius. Descendants remain
+    # anchored on the same center ring but use a compact outer quarter; this
+    # leaves useful breathing room below the chart and keeps the lower visual
+    # mass subordinate to the accepted A0 ancestor composition.
     ancestor_outer = max_radius if ancestor_generations > 0 else center_radius
-    descendant_outer = max_radius if descendant_generations > 0 else center_radius
+    descendant_outer = (
+        max_radius * _DESCENDANT_OUTER_RADIUS_RATIO
+        if descendant_generations > 0
+        else center_radius
+    )
 
     cx = paper.effective_margin_left_mm + content_w / 2
     cy = paper.effective_margin_top_mm + content_h / 2
@@ -379,7 +389,10 @@ def _ancestor_content_geometry(
     name_r = inner_radius + ring_depth * name_fractions.get(generation, 0.58)
     life_r = inner_radius + ring_depth * life_fractions.get(generation, 0.78)
 
-    base_image_ratios = {1: 24 / 600, 2: 20 / 600, 3: 15 / 600}
+    # Give the publication-facing ancestor portraits more presence while
+    # leaving the actual radius bounded by each ring's radial and tangent
+    # capacity. The G2 reference was 20/600, which made portraits recede on A0.
+    base_image_ratios = {1: 30 / 600, 2: 25 / 600, 3: 18 / 600}
     base_name_ratios = {1: 12 / 600, 2: 12 / 600, 3: 10.5 / 600}
     base_life_ratios = {1: 9.5 / 600, 2: 9.5 / 600, 3: 8.5 / 600}
     base_image_r = base_image_ratios.get(
@@ -1098,13 +1111,11 @@ def layout_titles(
     """Place the ASCENDANTS and DESCENDANTS titles above and below the fan."""
     cx = canvas.center_cx_mm
     cy = canvas.center_cy_mm
-    outer_r = max(canvas.ancestor_outer_radius_mm, canvas.descendant_outer_radius_mm)
-
     children: list = []
 
     if ancestor_generations > 0:
         # Title above the top arc
-        title_y = cy - outer_r - 4
+        title_y = cy - canvas.ancestor_outer_radius_mm - 4
         generation_word = "GÉNÉRATION" if ancestor_generations == 1 else "GÉNÉRATIONS"
         title_text = f"ASCENDANTS · {ancestor_generations} {generation_word}"
         children.append(SceneText(
@@ -1117,7 +1128,7 @@ def layout_titles(
 
     if descendant_generations > 0:
         # Title below the bottom arc
-        title_y = cy + outer_r + 8
+        title_y = cy + canvas.descendant_outer_radius_mm + 8
         generation_word = "GÉNÉRATION" if descendant_generations == 1 else "GÉNÉRATIONS"
         title_text = f"DESCENDANTS · {descendant_generations} {generation_word}"
         children.append(SceneText(
@@ -1737,8 +1748,47 @@ def layout_descendants(
         # visual entry points, but removes every medallion from GEN2 onward.
         # Text and couple labels remain available in those rings.
         show_medallion = depth == 1
+        adaptive_single_generation = max_gen == 1
         adaptive_dense = max_gen >= 3
-        if show_medallion and adaptive_dense:
+        if show_medallion and adaptive_single_generation:
+            has_spouse = bool(spouse_handle and spouse_medallion_label)
+            med_capacity = _maximum_medallion_radius(
+                inner_radius=gen_inner,
+                outer_radius=gen_outer,
+                sweep_angle=alloc_sweep,
+                occupants=2 if has_spouse else 1,
+                edge="outer",
+                margin=0.8,
+            )
+            # Reserve the portrait border as well as the enlarged image radius.
+            # The larger portrait remains in the outer crown, where it no
+            # longer competes with the text lanes.
+            med_visual_target = outer_r * _DESCENDANT_MEDALLION_TARGET_RATIO * 1.1
+            med_visual_r = min(med_capacity, med_visual_target)
+            med_border_r = (
+                med_visual_r / 1.1
+                if med_visual_r / 1.1 >= _MIN_INITIALS_MEDALLION_RADIUS_MM
+                else 0.0
+            )
+            pair_offset = med_visual_r * 1.075 if has_spouse else 0.0
+            if med_border_r > 0:
+                target_center_radius = max(
+                    0.0,
+                    gen_outer - 0.8 - med_visual_r,
+                )
+                med_text_inner = max(
+                    gen_inner,
+                    target_center_radius - med_visual_r - 6.0,
+                )
+                med_r_pos = (
+                    math.sqrt(max(0.0, target_center_radius**2 - pair_offset**2))
+                    if has_spouse
+                    else target_center_radius
+                )
+            else:
+                med_text_inner = gen_outer
+                med_r_pos = gen_outer
+        elif show_medallion and adaptive_dense:
             has_spouse = bool(spouse_handle and spouse_medallion_label)
             med_capacity = _maximum_medallion_radius(
                 inner_radius=gen_inner,
@@ -1853,7 +1903,59 @@ def layout_descendants(
 
         # Labels use ring-local capacity in dense reports. The standard two-ring
         # publication geometry remains byte-for-byte compatible below.
-        if child_label and adaptive_dense:
+        if child_label and adaptive_single_generation:
+            child_dates = (
+                dates_lookup(branch.person.handle)
+                if dates_lookup is not None and branch.person
+                else ""
+            )
+            spouse_dates = (
+                dates_lookup(spouse_handle)
+                if dates_lookup is not None and spouse_handle
+                else ""
+            )
+            lines = [
+                (child_label, True, TEXT_DARK),
+                (child_dates, False, TEXT_GREY),
+                (f"× {spouse_name}" if spouse_name else "", True, TEXT_DARK),
+                (spouse_dates if spouse_name else "", False, TEXT_GREY),
+            ]
+            lines = [line for line in lines if line[0]]
+            # The medallion occupies the outer crown; spread the identity
+            # rails through the remaining radial depth instead of bunching all
+            # four lines beside the center. Width is still solved per sector.
+            text_start = gen_inner + 4.0
+            text_end = max(text_start, med_text_inner - 2.0)
+            radial_span = max(0.0, text_end - text_start)
+            for line_index, (content, is_name, fill_color) in enumerate(lines):
+                line_r = text_start + radial_span * (line_index + 0.5) / len(lines)
+                angular_width = max(
+                    0.0,
+                    line_r * math.radians(max(alloc_sweep - 1.0, 0.0)) - 2.0,
+                )
+                fitted, fitted_size, width_limit = _fit_text_to_width(
+                    content,
+                    target_size=outer_r * (12 / 600) if is_name else outer_r * (9.5 / 600),
+                    minimum_size=4.0 if is_name else 2.8,
+                    max_width=angular_width,
+                )
+                if not fitted:
+                    continue
+                all_children.append(ScenePathText(
+                    path=_arc_text_path(
+                        cx,
+                        cy,
+                        line_r,
+                        alloc_start,
+                        alloc_start + alloc_sweep,
+                        lower=True,
+                    ),
+                    content=fitted,
+                    font_size=fitted_size,
+                    fill=fill_color,
+                    max_width=width_limit,
+                ))
+        elif child_label and adaptive_dense:
             child_dates = (
                 dates_lookup(branch.person.handle)
                 if dates_lookup is not None and branch.person

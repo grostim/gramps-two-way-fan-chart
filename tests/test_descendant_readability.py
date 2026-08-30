@@ -5,16 +5,21 @@ from pathlib import Path
 
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
+    _DESCENDANT_MEDALLION_TARGET_RATIO,
+    _DESCENDANT_OUTER_RADIUS_RATIO,
     _DESC_TOTAL_SWEEP,
     _MIN_INITIALS_MEDALLION_RADIUS_MM,
     _allocate_descendant_branches_by_demand,
     calculate_canvas,
+    layout_ancestors,
     layout_descendants,
+    layout_titles,
 )
 from TwoWayFanChart.model import (
     DescendantBranch,
     PersonNode,
     SceneCircle,
+    SceneImage,
     ScenePathText,
     SceneText,
     UnionBranch,
@@ -60,7 +65,125 @@ def a0_canvas(descendant_generations: int = 4):
     )
 
 
+def _path_radius(path: str, cx: float, cy: float) -> float:
+    """Recover the radius of the first point of an SVG arc path."""
+    _move, x_text, y_text, *_rest = path.split()
+    return math.hypot(float(x_text) - cx, float(y_text) - cy)
+
+
 class DescendantReadabilityTests(unittest.TestCase):
+    def test_descendant_quarter_is_compact_relative_to_ancestor_fan(self):
+        canvas = a0_canvas(descendant_generations=1)
+
+        self.assertAlmostEqual(
+            canvas.descendant_outer_radius_mm,
+            canvas.ancestor_outer_radius_mm * 0.76,
+            places=6,
+        )
+        self.assertAlmostEqual(_DESCENDANT_OUTER_RADIUS_RATIO, 0.76, places=6)
+        self.assertLess(
+            canvas.descendant_outer_radius_mm,
+            canvas.ancestor_outer_radius_mm,
+        )
+
+    def test_descendant_title_follows_compact_outer_radius(self):
+        canvas = a0_canvas(descendant_generations=1)
+        scene = layout_titles(
+            canvas,
+            ancestor_generations=2,
+            descendant_generations=1,
+        )
+
+        descendant_title = next(
+            node for node in scene.children
+            if isinstance(node, SceneText) and node.content.startswith("DESCENDANTS")
+        )
+
+        self.assertAlmostEqual(
+            descendant_title.y,
+            canvas.center_cy_mm + canvas.descendant_outer_radius_mm + 8.0,
+            places=6,
+        )
+
+    def test_ancestor_portrait_medallion_is_larger_than_v128_generation_two(self):
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=2,
+            descendant_generations=1,
+        )
+        scene = layout_ancestors(
+            canvas,
+            (
+                ("ancestor-a-1-0", "Parent, Jeanne", "1800–1870", "portrait-a", False),
+                ("ancestor-a-2-0", "Grandparent, Louise", "1770–1840", "portrait-b", False),
+            ),
+        )
+
+        images = [child for child in scene.children if isinstance(child, SceneImage)]
+
+        self.assertEqual(len(images), 2)
+        # v1.2.8 rendered the G2 portrait at 20/600 of the fan radius.
+        self.assertGreater(images[-1].r, canvas.ancestor_outer_radius_mm * (20 / 600))
+
+    def test_single_generation_descendants_use_outer_crown_and_radial_lanes(self):
+        root = branch("root", 1, spouse="root-spouse")
+        canvas = a0_canvas(descendant_generations=1)
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: {
+                "root": "Alexandre Théodore de la Rochefoucauld",
+                "root-spouse": "Marie Louise de Montmorency",
+            }[handle],
+            dates_lookup=lambda handle: "1800–1880" if handle == "root" else "1805–1890",
+            portrait_lookup=lambda _handle: "data:image/svg+xml;base64,PHN2Zy8+",
+        )
+
+        circles = [child for child in scene.children if isinstance(child, SceneCircle)]
+        circle_distances = [
+            math.hypot(circle.cx - canvas.center_cx_mm, circle.cy - canvas.center_cy_mm)
+            for circle in circles
+        ]
+        paths = [child for child in scene.children if isinstance(child, ScenePathText)]
+        path_distances = [
+            _path_radius(path.path, canvas.center_cx_mm, canvas.center_cy_mm)
+            for path in paths
+        ]
+
+        self.assertEqual(len(circles), 2)
+        self.assertGreater(min(circle_distances), canvas.descendant_outer_radius_mm * 0.9)
+        self.assertGreater(max(path_distances), canvas.descendant_outer_radius_mm * 0.81)
+        self.assertGreater(
+            max(path_distances) - min(path_distances),
+            canvas.descendant_outer_radius_mm * 0.30,
+        )
+
+    def test_single_generation_descendant_portraits_are_larger_than_previous_target(self):
+        root = branch("root", 1, spouse="root-spouse")
+        canvas = a0_canvas(descendant_generations=1)
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: {
+                "root": "Alexandre Théodore de la Rochefoucauld",
+                "root-spouse": "Marie Louise de Montmorency",
+            }[handle],
+            dates_lookup=lambda _handle: "1800–1880",
+            portrait_lookup=lambda _handle: "data:image/svg+xml;base64,PHN2Zy8+",
+        )
+
+        circles = [child for child in scene.children if isinstance(child, SceneCircle)]
+
+        self.assertEqual(len(circles), 2)
+        # The preceding maquette targeted 24/600. This iteration raises the
+        # target again while the compact outer radius is applied independently.
+        new_target = canvas.descendant_outer_radius_mm * _DESCENDANT_MEDALLION_TARGET_RATIO * 1.1
+        previous_target = (
+            canvas.ancestor_outer_radius_mm * 0.80 * (24 / 600) * 1.1
+        )
+        self.assertGreater(min(circle.r for circle in circles), previous_target)
+        self.assertGreaterEqual(min(circle.r for circle in circles), new_target - 1e-6)
+
     def test_deep_demand_gets_more_angle_than_shallow_sibling(self):
         deep_leaves = tuple(branch(f"deep-leaf-{index}", 3) for index in range(20))
         deep = branch(

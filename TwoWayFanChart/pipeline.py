@@ -15,7 +15,7 @@ from typing import Any
 try:
     from TwoWayFanChart.config import ChartConfig, OutputFormat
     from TwoWayFanChart.extract import extract_chart_graph
-    from TwoWayFanChart.facts import simple_name, simple_name_full, simple_dates
+    from TwoWayFanChart.facts import simple_name, simple_dates
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -42,7 +42,7 @@ try:
 except ModuleNotFoundError:
     from config import ChartConfig, OutputFormat  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
-    from facts import simple_name, simple_name_full, simple_dates  # type: ignore[no-redef]
+    from facts import simple_name, simple_dates  # type: ignore[no-redef]
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -162,8 +162,8 @@ UNKNOWN_DATES_LABEL = "dates inconnues"
 
 
 def _public_name(database, handle: str | None) -> str:
-    """Return the complete given-name/surname label used in public output."""
-    return simple_name_full(database, handle)
+    """Return the usage-name label used in public output."""
+    return simple_name(database, handle)
 
 
 def _public_usage_name(database, handle: str | None) -> str:

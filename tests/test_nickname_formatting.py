@@ -5,8 +5,8 @@ from TwoWayFanChart.pipeline import (
     _ancestor_short_label,
     _mockup_name_order,
     _public_dates,
-    _public_usage_name,
     _public_name,
+    _public_usage_name,
 )
 
 
@@ -55,7 +55,7 @@ class FakeDatabase:
 
 
 class NicknameFormattingTests(unittest.TestCase):
-    def test_public_report_name_keeps_all_given_names_and_surname(self):
+    def test_public_report_name_uses_only_the_usage_name_and_surname(self):
         database = FakeDatabase(
             FakePerson(
                 FakeName(
@@ -67,8 +67,8 @@ class NicknameFormattingTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            _public_name(database, "person-1"),
-            "Alexandre Théodore Roche",
+            _mockup_name_order(_public_name(database, "person-1")),
+            "Alexandre Roche",
         )
 
     def test_public_descendant_name_uses_the_call_name(self):
@@ -108,11 +108,11 @@ class NicknameFormattingTests(unittest.TestCase):
 
         self.assertEqual(
             simple_name(database, "person-1"),
-            "Roche, Alexandre « Toto »",
+            'Roche, Alexandre "Toto"',
         )
         self.assertEqual(
-            _mockup_name_order("Roche, Alexandre « Toto »"),
-            "Alexandre « Toto » Roche",
+            _mockup_name_order('Roche, Alexandre "Toto"'),
+            'Alexandre "Toto" Roche',
         )
 
     def test_nickname_is_trimmed_and_does_not_change_surname_order(self):
@@ -128,14 +128,14 @@ class NicknameFormattingTests(unittest.TestCase):
 
         self.assertEqual(
             simple_name(database, "person-1"),
-            "Roche Durand, « Toto »",
+            'Roche Durand, Alexandre "Toto"',
         )
 
-    def test_nickname_without_call_name_uses_nickname_only(self):
+    def test_nickname_without_call_name_keeps_the_recorded_given_name(self):
         database = FakeDatabase(
             FakePerson(
                 FakeName(
-                    first_name="Louis André Marie",
+                    first_name="Louis André",
                     nick_name="Germain",
                     surnames=("Roque",),
                 )
@@ -144,7 +144,7 @@ class NicknameFormattingTests(unittest.TestCase):
 
         self.assertEqual(
             _mockup_name_order(simple_name(database, "person-1")),
-            "« Germain » Roque",
+            'André "Germain" Roque',
         )
 
     def test_call_name_without_nickname_is_call_name_plus_surname(self):
@@ -188,11 +188,11 @@ class NicknameFormattingTests(unittest.TestCase):
         self.assertEqual(simple_name(database, "person-1"), "Roche, Alexandre")
 
     def test_ancestor_label_keeps_full_nickname_and_surname(self):
-        label = "Roque, Louis « Germain »"
+        label = 'Roque, Louis "Germain"'
 
         self.assertEqual(
             _ancestor_short_label(label, generation=3),
-            "Louis « Germain » Roque",
+            'Louis "Germain" Roque',
         )
 
 

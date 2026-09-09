@@ -1739,6 +1739,9 @@ def layout_descendants(
     )
 
     all_children: list = []
+    measure_only = True
+    name_size_candidates: dict[int, list[float]] = {}
+    generation_name_sizes: dict[int, float] = {}
     inner_r = canvas.descendant_inner_radius_mm
     outer_r = canvas.descendant_outer_radius_mm
     max_gen = max(_max_desc_depth(b) for b in branches) if branches else 1
@@ -1766,7 +1769,7 @@ def layout_descendants(
             return label
 
     def _portrait(handle: str | None) -> str | None:
-        if portrait_lookup is None or not handle:
+        if measure_only or portrait_lookup is None or not handle:
             return None
         try:
             return portrait_lookup(handle)
@@ -1774,12 +1777,85 @@ def layout_descendants(
             return None
 
     def _highlight(handle: str | None) -> bool:
-        if not show_highlight_markers or highlight_lookup is None or not handle:
+        if (
+            measure_only
+            or not show_highlight_markers
+            or highlight_lookup is None
+            or not handle
+        ):
             return False
         try:
             return bool(highlight_lookup(handle))
         except Exception:
             return False
+
+    def _fit_generation_name(
+        content: str,
+        depth: int,
+        *,
+        target_size: float,
+        minimum_size: float,
+        max_width: float,
+        allow_ellipsis: bool = True,
+    ) -> tuple[str, float, float]:
+        """Fit a name while keeping one measured size for its generation."""
+        common_size = generation_name_sizes.get(depth)
+        if not measure_only and common_size is not None:
+            fitted, _ignored_size, width_limit = _fit_text_to_width(
+                content,
+                target_size=common_size,
+                minimum_size=common_size,
+                max_width=max_width,
+                allow_ellipsis=allow_ellipsis,
+            )
+            return fitted, common_size, width_limit
+
+        fitted, fitted_size, width_limit = _fit_text_to_width(
+            content,
+            target_size=target_size,
+            minimum_size=minimum_size,
+            max_width=max_width,
+            allow_ellipsis=allow_ellipsis,
+        )
+        if measure_only:
+            if content:
+                name_size_candidates.setdefault(depth, []).append(fitted_size)
+            return fitted, fitted_size, width_limit
+        return fitted, fitted_size, width_limit
+
+    def _fit_generation_couple(
+        child_label: str,
+        spouse_label: str,
+        depth: int,
+        *,
+        target_size: float,
+        minimum_size: float,
+        max_width: float,
+    ) -> tuple[str, float, float]:
+        """Fit a compact couple label at the common generation size."""
+        common_size = generation_name_sizes.get(depth)
+        if not measure_only and common_size is not None:
+            fitted, _ignored_size, width_limit = _fit_couple_to_width(
+                child_label,
+                spouse_label,
+                target_size=common_size,
+                minimum_size=common_size,
+                max_width=max_width,
+            )
+            return fitted, common_size, width_limit
+
+        fitted, fitted_size, width_limit = _fit_couple_to_width(
+            child_label,
+            spouse_label,
+            target_size=target_size,
+            minimum_size=minimum_size,
+            max_width=max_width,
+        )
+        if measure_only:
+            if child_label or spouse_label:
+                name_size_candidates.setdefault(depth, []).append(fitted_size)
+            return fitted, fitted_size, width_limit
+        return fitted, fitted_size, width_limit
 
     def _target_medallion_radius(depth: int, ring_depth: float) -> float:
         """Return a readable target; individual narrow sectors may omit it."""
@@ -2105,12 +2181,21 @@ def layout_descendants(
                     0.0,
                     line_r * math.radians(max(alloc_sweep - 1.0, 0.0)) - 2.0,
                 )
-                fitted, fitted_size, width_limit = _fit_text_to_width(
-                    content,
-                    target_size=outer_r * (12 / 600) if is_name else outer_r * (9.5 / 600),
-                    minimum_size=4.0 if is_name else 2.8,
-                    max_width=angular_width,
-                )
+                if is_name:
+                    fitted, fitted_size, width_limit = _fit_generation_name(
+                        content,
+                        depth,
+                        target_size=outer_r * (12 / 600),
+                        minimum_size=4.0,
+                        max_width=angular_width,
+                    )
+                else:
+                    fitted, fitted_size, width_limit = _fit_text_to_width(
+                        content,
+                        target_size=outer_r * (9.5 / 600),
+                        minimum_size=2.8,
+                        max_width=angular_width,
+                    )
                 if not fitted:
                     continue
                 all_children.append(ScenePathText(
@@ -2170,12 +2255,21 @@ def layout_descendants(
                         0.0,
                         line_r * math.radians(max(alloc_sweep - 1.0, 0.0)) - 2.0,
                     )
-                    fitted, fitted_size, width_limit = _fit_text_to_width(
-                        content,
-                        target_size=4.5 if is_name else 3.4,
-                        minimum_size=3.2 if is_name else 2.5,
-                        max_width=angular_width,
-                    )
+                    if is_name:
+                        fitted, fitted_size, width_limit = _fit_generation_name(
+                            content,
+                            depth,
+                            target_size=4.5,
+                            minimum_size=3.2,
+                            max_width=angular_width,
+                        )
+                    else:
+                        fitted, fitted_size, width_limit = _fit_text_to_width(
+                            content,
+                            target_size=3.4,
+                            minimum_size=2.5,
+                            max_width=angular_width,
+                        )
                     if not fitted:
                         continue
                     all_children.append(ScenePathText(
@@ -2212,14 +2306,16 @@ def layout_descendants(
                     # one compact rail; dates are sacrificed before either name.
                     parallel_capacity = name_target * 2.35
                     if angular_capacity >= parallel_capacity:
-                        child_fit, child_size, child_width = _fit_text_to_width(
+                        child_fit, child_size, child_width = _fit_generation_name(
                             child_label,
+                            depth,
                             target_size=name_target,
                             minimum_size=name_minimum,
                             max_width=text_width,
                         )
-                        spouse_fit, spouse_size, spouse_width = _fit_text_to_width(
+                        spouse_fit, spouse_size, spouse_width = _fit_generation_name(
                             f"× {spouse_display_name}",
+                            depth,
                             target_size=name_target,
                             minimum_size=name_minimum,
                             max_width=text_width,
@@ -2245,9 +2341,10 @@ def layout_descendants(
                                 max_width=width,
                             ))
                     else:
-                        couple_fit, couple_size, couple_width = _fit_couple_to_width(
+                        couple_fit, couple_size, couple_width = _fit_generation_couple(
                             child_label,
                             spouse_display_name,
+                            depth,
                             target_size=name_target,
                             minimum_size=name_minimum,
                             max_width=text_width,
@@ -2264,8 +2361,9 @@ def layout_descendants(
                                 max_width=couple_width,
                             ))
                 else:
-                    fitted_name, name_size, name_width = _fit_text_to_width(
+                    fitted_name, name_size, name_width = _fit_generation_name(
                         child_label,
+                        depth,
                         target_size=name_target,
                         minimum_size=name_minimum,
                         max_width=text_width,
@@ -2482,6 +2580,19 @@ def layout_descendants(
                         max_width=width_limit,
                     ))
 
+    # Measure every name once so the smallest fitting size becomes the
+    # generation-wide contract. The second pass then renders all names in that
+    # generation with the same font size; the renderer may still apply the
+    # physical width constraint without changing the hierarchy.
+    for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
+        _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
+    generation_name_sizes = {
+        depth: min(sizes)
+        for depth, sizes in name_size_candidates.items()
+        if sizes
+    }
+    measure_only = False
+    all_children = []
     for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
         _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
 

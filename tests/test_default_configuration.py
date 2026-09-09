@@ -22,13 +22,13 @@ class DefaultConfigurationTests(unittest.TestCase):
         )
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
-        self.assertIn('version="1.2.13"', registration)
-        self.assertIn('VERSION = "1.2.13"', builder)
+        self.assertIn('version="1.2.14"', registration)
+        self.assertIn('VERSION = "1.2.14"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
 
-        self.assertEqual(config.center_family, "F055")
+        self.assertEqual(config.center_family, "F0055")
         self.assertEqual(config.output_format, OutputFormat.SVG)
         self.assertEqual(config.paper_size, PaperSize.A0)
         self.assertEqual(config.ancestor_generations, 5)

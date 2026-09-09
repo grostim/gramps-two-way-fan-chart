@@ -57,7 +57,7 @@ class PrivacyMode(StrEnum):
 class ChartConfig:
     """Validated settings consumed by all later report layers."""
 
-    center_family: str = "F055"
+    center_family: str = "F0055"
     preset: PresetName = PresetName.PUBLICATION
     ancestor_generations: int = 5
     descendant_generations: int = 4

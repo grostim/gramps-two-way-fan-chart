@@ -57,10 +57,10 @@ class PrivacyMode(StrEnum):
 class ChartConfig:
     """Validated settings consumed by all later report layers."""
 
-    center_family: str = ""
+    center_family: str = "F055"
     preset: PresetName = PresetName.PUBLICATION
-    ancestor_generations: int = 3
-    descendant_generations: int = 2
+    ancestor_generations: int = 5
+    descendant_generations: int = 4
     paper_size: PaperSize = PaperSize.A0
     orientation: Orientation = Orientation.LANDSCAPE
     margin_mm: float = 12.0

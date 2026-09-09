@@ -4,6 +4,7 @@ from pathlib import Path
 
 from TwoWayFanChart.config import (
     ChartConfig,
+    Orientation,
     OutputFormat,
     PaperSize,
     PresetName,
@@ -21,16 +22,18 @@ class DefaultConfigurationTests(unittest.TestCase):
         )
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
-        self.assertIn('version="1.2.12"', registration)
-        self.assertIn('VERSION = "1.2.12"', builder)
+        self.assertIn('version="1.2.13"', registration)
+        self.assertIn('VERSION = "1.2.13"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
 
+        self.assertEqual(config.center_family, "F055")
         self.assertEqual(config.output_format, OutputFormat.SVG)
         self.assertEqual(config.paper_size, PaperSize.A0)
-        self.assertEqual(config.ancestor_generations, 3)
-        self.assertEqual(config.descendant_generations, 2)
+        self.assertEqual(config.ancestor_generations, 5)
+        self.assertEqual(config.descendant_generations, 4)
+        self.assertEqual(config.orientation, Orientation.LANDSCAPE)
         self.assertEqual(config.privacy_mode, PrivacyMode.INCLUDE_ALL)
         self.assertTrue(config.include_private)
         self.assertEqual(config.living_people_mode, 99)
@@ -58,8 +61,10 @@ class DefaultConfigurationTests(unittest.TestCase):
         ast.parse(source)
 
         for expected in (
-            'NumberOption(_("Ancestor generations"), 3, 0, 8)',
-            'NumberOption(_("Descendant generations"), 2, 0, 5)',
+            'NumberOption(_("Ancestor generations"), 5, 0, 8)',
+            'NumberOption(_("Descendant generations"), 4, 0, 5)',
+            'default_center = ChartConfig().center_family',
+            '"Orientation",\n                "landscape"',
             '_enum("Output format", "svg"',
             '"Paper size",\n                "A0"',
             '"Privacy mode",\n                "include_all"',

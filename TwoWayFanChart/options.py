@@ -161,16 +161,19 @@ class TwoWayFanChartOptions(MenuReportOptions):
         )
         menu.add_option(_(CATEGORY_SUBJECT), "preset", preset)
         center = CenterFamilyOption(_("Center family"), self._database)
+        default_center = ChartConfig().center_family
+        if default_center and self._database.get_family_from_gramps_id(default_center):
+            center.set_value(default_center)
         menu.add_option(_(CATEGORY_SUBJECT), "center_family", center)
         menu.add_option(
             _(CATEGORY_SUBJECT),
             "ancestor_generations",
-            NumberOption(_("Ancestor generations"), 3, 0, 8),
+            NumberOption(_("Ancestor generations"), 5, 0, 8),
         )
         menu.add_option(
             _(CATEGORY_SUBJECT),
             "descendant_generations",
-            NumberOption(_("Descendant generations"), 2, 0, 5),
+            NumberOption(_("Descendant generations"), 4, 0, 5),
         )
         menu.add_option(
             _(CATEGORY_FAMILIES),

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
+    _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
     _DESCENDANT_MEDALLION_TARGET_RATIO,
     _DESCENDANT_OUTER_RADIUS_RATIO,
     _DESC_TOTAL_SWEEP,
@@ -156,6 +157,67 @@ class DescendantReadabilityTests(unittest.TestCase):
         self.assertGreater(
             max(path_distances) - min(path_distances),
             canvas.descendant_outer_radius_mm * 0.30,
+        )
+
+    def test_first_generation_dense_text_lines_have_readable_radial_gaps(self):
+        root = branch(
+            "root",
+            1,
+            children=(branch("child", 2, children=(branch("grandchild", 3),)),),
+            spouse="root-spouse",
+        )
+        canvas = a0_canvas(descendant_generations=3)
+        labels = {
+            "root": "Jacqueline Berloty",
+            "root-spouse": "Jean Berloty",
+            "child": "Middle Person",
+            "grandchild": "Last Person",
+        }
+        dates = {
+            "root": "1908–1981",
+            "root-spouse": "1906–1980",
+            "child": "1930–2000",
+            "grandchild": "1960–2020",
+        }
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=labels.__getitem__,
+            dates_lookup=dates.__getitem__,
+        )
+
+        first_generation = {
+            node.content: _path_radius(
+                node.path,
+                canvas.center_cx_mm,
+                canvas.center_cy_mm,
+            )
+            for node in scene.children
+            if isinstance(node, ScenePathText)
+            and node.content in {
+                "Jacqueline Berloty",
+                "1908–1981",
+                "× Jean Berloty",
+                "1906–1980",
+            }
+        }
+
+        self.assertEqual(
+            set(first_generation),
+            {
+                "Jacqueline Berloty",
+                "1908–1981",
+                "× Jean Berloty",
+                "1906–1980",
+            },
+        )
+        radii = sorted(first_generation.values())
+        self.assertTrue(
+            all(
+                later - earlier >= _DESCENDANT_FIRST_GEN_LINE_GAP_MM - 1e-3
+                for earlier, later in zip(radii, radii[1:])
+            ),
+            msg=f"first-generation line radii are too close: {radii}",
         )
 
     def test_single_generation_descendant_portraits_are_larger_than_previous_target(self):

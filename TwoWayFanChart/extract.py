@@ -325,6 +325,7 @@ def extract_descendant_branches(
                 _spouse_handle(family, person_handle),
                 tuple(ref.get_reference_handle() for ref, _ in child_refs_with_relations),
                 tuple(relation for _, relation in child_refs_with_relations),
+                family.get_gramps_id(),
             )
             unions.append(union)
             union_children: list[DescendantBranch] = []

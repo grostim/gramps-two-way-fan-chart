@@ -69,6 +69,7 @@ _LEGEND_ZONE_MM = 18.0  # legend at bottom
 _STATS_ZONE_MM = 6.0  # statistics line
 _MIN_CENTER_RADIUS_MM = 8.0  # minimum medallion radius
 _RING_GAP_MM = 0.3  # white space between generation rings
+_DESCENDANT_FIRST_GEN_LINE_GAP_MM = 5.0  # minimum readable baseline gap
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
 # and its regression probes share one geometric contract.
@@ -1226,6 +1227,16 @@ class DescendantBranchAllocation:
     leaf_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class _DescendantUnionAllocation:
+    """One contiguous angular block belonging to one recorded union."""
+
+    union_index: int
+    children: tuple[DescendantBranch, ...]
+    start_angle: float
+    sweep_angle: float
+
+
 def allocate_descendant_branches(
     canvas: ChartCanvas,
     *,
@@ -1530,6 +1541,61 @@ def _descendant_group_angle_demand(
     )
 
 
+def _allocate_descendant_union_groups(
+    branch: DescendantBranch,
+    *,
+    start_angle: float,
+    total_sweep: float,
+) -> tuple[_DescendantUnionAllocation, ...]:
+    """Allocate non-empty child groups while retaining their union identity."""
+    groups = _children_grouped_by_union(branch)
+    nonempty_groups = [
+        (union_index, group)
+        for union_index, group in enumerate(groups)
+        if group
+    ]
+    if len(nonempty_groups) <= 1:
+        if nonempty_groups:
+            union_index, group = nonempty_groups[0]
+        elif branch.children:
+            union_index, group = -1, branch.children
+        else:
+            return ()
+        return (
+            _DescendantUnionAllocation(
+                union_index,
+                tuple(group),
+                start_angle,
+                total_sweep,
+            ),
+        )
+
+    demands = [
+        _descendant_group_angle_demand(group)
+        for _union_index, group in nonempty_groups
+    ]
+    total_demand = sum(demands) or float(len(nonempty_groups))
+    allocations: list[_DescendantUnionAllocation] = []
+    angle = start_angle
+    for group_index, ((union_index, group), demand) in enumerate(
+        zip(nonempty_groups, demands)
+    ):
+        if group_index == len(nonempty_groups) - 1:
+            group_sweep = start_angle + total_sweep - angle
+        else:
+            group_sweep = total_sweep * demand / total_demand
+        allocations.append(
+            _DescendantUnionAllocation(
+                union_index,
+                tuple(group),
+                angle,
+                group_sweep,
+            )
+        )
+        angle += group_sweep
+    return tuple(allocations)
+
+
 def _allocate_descendant_children(
     branch: DescendantBranch,
     *,
@@ -1542,33 +1608,19 @@ def _allocate_descendant_children(
     children from different spouses therefore cannot interleave in the same
     descendant sector.
     """
-    groups = _children_grouped_by_union(branch)
-    nonempty_groups = [group for group in groups if group]
-    if len(nonempty_groups) <= 1:
-        children = nonempty_groups[0] if nonempty_groups else branch.children
-        return _allocate_descendant_branches_by_demand(
-            tuple(children),
-            start_angle=start_angle,
-            total_sweep=total_sweep,
-        )
-
-    demands = [_descendant_group_angle_demand(group) for group in nonempty_groups]
-    total_demand = sum(demands) or float(len(nonempty_groups))
     allocations: list[DescendantBranchAllocation] = []
-    angle = start_angle
-    for group_index, (group, demand) in enumerate(zip(nonempty_groups, demands)):
-        if group_index == len(nonempty_groups) - 1:
-            group_sweep = start_angle + total_sweep - angle
-        else:
-            group_sweep = total_sweep * demand / total_demand
+    for group in _allocate_descendant_union_groups(
+        branch,
+        start_angle=start_angle,
+        total_sweep=total_sweep,
+    ):
         allocations.extend(
             _allocate_descendant_branches_by_demand(
-                tuple(group),
-                start_angle=angle,
-                total_sweep=group_sweep,
+                group.children,
+                start_angle=group.start_angle,
+                total_sweep=group.sweep_angle,
             )
         )
-        angle += group_sweep
     return tuple(allocations)
 
 
@@ -2099,8 +2151,21 @@ def layout_descendants(
                 text_start = gen_inner + 2.0
                 text_end = med_text_inner - 2.0
                 radial_span = max(0.0, text_end - text_start)
+                if len(lines) == 1:
+                    first_line_offset = radial_span / 2.0
+                    line_gap = 0.0
+                else:
+                    maximum_line_gap = radial_span / (len(lines) - 1)
+                    preferred_line_gap = max(
+                        _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
+                        radial_span / (len(lines) + 1),
+                    )
+                    line_gap = min(preferred_line_gap, maximum_line_gap)
+                    first_line_offset = (
+                        radial_span - line_gap * (len(lines) - 1)
+                    ) / 2.0
                 for line_index, (content, is_name, fill_color) in enumerate(lines):
-                    line_r = text_start + radial_span * (line_index + 1) / (len(lines) + 1)
+                    line_r = text_start + first_line_offset + line_gap * line_index
                     angular_width = max(
                         0.0,
                         line_r * math.radians(max(alloc_sweep - 1.0, 0.0)) - 2.0,
@@ -2333,19 +2398,89 @@ def layout_descendants(
         # Place children within the allocated sweep. Reuse the same deep-demand
         # allocator as the capacity pass so geometry and rendering stay aligned.
         if branch.children:
-            child_allocs = _allocate_descendant_children(
+            union_allocations = _allocate_descendant_union_groups(
                 branch,
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
             )
-            for child, child_alloc in zip(branch.children, child_allocs):
-                _place_branch(
-                    child,
-                    child_alloc.start_angle,
-                    child_alloc.sweep_angle,
-                    depth + 1,
-                    branch_index,
+            for union_allocation in union_allocations:
+                child_allocs = _allocate_descendant_branches_by_demand(
+                    union_allocation.children,
+                    start_angle=union_allocation.start_angle,
+                    total_sweep=union_allocation.sweep_angle,
                 )
+                for child, child_alloc in zip(
+                    union_allocation.children,
+                    child_allocs,
+                ):
+                    _place_branch(
+                        child,
+                        child_alloc.start_angle,
+                        child_alloc.sweep_angle,
+                        depth + 1,
+                        branch_index,
+                    )
+
+            if depth == 1 and len(union_allocations) > 1:
+                label_inner, label_outer = _descendant_ring_bounds(
+                    inner_r,
+                    outer_r,
+                    max_gen,
+                    depth + 1,
+                )
+                label_radius = label_inner + min(
+                    8.0,
+                    max(3.0, (label_outer - label_inner) * 0.18),
+                )
+                for union_allocation in union_allocations:
+                    union_index = union_allocation.union_index
+                    if not 0 <= union_index < len(branch.unions):
+                        continue
+                    union = branch.unions[union_index]
+                    label = union.family_gramps_id
+                    if not label:
+                        spouse_label = _spouse_label(union, name_lookup)
+                        label = _short(spouse_label or "", depth + 1)
+                    if not label:
+                        continue
+                    label_width = max(
+                        0.0,
+                        label_radius
+                        * math.radians(
+                            max(union_allocation.sweep_angle - 1.0, 0.0)
+                        )
+                        - 1.0,
+                    )
+                    fitted, fitted_size, width_limit = _fit_text_to_width(
+                        label,
+                        target_size=3.2,
+                        minimum_size=2.2,
+                        max_width=label_width,
+                        allow_ellipsis=False,
+                    )
+                    if not fitted:
+                        continue
+                    label_angle = (
+                        union_allocation.start_angle
+                        + union_allocation.sweep_angle / 2.0
+                    )
+                    label_x, label_y = _polar(
+                        cx,
+                        cy,
+                        label_radius,
+                        label_angle,
+                    )
+                    all_children.append(SceneText(
+                        x=label_x,
+                        y=label_y,
+                        content=fitted,
+                        font_size=fitted_size,
+                        fill=TEXT_DARK,
+                        anchor="middle",
+                        font_weight="bold",
+                        rotation=_outward_radial_rotation(label_angle),
+                        max_width=width_limit,
+                    ))
 
     for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
         _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)

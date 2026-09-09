@@ -147,6 +147,7 @@ class UnionBranch:
     spouse_handle: str | None
     child_handles: tuple[str, ...]
     child_relations: tuple[str, ...]
+    family_gramps_id: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.child_handles) != len(self.child_relations):

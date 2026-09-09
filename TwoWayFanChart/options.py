@@ -18,6 +18,7 @@ from gramps.gen.plug.menu import (
     EnumeratedListOption,
     FamilyOption,
     NumberOption,
+    StringOption,
 )
 from gramps.gen.plug.report import MenuReportOptions, stdoptions
 from gramps.gen.proxy import LivingProxyDb
@@ -164,12 +165,12 @@ class TwoWayFanChartOptions(MenuReportOptions):
         menu.add_option(
             _(CATEGORY_SUBJECT),
             "ancestor_generations",
-            NumberOption(_("Ancestor generations"), 5, 0, 8),
+            NumberOption(_("Ancestor generations"), 3, 0, 8),
         )
         menu.add_option(
             _(CATEGORY_SUBJECT),
             "descendant_generations",
-            NumberOption(_("Descendant generations"), 3, 0, 5),
+            NumberOption(_("Descendant generations"), 2, 0, 5),
         )
         menu.add_option(
             _(CATEGORY_FAMILIES),
@@ -260,6 +261,11 @@ class TwoWayFanChartOptions(MenuReportOptions):
             _(CATEGORY_COLORS), "background_color", ColorOption(_("Background color"), "#FAF9F5")
         )
         menu.add_option(
+            _(CATEGORY_COLORS),
+            "highlight_tag",
+            StringOption(_("Highlight tag"), ""),
+        )
+        menu.add_option(
             _(CATEGORY_PRIVACY),
             "privacy_mode",
             _enum(
@@ -322,6 +328,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "living_people": config.living_people_mode,
             "years_past_death": config.years_past_death,
             "output_format": config.output_format.value,
+            "highlight_tag": config.highlight_tag,
         }
 
     def apply_selected_preset(self) -> None:
@@ -448,6 +455,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 living_people_mode=value("living_people"),
                 years_past_death=value("years_past_death"),
                 output_format=OutputFormat(value("output_format")),
+                highlight_tag=value("highlight_tag"),
             )
         except (TypeError, ValueError) as error:
             raise ReportError(

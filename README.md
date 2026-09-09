@@ -41,7 +41,10 @@ Download `TwoWayFanChart.addon.tgz` from the [latest GitHub release](https://git
 1. Open a Gramps family tree.
 2. Go to **Reports → Graphical Reports → Two-Way Fan Chart**.
 3. Select the center family and the desired privacy/layout preset.
-4. Choose SVG, PDF, or PNG output and generate the report.
+4. Optionally enter a Gramps tag in **Highlight tag**. People carrying that
+   tag receive a small bordeaux diamond plus a reinforced outline; the signal
+   is cleared automatically for masked or excluded people.
+5. Choose SVG, PDF, or PNG output and generate the report.
 
 Headless example:
 
@@ -56,6 +59,7 @@ gramps -O "MyTree" -a report -p \
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
 - preferred-name labels: call name + nickname + surname when available; otherwise nickname + surname, or the call name / last given name + surname as fallback;
 - privacy filtering before formatting and media loading;
+- optional exact-name tag highlighting with a grayscale-distinct marker;
 - circular portrait crops with neutral, gendered, or initials fallbacks;
 - weighted descendant sectors and narrow-sector radial labels;
 - standalone SVG output without network resources or JavaScript;
@@ -71,7 +75,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.4**
+- Add-on version: **1.2.5**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

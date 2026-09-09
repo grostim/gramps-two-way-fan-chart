@@ -17,6 +17,7 @@ try:
     from TwoWayFanChart.model import (
         SceneCircle,
         SceneImage,
+        SceneMarker,
         SceneLegend,
         SceneNode,
         ScenePage,
@@ -29,6 +30,7 @@ except ModuleNotFoundError:
     from model import (
         SceneCircle,
         SceneImage,
+        SceneMarker,
         SceneLegend,
         SceneNode,
         ScenePage,
@@ -51,6 +53,7 @@ def _parse_hex_color(hex_color: str) -> tuple[float, float, float]:
 def _render_sector(ctx: cairo.Context, sector: SceneSector) -> None:
     """Render an annular sector around its declared scene center."""
     ctx.save()
+    ctx.new_path()
     ctx.translate(sector.cx, sector.cy)
     r_in = sector.inner_radius
     r_out = sector.outer_radius
@@ -86,6 +89,7 @@ def _render_sector(ctx: cairo.Context, sector: SceneSector) -> None:
 
 def _render_circle(ctx: cairo.Context, circle: SceneCircle) -> None:
     """Render a circle."""
+    ctx.new_path()
     ctx.arc(circle.cx, circle.cy, circle.r, 0, 2 * math.pi)
     if circle.fill:
         r, g, b = _parse_hex_color(circle.fill)
@@ -281,6 +285,27 @@ def _render_legend(ctx: cairo.Context, legend: SceneLegend) -> None:
         y += 8
 
 
+def _render_marker(ctx: cairo.Context, marker: SceneMarker) -> None:
+    """Render the same diamond marker as the SVG backend."""
+    ctx.save()
+    ctx.new_path()
+    ctx.move_to(marker.cx, marker.cy - marker.radius)
+    ctx.line_to(marker.cx + marker.radius, marker.cy)
+    ctx.line_to(marker.cx, marker.cy + marker.radius)
+    ctx.line_to(marker.cx - marker.radius, marker.cy)
+    ctx.close_path()
+    if marker.fill:
+        r, g, b = _parse_hex_color(marker.fill)
+        ctx.set_source_rgb(r, g, b)
+        ctx.fill_preserve()
+    r, g, b = _parse_hex_color(marker.stroke)
+    ctx.set_source_rgb(r, g, b)
+    ctx.set_line_width(marker.stroke_width)
+    ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+    ctx.stroke()
+    ctx.restore()
+
+
 def _render_child(ctx: cairo.Context, child) -> None:
     """Render one scene primitive."""
     if isinstance(child, SceneSector):
@@ -293,6 +318,8 @@ def _render_child(ctx: cairo.Context, child) -> None:
         _render_path_text(ctx, child)
     elif isinstance(child, SceneImage):
         _render_image(ctx, child)
+    elif isinstance(child, SceneMarker):
+        _render_marker(ctx, child)
     elif isinstance(child, SceneLegend):
         _render_legend(ctx, child)
     elif isinstance(child, SceneNode):

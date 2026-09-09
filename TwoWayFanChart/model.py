@@ -49,6 +49,7 @@ class PersonViewSeed:
     suffix: str = ""
     family_nick_name: str = ""
     surname_parts: tuple[SurnamePart, ...] = ()
+    is_highlighted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +262,18 @@ class SceneImage:
 
 
 @dataclass(frozen=True, slots=True)
+class SceneMarker:
+    """A small shape-plus-color marker for a semantically cited person."""
+
+    cx: float
+    cy: float
+    radius: float
+    stroke: str = "#7C2F3A"
+    stroke_width: float = 0.85
+    fill: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SceneText:
     """A text label placed at an absolute position."""
 
@@ -355,6 +368,7 @@ class SceneNode:
         | SceneSector
         | SceneCircle
         | SceneImage
+        | SceneMarker
         | SceneText
         | ScenePathText
         | SceneLegend

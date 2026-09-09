@@ -1619,41 +1619,58 @@ def _allocate_descendant_union_groups(
     *,
     start_angle: float,
     total_sweep: float,
+    include_empty: bool = False,
 ) -> tuple[_DescendantUnionAllocation, ...]:
-    """Allocate non-empty child groups while retaining their union identity."""
-    groups = _children_grouped_by_union(branch)
-    nonempty_groups = [
-        (union_index, group)
-        for union_index, group in enumerate(groups)
-        if group
-    ]
-    if len(nonempty_groups) <= 1:
-        if nonempty_groups:
-            union_index, group = nonempty_groups[0]
-        elif branch.children:
-            union_index, group = -1, branch.children
-        else:
-            return ()
-        return (
-            _DescendantUnionAllocation(
-                union_index,
-                tuple(group),
-                start_angle,
-                total_sweep,
-            ),
-        )
+    """Allocate one contiguous angular block per recorded union.
 
-    demands = [
-        _descendant_group_angle_demand(group)
-        for _union_index, group in nonempty_groups
-    ]
-    total_demand = sum(demands) or float(len(nonempty_groups))
+    The same allocations are used for the first-generation marriage cells and
+    for their child sectors. Keeping one interval per union is essential: if
+    those two passes use different demand models, a marriage cell can straddle
+    the children of another marriage and the chart looks like one shared box.
+
+    ``include_empty`` is used by the first-generation cell pass so a recorded
+    marriage without visible children still receives its own block. Child
+    placement also enables it, preserving the radial alignment while leaving
+    the block empty in later rings.
+    """
+    groups = list(_children_grouped_by_union(branch))
+    if branch.unions:
+        if len(groups) < len(branch.unions):
+            groups.extend(() for _ in range(len(branch.unions) - len(groups)))
+        indexed_groups = list(enumerate(groups[: len(branch.unions)]))
+        if not include_empty:
+            indexed_groups = [
+                (union_index, group)
+                for union_index, group in indexed_groups
+                if group
+            ]
+    elif branch.children:
+        indexed_groups = [(-1, branch.children)]
+    else:
+        return ()
+
+    if not indexed_groups:
+        return ()
+
+    demands = []
+    for _union_index, group in indexed_groups:
+        demand = _descendant_group_angle_demand(group) if group else 0.0
+        if len(branch.unions) > 1:
+            # A sparse/empty union still needs enough angular room for its
+            # first-generation couple label. All later child sectors inherit
+            # this same floor so their radial boundaries remain aligned.
+            demand = max(
+                demand,
+                _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8),
+            )
+        demands.append(demand or 0.8)
+    total_demand = sum(demands) or float(len(indexed_groups))
     allocations: list[_DescendantUnionAllocation] = []
     angle = start_angle
     for group_index, ((union_index, group), demand) in enumerate(
-        zip(nonempty_groups, demands)
+        zip(indexed_groups, demands)
     ):
-        if group_index == len(nonempty_groups) - 1:
+        if group_index == len(indexed_groups) - 1:
             group_sweep = start_angle + total_sweep - angle
         else:
             group_sweep = total_sweep * demand / total_demand
@@ -1679,7 +1696,8 @@ def _allocate_descendant_union_cells(
 
     Unlike child-sector allocation, a marriage with no visible children still
     needs a cell. This keeps the first-generation person/spouse presentation
-    one-to-one with the recorded unions.
+    one-to-one with the recorded unions. The child allocations deliberately
+    reuse these exact intervals so every union is a continuous radial cell.
     """
     if len(branch.unions) <= 1:
         return _allocate_descendant_union_groups(
@@ -1687,34 +1705,12 @@ def _allocate_descendant_union_cells(
             start_angle=start_angle,
             total_sweep=total_sweep,
         )
-
-    groups = list(_children_grouped_by_union(branch))
-    if len(groups) < len(branch.unions):
-        groups.extend(() for _ in range(len(branch.unions) - len(groups)))
-    # The first-generation cells represent marriages, not child counts. Equal
-    # allocation keeps the person and spouse labels readable in a one-child
-    # union while the child ring below remains demand-weighted.
-    demands = [1.0 for _group in groups[: len(branch.unions)]]
-    total_demand = sum(demands) or float(len(demands))
-    allocations: list[_DescendantUnionAllocation] = []
-    angle = start_angle
-    for union_index, (group, demand) in enumerate(
-        zip(groups, demands)
-    ):
-        if union_index == len(demands) - 1:
-            sweep = start_angle + total_sweep - angle
-        else:
-            sweep = total_sweep * demand / total_demand
-        allocations.append(
-            _DescendantUnionAllocation(
-                union_index,
-                tuple(group),
-                angle,
-                sweep,
-            )
-        )
-        angle += sweep
-    return tuple(allocations)
+    return _allocate_descendant_union_groups(
+        branch,
+        start_angle=start_angle,
+        total_sweep=total_sweep,
+        include_empty=True,
+    )
 
 
 def _allocate_descendant_children(
@@ -1734,6 +1730,7 @@ def _allocate_descendant_children(
         branch,
         start_angle=start_angle,
         total_sweep=total_sweep,
+        include_empty=True,
     ):
         allocations.extend(
             _allocate_descendant_branches_by_demand(
@@ -2967,6 +2964,7 @@ def layout_descendants(
                 branch,
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
+                include_empty=True,
             )
             for union_allocation in union_allocations:
                 union_fill_index = None

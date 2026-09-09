@@ -7,6 +7,8 @@ import unittest
 from TwoWayFanChart.extract import extract_descendant_branches
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
+    _allocate_descendant_union_cells,
+    _allocate_descendant_union_groups,
     _upright_tangent_rotation,
     calculate_canvas,
     layout_descendants,
@@ -429,6 +431,68 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         ]
         self.assertEqual(labels.count("i0893"), 2)
         self.assertFalse(any(" / " in label for label in labels))
+
+    def test_union_cells_and_child_blocks_share_the_same_angular_intervals(self):
+        dense_children = tuple(
+            DescendantBranch(
+                f"dense-child-{index}",
+                PersonNode(f"dense-child-{index}", f"I10{index}"),
+                2,
+                (),
+                tuple(
+                    DescendantBranch(
+                        f"dense-grandchild-{index}-{grandchild_index}",
+                        PersonNode(
+                            f"dense-grandchild-{index}-{grandchild_index}",
+                            f"I20{index}{grandchild_index}",
+                        ),
+                        3,
+                        (),
+                        (),
+                    )
+                    for grandchild_index in range(4)
+                ),
+            )
+            for index in range(3)
+        )
+        sparse_child = DescendantBranch(
+            "sparse-child",
+            PersonNode("sparse-child", "I1099"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "i0893",
+            1,
+            spouse_handles=("spouse-0335", "spouse-0340"),
+            children=dense_children + (sparse_child,),
+            children_by_union=(dense_children, (sparse_child,)),
+        )
+
+        cells = _allocate_descendant_union_cells(
+            person,
+            start_angle=96.0,
+            total_sweep=168.0,
+        )
+        child_blocks = _allocate_descendant_union_groups(
+            person,
+            start_angle=96.0,
+            total_sweep=168.0,
+            include_empty=True,
+        )
+
+        self.assertEqual(
+            [
+                (allocation.union_index, allocation.start_angle, allocation.sweep_angle)
+                for allocation in cells
+            ],
+            [
+                (allocation.union_index, allocation.start_angle, allocation.sweep_angle)
+                for allocation in child_blocks
+            ],
+        )
+        self.assertGreater(cells[0].sweep_angle, cells[1].sweep_angle)
 
 
 if __name__ == "__main__":

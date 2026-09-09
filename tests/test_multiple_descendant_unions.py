@@ -7,7 +7,7 @@ import unittest
 from TwoWayFanChart.extract import extract_descendant_branches
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
-    _outward_radial_rotation,
+    _upright_tangent_rotation,
     calculate_canvas,
     layout_descendants,
 )
@@ -15,6 +15,7 @@ from TwoWayFanChart.model import (
     DescendantBranch,
     PersonNode,
     ScenePathText,
+    SceneSector,
     SceneText,
     UnionBranch,
 )
@@ -253,6 +254,13 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             (),
             (),
         )
+        child_f0335_b = DescendantBranch(
+            "child-f0335-b",
+            PersonNode("child-f0335-b", "I1002"),
+            2,
+            (),
+            (),
+        )
         child_f0340 = DescendantBranch(
             "child-f0340",
             PersonNode("child-f0340", "I1003"),
@@ -263,10 +271,20 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         person = branch(
             "i0893",
             1,
-            spouse_handles=("spouse-0335", "spouse-0340"),
-            children=(child_f0335, child_f0340),
-            children_by_union=((child_f0335,), (child_f0340,)),
-            family_gramps_ids=("F0335", "F0340"),
+            spouse_handles=(
+                "spouse-0335",
+                "spouse-empty-1",
+                "spouse-empty-2",
+                "spouse-0340",
+            ),
+            children=(child_f0335, child_f0335_b, child_f0340),
+            children_by_union=(
+                (child_f0335, child_f0335_b),
+                (),
+                (),
+                (child_f0340,),
+            ),
+            family_gramps_ids=("F0335", None, None, "F0340"),
         )
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
@@ -286,14 +304,16 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, (SceneText, ScenePathText))
         ]
 
-        self.assertEqual(labels.count("F0335"), 1)
-        self.assertEqual(labels.count("F0340"), 1)
+        self.assertEqual(sum("F0335" in label for label in labels), 1)
+        self.assertEqual(sum("F0340" in label for label in labels), 1)
+        self.assertTrue(any("spouse 0340" in label for label in labels))
         marker_nodes = {
-            node.content: node
+            node.content.split(" · ", 1)[0]: node
             for node in scene.children
             if isinstance(node, SceneText)
-            and node.content in {"F0335", "F0340"}
+            and node.content.split(" · ", 1)[0] in {"F0335", "F0340"}
         }
+        self.assertEqual(set(marker_nodes), {"F0335", "F0340"})
         for marker in marker_nodes.values():
             radial_angle = math.degrees(
                 math.atan2(
@@ -301,11 +321,50 @@ class MultipleDescendantUnionTests(unittest.TestCase):
                     -(marker.y - canvas.center_cy_mm),
                 )
             ) % 360.0
-            radial_rotation = _outward_radial_rotation(radial_angle)
+            tangent_rotation = _upright_tangent_rotation(radial_angle)
             rotation_delta = (
-                (marker.rotation - radial_rotation + 180.0) % 360.0
+                (marker.rotation - tangent_rotation + 180.0) % 360.0
             ) - 180.0
-            self.assertAlmostEqual(abs(rotation_delta), 90.0, delta=1e-6)
+            self.assertAlmostEqual(rotation_delta, 0.0, delta=1e-6)
+
+        sectors = [
+            node for node in scene.children if isinstance(node, SceneSector)
+        ]
+        self.assertGreaterEqual(len(sectors), 4)
+        child_sectors = sectors[-3:]
+        self.assertEqual(child_sectors[0].fill, child_sectors[1].fill)
+        self.assertNotEqual(child_sectors[1].fill, child_sectors[2].fill)
+
+        def angle(node):
+            return math.atan2(
+                node.x - canvas.center_cx_mm,
+                -(node.y - canvas.center_cy_mm),
+            )
+
+        def mean_angle(nodes):
+            return math.atan2(
+                sum(math.sin(angle(node)) for node in nodes),
+                sum(math.cos(angle(node)) for node in nodes),
+            )
+
+        for family_id, child_labels in (
+            ("F0335", {"child f0335", "child f0335 b"}),
+            ("F0340", {"child f0340"}),
+        ):
+            header = marker_nodes[family_id]
+            children = [
+                node
+                for node in scene.children
+                if isinstance(node, SceneText)
+                and node.content in child_labels
+            ]
+            self.assertEqual(len(children), len(child_labels))
+            delta = (
+                angle(header) - mean_angle(children) + math.pi
+            ) % (2.0 * math.pi) - math.pi
+            self.assertLess(abs(delta), math.radians(1.0))
+            self.assertGreaterEqual(header.font_size, 3.0)
+        self.assertGreaterEqual(marker_nodes["F0340"].font_size, 3.6)
 
 
 if __name__ == "__main__":

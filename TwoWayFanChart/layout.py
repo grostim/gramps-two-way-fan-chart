@@ -249,6 +249,15 @@ def _outward_radial_rotation(deg: float) -> float:
     return rot
 
 
+def _upright_tangent_rotation(deg: float) -> float:
+    """Rotate a tangent label while keeping its baseline readable."""
+    rot = deg
+    normalized = rot % 360
+    if 90 < normalized < 270:
+        rot += 180
+    return rot
+
+
 def _tangent_offset(
     x: float,
     y: float,
@@ -1804,6 +1813,7 @@ def layout_descendants(
 
     all_children: list = []
     measure_only = True
+    union_fill_order = 0
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
     name_cache: dict[str, str] = {}
@@ -2000,8 +2010,10 @@ def layout_descendants(
         alloc_sweep: float,
         depth: int,
         branch_index: int,
+        union_fill_index: int | None = None,
     ) -> None:
         """Recursively place a branch and its children."""
+        nonlocal union_fill_order
         mid_angle = alloc_start + alloc_sweep / 2.0
 
         if max_gen >= 3:
@@ -2023,6 +2035,11 @@ def layout_descendants(
         # Emit sector for this branch
         if not measure_only:
             fill = descendant_fill(branch_index)
+            if depth == 2 and union_fill_index is not None:
+                # Adjacent union blocks need a visible distinction in addition
+                # to the family header; otherwise their child sectors look
+                # merged when the generic palette repeats a fill.
+                fill = descendant_fill(union_fill_index)
             all_children.append(SceneSector(
                 inner_radius=gen_inner,
                 outer_radius=gen_outer,
@@ -2587,6 +2604,10 @@ def layout_descendants(
                 total_sweep=alloc_sweep,
             )
             for union_allocation in union_allocations:
+                union_fill_index = None
+                if depth == 1:
+                    union_fill_index = union_fill_order
+                    union_fill_order += 1
                 child_allocs = _allocate_descendant_branches_by_demand(
                     union_allocation.children,
                     start_angle=union_allocation.start_angle,
@@ -2602,6 +2623,7 @@ def layout_descendants(
                         child_alloc.sweep_angle,
                         depth + 1,
                         branch_index,
+                        union_fill_index,
                     )
 
             if depth == 1 and len(union_allocations) > 1:
@@ -2612,32 +2634,38 @@ def layout_descendants(
                     depth + 1,
                 )
                 label_radius = label_inner + min(
-                    8.0,
-                    max(3.0, (label_outer - label_inner) * 0.18),
+                    12.0,
+                    max(5.0, (label_outer - label_inner) * 0.24),
                 )
                 for union_allocation in union_allocations:
                     union_index = union_allocation.union_index
                     if not 0 <= union_index < len(branch.unions):
                         continue
                     union = branch.unions[union_index]
-                    label = union.family_gramps_id
-                    if not label:
-                        spouse_label = _spouse_label(union, _name_label)
-                        label = _short(spouse_label or "", depth + 1)
+                    family_label = union.family_gramps_id or ""
+                    spouse_label = _short(
+                        _spouse_label(union, _name_label) or "",
+                        depth + 1,
+                    )
+                    label = " · ".join(
+                        part
+                        for part in (family_label, spouse_label)
+                        if part
+                    )
                     if not label:
                         continue
                     label_width = max(
                         0.0,
                         label_radius
                         * math.radians(
-                            max(union_allocation.sweep_angle - 1.0, 0.0)
+                            max(union_allocation.sweep_angle - 2.0, 0.0)
                         )
-                        - 1.0,
+                        - 1.5,
                     )
                     fitted, fitted_size, width_limit = _fit_text_to_width(
                         label,
-                        target_size=3.2,
-                        minimum_size=2.2,
+                        target_size=4.2,
+                        minimum_size=3.0,
                         max_width=label_width,
                         allow_ellipsis=False,
                     )
@@ -2647,24 +2675,65 @@ def layout_descendants(
                         union_allocation.start_angle
                         + union_allocation.sweep_angle / 2.0
                     )
-                    label_x, label_y = _polar(
-                        cx,
-                        cy,
-                        label_radius,
-                        label_angle,
-                    )
+                    label_lines = [(fitted, fitted_size, width_limit, label_radius)]
+                    if (
+                        family_label
+                        and spouse_label
+                        and fitted_size <= 3.05
+                    ):
+                        line_gap = min(
+                            3.0,
+                            max(2.0, (label_outer - label_inner) * 0.10),
+                        )
+                        family_fit, family_size, family_width = _fit_text_to_width(
+                            family_label,
+                            target_size=4.2,
+                            minimum_size=3.6,
+                            max_width=label_width,
+                            allow_ellipsis=False,
+                        )
+                        spouse_fit, spouse_size, spouse_width = _fit_text_to_width(
+                            spouse_label,
+                            target_size=3.2,
+                            minimum_size=2.8,
+                            max_width=label_width,
+                            allow_ellipsis=False,
+                        )
+                        label_lines = [
+                            (
+                                family_fit,
+                                family_size,
+                                family_width,
+                                label_radius - line_gap,
+                            ),
+                            (
+                                spouse_fit,
+                                spouse_size,
+                                spouse_width,
+                                label_radius + line_gap,
+                            ),
+                        ]
                     if not measure_only:
-                        all_children.append(SceneText(
-                            x=label_x,
-                            y=label_y,
-                            content=fitted,
-                            font_size=fitted_size,
-                            fill=TEXT_DARK,
-                            anchor="middle",
-                            font_weight="bold",
-                            rotation=_outward_radial_rotation(label_angle) + 90.0,
-                            max_width=width_limit,
-                        ))
+                        for content, size, width, radius in label_lines:
+                            if not content:
+                                continue
+                            label_x, label_y = _polar(
+                                cx,
+                                cy,
+                                radius,
+                                label_angle,
+                            )
+                            all_children.append(SceneText(
+                                x=label_x,
+                                y=label_y,
+                                content=content,
+                                font_size=size,
+                                fill=TEXT_DARK,
+                                anchor="middle",
+                                font_weight="bold",
+                                rotation=_upright_tangent_rotation(label_angle),
+                                max_width=width,
+                            ))
 
     # Measure every name once so the smallest fitting size becomes the
     # generation-wide contract. The second pass then renders all names in that
@@ -2679,6 +2748,7 @@ def layout_descendants(
     }
     measure_only = False
     all_children = []
+    union_fill_order = 0
     for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
         _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
 

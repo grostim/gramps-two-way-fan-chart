@@ -41,9 +41,10 @@ Download `TwoWayFanChart.addon.tgz` from the [latest GitHub release](https://git
 1. Open a Gramps family tree.
 2. Go to **Reports → Graphical Reports → Two-Way Fan Chart**.
 3. Select the center family and the desired privacy/layout preset.
-4. Optionally enter a Gramps tag in **Highlight tag**. People carrying that
-   tag receive a small bordeaux diamond plus a reinforced outline; the signal
-   is cleared automatically for masked or excluded people.
+4. If tag markers are useful for a working chart, enable **Show citation
+   markers** and enter a Gramps tag in **Highlight tag**. The publication
+   profile leaves this option disabled so the fan remains visually uncluttered;
+   the signal is cleared automatically for masked or excluded people.
 5. Choose SVG, PDF, or PNG output and generate the report.
 
 Headless example:
@@ -57,11 +58,12 @@ gramps -O "MyTree" -a report -p \
 
 - bidirectional ancestor/descendant fan layout;
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
-- preferred-name labels: call name + nickname + surname when available; otherwise nickname + surname, or the call name / last given name + surname as fallback;
+- complete given-name + surname labels for the center and ancestors, with usage-name labels for descendants; records without known life years have no date label;
 - privacy filtering before formatting and media loading;
 - optional exact-name tag highlighting with a grayscale-distinct marker;
 - circular portrait crops with neutral, gendered, or initials fallbacks;
 - weighted descendant sectors and narrow-sector radial labels;
+- portable vector labels for SVG, librsvg/Cairo, and browser renderers;
 - standalone SVG output without network resources or JavaScript;
 - optional PDF and PNG output through Cairo;
 - GUI and headless CLI support.
@@ -75,7 +77,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.5**
+- Add-on version: **1.2.11**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

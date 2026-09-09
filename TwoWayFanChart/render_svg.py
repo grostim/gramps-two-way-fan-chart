@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import math
+import re
 from xml.sax.saxutils import escape as _xml_escape
 
 try:
@@ -48,6 +50,84 @@ def xml_escape(text: str) -> str:
 def _fmt(value: float) -> str:
     """Format a float for SVG, trimming unnecessary precision."""
     return f"{value:.4f}".rstrip("0").rstrip(".")
+
+
+_ARC_PATH_RE = re.compile(
+    r"^\s*M\s+"
+    r"(?P<x0>[-+]?(?:\d+(?:\.\d*)?|\.\d+))\s+"
+    r"(?P<y0>[-+]?(?:\d+(?:\.\d*)?|\.\d+))\s+"
+    r"A\s+"
+    r"(?P<rx>[-+]?(?:\d+(?:\.\d*)?|\.\d+))\s+"
+    r"(?P<ry>[-+]?(?:\d+(?:\.\d*)?|\.\d+))\s+"
+    r"(?P<rotation>[-+]?(?:\d+(?:\.\d*)?|\.\d+))\s+"
+    r"(?P<large>[01])\s+"
+    r"(?P<sweep>[01])\s+"
+    r"(?P<x1>[-+]?(?:\d+(?:\.\d*)?|\.\d+))\s+"
+    r"(?P<y1>[-+]?(?:\d+(?:\.\d*)?|\.\d+))\s*$"
+)
+
+
+def _upright_rotation(angle: float) -> float:
+    """Keep a baseline tangent readable from left to right."""
+    rotation = angle % 360.0
+    if rotation > 180.0:
+        rotation -= 360.0
+    while rotation > 90.0:
+        rotation -= 180.0
+    while rotation <= -90.0:
+        rotation += 180.0
+    return rotation
+
+
+def _arc_text_anchor(path: str) -> tuple[float, float, float] | None:
+    """Return ``(x, y, rotation)`` for a generated circular arc path.
+
+    The production layout emits one ``M … A …`` circular arc per
+    ``ScenePathText``.  librsvg renders ordinary SVG text but ignores
+    ``textPath``; this converts that known path form to an equivalent,
+    renderer-portable vector text placement.  Unknown path syntax keeps the
+    historical textPath fallback rather than guessing a position.
+    """
+    match = _ARC_PATH_RE.fullmatch(path)
+    if match is None:
+        return None
+    values = {key: float(value) for key, value in match.groupdict().items() if key not in {"large", "sweep"}}
+    x0, y0 = values["x0"], values["y0"]
+    x1, y1 = values["x1"], values["y1"]
+    radius_x, radius_y = values["rx"], values["ry"]
+    large = bool(int(match.group("large")))
+    sweep = bool(int(match.group("sweep")))
+    if radius_x <= 0.0 or abs(radius_x - radius_y) > 1e-6:
+        return None
+    radius = radius_x
+    chord = math.hypot(x1 - x0, y1 - y0)
+    if chord <= 1e-9 or chord > 2.0 * radius + 1e-6:
+        return None
+
+    midpoint_x = (x0 + x1) / 2.0
+    midpoint_y = (y0 + y1) / 2.0
+    height = math.sqrt(max(0.0, radius * radius - (chord / 2.0) ** 2))
+    normal_x = -(y1 - y0) / chord
+    normal_y = (x1 - x0) / chord
+
+    for sign in (-1.0, 1.0):
+        cx = midpoint_x + sign * height * normal_x
+        cy = midpoint_y + sign * height * normal_y
+        start = math.atan2(y0 - cy, x0 - cx)
+        end = math.atan2(y1 - cy, x1 - cx)
+        if sweep:
+            delta = (end - start) % (2.0 * math.pi)
+            tangent = start + delta / 2.0 + math.pi / 2.0
+        else:
+            delta = -((start - end) % (2.0 * math.pi))
+            tangent = start + delta / 2.0 - math.pi / 2.0
+        if (abs(delta) > math.pi) != large:
+            continue
+        angle = start + delta / 2.0
+        x = cx + radius * math.cos(angle)
+        y = cy + radius * math.sin(angle)
+        return x, y, _upright_rotation(math.degrees(tangent))
+    return None
 
 
 def _render_sector(sector: SceneSector) -> str:
@@ -162,29 +242,38 @@ def _render_marker(marker: SceneMarker) -> str:
 _path_text_counter = 0
 
 
-def _render_path_text(pt: ScenePathText, path_id: str) -> str:
-    """Render text along an SVG arc path.
+def _render_path_text(pt: ScenePathText, _path_id: str) -> str:
+    """Render an arc label as portable vector text.
 
-    The path is emitted inside <defs> and referenced via textPath.
-    Uses xlink:href for broad compatibility (Chromium, Firefox, Safari).
+    librsvg (the PDF/PNG converter used by the publication pipeline) ignores
+    SVG ``textPath`` content. The production layout uses circular ``M … A``
+    arcs, so place ordinary text at the arc midpoint and rotate it onto the
+    local tangent instead. This preserves the complete label and works in
+    librsvg, Cairo, and browsers without rasterizing the graph. Unexpected
+    path syntax fails closed instead of emitting invisible text.
     """
+    anchor = _arc_text_anchor(pt.path)
+    if anchor is None:
+        raise ValueError("ScenePathText requires a generated circular arc path")
+
     escaped = xml_escape(pt.content)
-    width_attrs = ""
+    x, y, rotation = anchor
+    attrs = (
+        f'x="{_fmt(x)}" y="{_fmt(y)}" '
+        f'font-size="{_fmt(pt.font_size)}" fill="{pt.fill}" '
+        'text-anchor="middle" dominant-baseline="middle" '
+        f'transform="rotate({_fmt(rotation)} {_fmt(x)} {_fmt(y)})"'
+    )
     if pt.max_width is not None and pt.max_width > 0:
         fitted_width = min(
             estimate_text_width(pt.content, pt.font_size),
             pt.max_width,
         )
-        width_attrs = (
+        attrs += (
             f' textLength="{_fmt(fitted_width)}"'
             ' lengthAdjust="spacingAndGlyphs"'
         )
-    return (
-        f'<defs><path id="{path_id}" d="{pt.path}" fill="none" /></defs>'
-        f'<text font-size="{_fmt(pt.font_size)}" fill="{pt.fill}"{width_attrs}>'
-        f'<textPath xlink:href="#{path_id}" href="#{path_id}" startOffset="50%" text-anchor="middle">'
-        f'{escaped}</textPath></text>'
-    )
+    return f'<text {attrs} data-arc-label="true">{escaped}</text>'
 
 
 def _render_legend(legend: SceneLegend) -> str:

@@ -15,7 +15,7 @@ from typing import Any
 try:
     from TwoWayFanChart.config import ChartConfig, OutputFormat
     from TwoWayFanChart.extract import extract_chart_graph
-    from TwoWayFanChart.facts import simple_name, simple_name_full, simple_dates
+    from TwoWayFanChart.facts import simple_name, simple_dates
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -42,7 +42,7 @@ try:
 except ModuleNotFoundError:
     from config import ChartConfig, OutputFormat  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
-    from facts import simple_name, simple_name_full, simple_dates  # type: ignore[no-redef]
+    from facts import simple_name, simple_dates  # type: ignore[no-redef]
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -158,8 +158,20 @@ def _center_name_order(label: str) -> str:
     return _mockup_name_order(label)
 
 
+def _public_name(database, handle: str | None) -> str:
+    """Return the usage-name label used in public output."""
+    return simple_name(database, handle)
+
+
+def _public_usage_name(database, handle: str | None) -> str:
+    """Return the privacy-safe usage-name label for a descendant."""
+    return _mockup_name_order(simple_name(database, handle))
+
+
 def _public_dates(database, handle: str | None) -> str:
-    """Return life years, leaving people without known dates unlabelled."""
+    """Return life years, or no label when no dates are known."""
+    if not handle:
+        return ""
     return simple_dates(database, handle)
 
 
@@ -243,7 +255,9 @@ def _build_scene(
         """Resolve the configured tag by its name without retaining its label."""
         return resolve_highlight_tag_handle(db, config.highlight_tag)
 
-    highlight_tag_handle = _resolve_highlight_tag_handle()
+    highlight_tag_handle = (
+        _resolve_highlight_tag_handle() if config.show_highlight_markers else None
+    )
 
     def _person_visibility(handle: str | None) -> tuple[Any | None, VisibilityState]:
         if not handle:
@@ -279,7 +293,15 @@ def _build_scene(
             return "Personne privée"
         if state is VisibilityState.EXCLUDED:
             return ""
-        return simple_name(db, handle)
+        return _public_name(db, handle)
+
+    def _safe_usage_name(handle: str | None) -> str:
+        _person, state = _person_visibility(handle)
+        if state is VisibilityState.MASKED:
+            return "Personne privée"
+        if state is VisibilityState.EXCLUDED:
+            return ""
+        return _public_usage_name(db, handle)
 
     def _safe_dates(handle: str | None) -> str:
         _person, state = _person_visibility(handle)
@@ -351,8 +373,17 @@ def _build_scene(
         right_portrait=right_portrait,
         left_fallback=_safe_fallback(center_left_handle, left_label),
         right_fallback=_safe_fallback(center_right_handle, right_label or ""),
-        left_highlighted=_safe_highlight(center_left_handle),
-        right_highlighted=_safe_highlight(center_right_handle),
+        left_highlighted=(
+            _safe_highlight(center_left_handle)
+            if config.show_highlight_markers
+            else False
+        ),
+        right_highlighted=(
+            _safe_highlight(center_right_handle)
+            if config.show_highlight_markers
+            else False
+        ),
+        show_highlight_markers=config.show_highlight_markers,
         statistics=statistics,
     )
 
@@ -375,16 +406,22 @@ def _build_scene(
                 label,
                 dates_label,
                 portrait,
-                _safe_highlight(slot.person.handle) if slot.person else False,
+                (
+                    _safe_highlight(slot.person.handle)
+                    if config.show_highlight_markers and slot.person
+                    else False
+                ),
             )
         )
     ancestors_node = layout_ancestors(
-        canvas, ancestor_slots=tuple(ancestor_slots)
+        canvas,
+        ancestor_slots=tuple(ancestor_slots),
+        show_highlight_markers=config.show_highlight_markers,
     )
 
     # --- Descendant branches with real person names ---
     def _name_lookup(handle: str | None) -> str:
-        return _safe_name(handle)
+        return _safe_usage_name(handle)
 
     def _dates_lookup(handle: str | None) -> str:
         return _safe_dates(handle)
@@ -397,6 +434,7 @@ def _build_scene(
         shortener=_descendant_short_label,
         portrait_lookup=_safe_portrait,
         highlight_lookup=_safe_highlight,
+        show_highlight_markers=config.show_highlight_markers,
     )
 
     # --- Titles and scene statistics ---

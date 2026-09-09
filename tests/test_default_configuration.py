@@ -15,6 +15,15 @@ from TwoWayFanChart.privacy import PersonPrivacyFacts, classify_visibility
 
 
 class DefaultConfigurationTests(unittest.TestCase):
+    def test_registration_and_builder_versions_are_aligned(self):
+        registration = Path("TwoWayFanChart/TwoWayFanChart.gpr.py").read_text(
+            encoding="utf-8"
+        )
+        builder = Path("build_addon.py").read_text(encoding="utf-8")
+
+        self.assertIn('version="1.2.11"', registration)
+        self.assertIn('VERSION = "1.2.11"', builder)
+
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
 
@@ -25,6 +34,7 @@ class DefaultConfigurationTests(unittest.TestCase):
         self.assertEqual(config.privacy_mode, PrivacyMode.INCLUDE_ALL)
         self.assertTrue(config.include_private)
         self.assertEqual(config.living_people_mode, 99)
+        self.assertFalse(config.show_highlight_markers)
 
     def test_publication_preset_uses_the_same_requested_defaults(self):
         config = build_preset(PresetName.PUBLICATION)
@@ -55,6 +65,7 @@ class DefaultConfigurationTests(unittest.TestCase):
             '"Privacy mode",\n                "include_all"',
             'add_private_data_option(menu, _(CATEGORY_PRIVACY), default=True)',
             'mode=LivingProxyDb.MODE_INCLUDE_ALL',
+            'BooleanOption(_("Show citation markers"), False)',
         ):
             self.assertIn(expected, source)
 

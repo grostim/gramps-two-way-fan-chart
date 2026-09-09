@@ -138,6 +138,7 @@ def branch(
     spouse_handles: tuple[str, ...],
     children: tuple[DescendantBranch, ...],
     children_by_union: tuple[tuple[DescendantBranch, ...], ...],
+    family_gramps_ids: tuple[str | None, ...] = (),
 ) -> DescendantBranch:
     unions = tuple(
         UnionBranch(
@@ -145,6 +146,11 @@ def branch(
             spouse_handle=spouse,
             child_handles=tuple(child.person.handle for child in group),
             child_relations=tuple("birth" for _child in group),
+            family_gramps_id=(
+                family_gramps_ids[index]
+                if index < len(family_gramps_ids)
+                else None
+            ),
         )
         for index, (spouse, group) in enumerate(zip(spouse_handles, children_by_union))
     )
@@ -172,6 +178,10 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(
             [union.family_handle for union in person.unions],
             ["f0335", "f0340"],
+        )
+        self.assertEqual(
+            [union.family_gramps_id for union in person.unions],
+            ["F0335", "F0340"],
         )
         self.assertEqual(
             [
@@ -229,6 +239,50 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertTrue(any("Spouse F0335" in label for label in labels))
         self.assertTrue(any("Spouse F0340" in label for label in labels))
+
+    def test_layout_labels_each_nonempty_union_block(self):
+        child_f0335 = DescendantBranch(
+            "child-f0335",
+            PersonNode("child-f0335", "I1001"),
+            2,
+            (),
+            (),
+        )
+        child_f0340 = DescendantBranch(
+            "child-f0340",
+            PersonNode("child-f0340", "I1003"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "i0893",
+            1,
+            spouse_handles=("spouse-0335", "spouse-0340"),
+            children=(child_f0335, child_f0340),
+            children_by_union=((child_f0335,), (child_f0340,)),
+            family_gramps_ids=("F0335", "F0340"),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+
+        scene = layout_descendants(
+            canvas,
+            (person,),
+            name_lookup=lambda handle: handle.replace("-", " "),
+            dates_lookup=lambda _handle: "",
+        )
+        labels = [
+            node.content
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+        ]
+
+        self.assertEqual(labels.count("F0335"), 1)
+        self.assertEqual(labels.count("F0340"), 1)
 
 
 if __name__ == "__main__":

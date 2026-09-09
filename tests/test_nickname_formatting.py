@@ -87,7 +87,7 @@ class NicknameFormattingTests(unittest.TestCase):
             "Alexandre Roche",
         )
 
-    def test_public_report_omits_missing_dates_without_inventing_them(self):
+    def test_public_report_leaves_missing_dates_blank(self):
         database = FakeDatabase(
             FakePerson(FakeName(first_name="Alexandre", surnames=("Roche",)))
         )
@@ -98,21 +98,37 @@ class NicknameFormattingTests(unittest.TestCase):
         database = FakeDatabase(
             FakePerson(
                 FakeName(
-                    first_name="Alexandre Théodore",
-                    call_name="Alexandre",
-                    nick_name="Toto",
-                    surnames=("Roche",),
+                    first_name="André Germain",
+                    call_name="André",
+                    nick_name="Germain",
+                    surnames=("Roque",),
                 )
             )
         )
 
         self.assertEqual(
             simple_name(database, "person-1"),
-            'Roche, Alexandre "Toto"',
+            'Roque, André "Germain"',
         )
         self.assertEqual(
-            _mockup_name_order('Roche, Alexandre "Toto"'),
-            'Alexandre "Toto" Roche',
+            _mockup_name_order('Roque, André "Germain"'),
+            'André "Germain" Roque',
+        )
+
+    def test_usage_name_drops_other_given_names(self):
+        database = FakeDatabase(
+            FakePerson(
+                FakeName(
+                    first_name="Marie Louise",
+                    call_name="Marie",
+                    surnames=("Coste",),
+                )
+            )
+        )
+
+        self.assertEqual(
+            _mockup_name_order(simple_name(database, "person-1")),
+            "Marie Coste",
         )
 
     def test_nickname_is_trimmed_and_does_not_change_surname_order(self):
@@ -135,7 +151,7 @@ class NicknameFormattingTests(unittest.TestCase):
         database = FakeDatabase(
             FakePerson(
                 FakeName(
-                    first_name="Louis André",
+                    first_name="André",
                     nick_name="Germain",
                     surnames=("Roque",),
                 )

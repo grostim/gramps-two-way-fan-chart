@@ -155,7 +155,13 @@ class UnionBranch:
 
 @dataclass(frozen=True, slots=True)
 class DescendantBranch:
-    """One visible descendant position and its recorded unions."""
+    """One visible descendant position and its recorded unions.
+
+    ``children`` remains the flattened traversal order used by the existing
+    layout helpers. ``children_by_union`` preserves the semantic association
+    with each union, in the same order as ``unions``. The empty default keeps
+    hand-built legacy fixtures compatible; extraction always fills it.
+    """
 
     position_id: str
     person: PersonNode
@@ -164,10 +170,15 @@ class DescendantBranch:
     children: tuple["DescendantBranch", ...]
     relation: str = "birth"
     cycle: bool = False
+    children_by_union: tuple[tuple["DescendantBranch", ...], ...] = ()
 
     def __post_init__(self) -> None:
         if self.generation < 1:
             raise ValueError("descendant generation must be at least 1")
+        if self.children_by_union and len(self.children_by_union) != len(self.unions):
+            raise ValueError(
+                "one descendant child group is required for every union"
+            )
 
 
 @dataclass(frozen=True, slots=True)

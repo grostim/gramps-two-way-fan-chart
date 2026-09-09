@@ -158,6 +158,11 @@ def _center_name_order(label: str) -> str:
     return _mockup_name_order(label)
 
 
+def _public_dates(database, handle: str | None) -> str:
+    """Return life years, leaving people without known dates unlabelled."""
+    return simple_dates(database, handle)
+
+
 def _center_portrait_data_uri(config: ChartConfig, db, handle: str | None) -> str | None:
     """Resolve one center-person portrait from Gramps media, if available."""
     if not config.show_portraits or not handle:
@@ -280,7 +285,7 @@ def _build_scene(
         _person, state = _person_visibility(handle)
         if not decision_for_state(state).expose_details:
             return ""
-        return simple_dates(db, handle)
+        return _public_dates(db, handle)
 
     def _safe_portrait(handle: str | None) -> str | None:
         if not handle or not config.show_portraits:

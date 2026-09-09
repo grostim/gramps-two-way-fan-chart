@@ -12,6 +12,7 @@ from TwoWayFanChart.model import (
     SceneMarker,
     SceneNode,
     ScenePage,
+    ScenePathText,
     UnionBranch,
 )
 from TwoWayFanChart.highlight import resolve_highlight_tag_handle
@@ -87,7 +88,7 @@ class HighlightContractTests(unittest.TestCase):
         self.assertFalse(highlighted_for_state(True, VisibilityState.EXCLUDED))
         self.assertFalse(highlighted_for_state(False, VisibilityState.VISIBLE))
 
-    def test_ancestor_marker_is_emitted_from_the_sanitized_flag(self):
+    def test_ancestor_marker_is_opt_in_for_the_fan_view(self):
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
             ancestor_generations=1,
@@ -98,10 +99,18 @@ class HighlightContractTests(unittest.TestCase):
             (("ancestor-a-1-0", "Coste, Benoît", "1781–1846", None, True),),
         )
         markers = [node for node in scene.children if isinstance(node, SceneMarker)]
+        self.assertEqual(markers, [])
+
+        scene = layout_ancestors(
+            canvas,
+            (("ancestor-a-1-0", "Coste, Benoît", "1781–1846", None, True),),
+            show_highlight_markers=True,
+        )
+        markers = [node for node in scene.children if isinstance(node, SceneMarker)]
         self.assertEqual(len(markers), 1)
         self.assertGreater(markers[0].radius, 0)
 
-    def test_descendant_child_and_spouse_markers_are_emitted(self):
+    def test_descendant_markers_are_opt_in_for_the_fan_view(self):
         root = branch("root", 1, spouse="root-spouse", children=(branch("child", 2),))
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
@@ -115,6 +124,16 @@ class HighlightContractTests(unittest.TestCase):
             highlight_lookup=lambda handle: handle in {"root", "root-spouse", "child"},
         )
         markers = [node for node in scene.children if isinstance(node, SceneMarker)]
+        self.assertEqual(markers, [])
+
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: handle.replace("-", " "),
+            highlight_lookup=lambda handle: handle in {"root", "root-spouse", "child"},
+            show_highlight_markers=True,
+        )
+        markers = [node for node in scene.children if isinstance(node, SceneMarker)]
         self.assertGreaterEqual(len(markers), 3)
 
     def test_svg_serializes_highlight_marker_as_shape_plus_color(self):
@@ -125,6 +144,35 @@ class HighlightContractTests(unittest.TestCase):
         self.assertIn("7C2F3A", svg)
         self.assertIn("stroke-linejoin", svg)
         self.assertIn("<path", svg)
+
+    def test_svg_serializes_arc_labels_as_visible_vector_text(self):
+        svg = render_svg(
+            ScenePage(100, 100),
+            SceneNode((
+                ScenePathText(
+                    path="M 10 80 A 30 30 0 0 1 70 80",
+                    content="Full Name 1781–1846",
+                    font_size=6,
+                ),
+            )),
+        )
+        self.assertNotIn("<textPath", svg)
+        self.assertRegex(svg, r'<text x="[^"]+" y="[^"]+"')
+        self.assertIn('transform="rotate(', svg)
+        self.assertIn("Full Name 1781–1846", svg)
+
+    def test_svg_rejects_non_circular_arc_paths_instead_of_hiding_labels(self):
+        with self.assertRaises(ValueError):
+            render_svg(
+                ScenePage(100, 100),
+                SceneNode((
+                    ScenePathText(
+                        path="M 10 80 L 70 80",
+                        content="Unsupported path",
+                        font_size=6,
+                    ),
+                )),
+            )
 
     def test_cairo_serializes_highlight_marker_when_available(self):
         try:

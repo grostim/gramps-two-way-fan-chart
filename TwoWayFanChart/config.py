@@ -79,6 +79,7 @@ class ChartConfig:
     living_people_mode: int = 99
     years_past_death: int = 0
     highlight_tag: str = ""
+    show_highlight_markers: bool = False
 
     def __post_init__(self) -> None:
         enum_fields = (

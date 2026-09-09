@@ -22,8 +22,8 @@ class DefaultConfigurationTests(unittest.TestCase):
         )
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
-        self.assertIn('version="1.2.17"', registration)
-        self.assertIn('VERSION = "1.2.17"', builder)
+        self.assertIn('version="1.2.18"', registration)
+        self.assertIn('VERSION = "1.2.18"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()

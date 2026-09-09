@@ -7,15 +7,15 @@ import unittest
 from TwoWayFanChart.extract import extract_descendant_branches
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
-    _outward_radial_rotation,
+    _upright_tangent_rotation,
     calculate_canvas,
     layout_descendants,
 )
 from TwoWayFanChart.model import (
     DescendantBranch,
     PersonNode,
-    SceneSector,
     ScenePathText,
+    SceneSector,
     SceneText,
     UnionBranch,
 )
@@ -285,93 +285,76 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         scene = layout_descendants(
             canvas,
             (person,),
-            name_lookup=lambda handle: {
-                "spouse-0335": "spouse 0335",
-                "spouse-0340": "spouse 0340",
-                "child-f0335": "child f0335",
-                "child-f0335-b": "child f0335 b",
-                "child-f0340": "child f0340",
-            }.get(handle, handle.replace("-", " ")),
+            name_lookup=lambda handle: handle.replace("-", " "),
             dates_lookup=lambda _handle: "",
         )
-        labels = [node.content for node in scene.children
-                  if isinstance(node, (SceneText, ScenePathText))]
-
-        self.assertEqual(labels.count("F0335 · spouse 0335"), 1)
-        self.assertEqual(labels.count("F0340 · spouse 0340"), 1)
-        sectors = [
-            node
+        labels = [
+            node.content
             for node in scene.children
-            if isinstance(node, SceneSector)
+            if isinstance(node, (SceneText, ScenePathText))
         ]
-        self.assertGreaterEqual(len(sectors), 4)
-        self.assertEqual(sectors[-3].fill, sectors[-2].fill)
-        self.assertNotEqual(sectors[-2].fill, sectors[-1].fill)
+
+        self.assertEqual(sum("F0335" in label for label in labels), 1)
+        self.assertEqual(sum("F0340" in label for label in labels), 1)
+        self.assertTrue(any("spouse 0340" in label for label in labels))
         marker_nodes = {
             node.content.split(" · ", 1)[0]: node
             for node in scene.children
             if isinstance(node, SceneText)
             and node.content.split(" · ", 1)[0] in {"F0335", "F0340"}
         }
-        child_nodes = {
-            node.content: node
-            for node in scene.children
-            if isinstance(node, SceneText)
-            and node.content in {
-                "child f0335",
-                "child f0335 b",
-                "child f0340",
-            }
-        }
-
-        def radial_angle(node):
-            return math.degrees(
-                math.atan2(
-                    node.x - canvas.center_cx_mm,
-                    -(node.y - canvas.center_cy_mm),
-                )
-            ) % 360.0
-
-        def circular_mean(angles):
-            return math.degrees(
-                math.atan2(
-                    sum(math.sin(math.radians(angle)) for angle in angles),
-                    sum(math.cos(math.radians(angle)) for angle in angles),
-                )
-            ) % 360.0
-
-        def angular_distance(left, right):
-            return abs((left - right + 180.0) % 360.0 - 180.0)
-
-        self.assertLess(
-            angular_distance(
-                radial_angle(marker_nodes["F0335"]),
-                circular_mean([
-                    radial_angle(child_nodes["child f0335"]),
-                    radial_angle(child_nodes["child f0335 b"]),
-                ]),
-            ),
-            1.0,
-        )
-        self.assertLess(
-            angular_distance(
-                radial_angle(marker_nodes["F0340"]),
-                radial_angle(child_nodes["child f0340"]),
-            ),
-            1.0,
-        )
+        self.assertEqual(set(marker_nodes), {"F0335", "F0340"})
         for marker in marker_nodes.values():
-            marker_angle = math.degrees(
+            radial_angle = math.degrees(
                 math.atan2(
                     marker.x - canvas.center_cx_mm,
                     -(marker.y - canvas.center_cy_mm),
                 )
             ) % 360.0
-            radial_rotation = _outward_radial_rotation(marker_angle)
+            tangent_rotation = _upright_tangent_rotation(radial_angle)
             rotation_delta = (
-                (marker.rotation - radial_rotation + 180.0) % 360.0
+                (marker.rotation - tangent_rotation + 180.0) % 360.0
             ) - 180.0
-            self.assertAlmostEqual(abs(rotation_delta), 90.0, delta=1e-6)
+            self.assertAlmostEqual(rotation_delta, 0.0, delta=1e-6)
+
+        sectors = [
+            node for node in scene.children if isinstance(node, SceneSector)
+        ]
+        self.assertGreaterEqual(len(sectors), 4)
+        child_sectors = sectors[-3:]
+        self.assertEqual(child_sectors[0].fill, child_sectors[1].fill)
+        self.assertNotEqual(child_sectors[1].fill, child_sectors[2].fill)
+
+        def angle(node):
+            return math.atan2(
+                node.x - canvas.center_cx_mm,
+                -(node.y - canvas.center_cy_mm),
+            )
+
+        def mean_angle(nodes):
+            return math.atan2(
+                sum(math.sin(angle(node)) for node in nodes),
+                sum(math.cos(angle(node)) for node in nodes),
+            )
+
+        for family_id, child_labels in (
+            ("F0335", {"child f0335", "child f0335 b"}),
+            ("F0340", {"child f0340"}),
+        ):
+            header = marker_nodes[family_id]
+            children = [
+                node
+                for node in scene.children
+                if isinstance(node, SceneText)
+                and node.content in child_labels
+            ]
+            self.assertEqual(len(children), len(child_labels))
+            delta = (
+                angle(header) - mean_angle(children) + math.pi
+            ) % (2.0 * math.pi) - math.pi
+            self.assertLess(abs(delta), math.radians(1.0))
+            self.assertGreaterEqual(header.font_size, 3.0)
+        self.assertGreaterEqual(marker_nodes["F0340"].font_size, 3.6)
 
 
 if __name__ == "__main__":

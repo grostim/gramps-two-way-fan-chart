@@ -158,9 +158,6 @@ def _center_name_order(label: str) -> str:
     return _mockup_name_order(label)
 
 
-UNKNOWN_DATES_LABEL = "dates inconnues"
-
-
 def _public_name(database, handle: str | None) -> str:
     """Return the usage-name label used in public output."""
     return simple_name(database, handle)
@@ -172,10 +169,10 @@ def _public_usage_name(database, handle: str | None) -> str:
 
 
 def _public_dates(database, handle: str | None) -> str:
-    """Return life years, explicitly marking a record with no known dates."""
+    """Return life years, or no label when no dates are known."""
     if not handle:
         return ""
-    return simple_dates(database, handle) or UNKNOWN_DATES_LABEL
+    return simple_dates(database, handle)
 
 
 def _center_portrait_data_uri(config: ChartConfig, db, handle: str | None) -> str | None:

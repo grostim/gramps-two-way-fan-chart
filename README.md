@@ -58,7 +58,7 @@ gramps -O "MyTree" -a report -p \
 
 - bidirectional ancestor/descendant fan layout;
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
-- complete given-name + surname labels for the center and ancestors, with usage-name labels for descendants; records without known life years are marked ``dates inconnues``;
+- complete given-name + surname labels for the center and ancestors, with usage-name labels for descendants; records without known life years have no date label;
 - privacy filtering before formatting and media loading;
 - optional exact-name tag highlighting with a grayscale-distinct marker;
 - circular portrait crops with neutral, gendered, or initials fallbacks;
@@ -77,7 +77,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.10**
+- Add-on version: **1.2.11**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

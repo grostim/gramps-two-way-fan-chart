@@ -87,12 +87,12 @@ class NicknameFormattingTests(unittest.TestCase):
             "Alexandre Roche",
         )
 
-    def test_public_report_marks_missing_dates_without_inventing_them(self):
+    def test_public_report_omits_missing_dates_without_inventing_them(self):
         database = FakeDatabase(
             FakePerson(FakeName(first_name="Alexandre", surnames=("Roche",)))
         )
 
-        self.assertEqual(_public_dates(database, "person-1"), "dates inconnues")
+        self.assertEqual(_public_dates(database, "person-1"), "")
 
     def test_nickname_is_inserted_between_call_name_and_surname(self):
         database = FakeDatabase(

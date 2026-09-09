@@ -21,6 +21,7 @@ from TwoWayFanChart.model import (
     PersonNode,
     SceneCircle,
     SceneImage,
+    SceneSector,
     ScenePathText,
     SceneText,
     UnionBranch,
@@ -163,21 +164,35 @@ class DescendantReadabilityTests(unittest.TestCase):
         root = branch(
             "root",
             1,
-            children=(branch("child", 2, children=(branch("grandchild", 3),)),),
+            children=(
+                branch(
+                    "child",
+                    2,
+                    children=(
+                        branch(
+                            "grandchild",
+                            3,
+                            children=(branch("great-grandchild", 4),),
+                        ),
+                    ),
+                ),
+            ),
             spouse="root-spouse",
         )
-        canvas = a0_canvas(descendant_generations=3)
+        canvas = a0_canvas()
         labels = {
             "root": "Jacqueline Berloty",
             "root-spouse": "Jean Berloty",
             "child": "Middle Person",
             "grandchild": "Last Person",
+            "great-grandchild": "Last Person",
         }
         dates = {
             "root": "1908–1981",
             "root-spouse": "1906–1980",
             "child": "1930–2000",
             "grandchild": "1960–2020",
+            "great-grandchild": "1980–2020",
         }
         scene = layout_descendants(
             canvas,
@@ -186,11 +201,14 @@ class DescendantReadabilityTests(unittest.TestCase):
             dates_lookup=dates.__getitem__,
         )
 
-        first_generation = {
-            node.content: _path_radius(
-                node.path,
-                canvas.center_cx_mm,
-                canvas.center_cy_mm,
+        first_generation = [
+            (
+                node.content,
+                _path_radius(
+                    node.path,
+                    canvas.center_cx_mm,
+                    canvas.center_cy_mm,
+                ),
             )
             for node in scene.children
             if isinstance(node, ScenePathText)
@@ -200,10 +218,10 @@ class DescendantReadabilityTests(unittest.TestCase):
                 "× Jean Berloty",
                 "1906–1980",
             }
-        }
+        ]
 
-        self.assertEqual(
-            set(first_generation),
+        self.assertCountEqual(
+            [content for content, _radius in first_generation],
             {
                 "Jacqueline Berloty",
                 "1908–1981",
@@ -211,7 +229,8 @@ class DescendantReadabilityTests(unittest.TestCase):
                 "1906–1980",
             },
         )
-        radii = sorted(first_generation.values())
+        self.assertEqual(len(first_generation), 4)
+        radii = sorted(radius for _content, radius in first_generation)
         self.assertTrue(
             all(
                 later - earlier >= _DESCENDANT_FIRST_GEN_LINE_GAP_MM - 1e-3
@@ -219,6 +238,157 @@ class DescendantReadabilityTests(unittest.TestCase):
             ),
             msg=f"first-generation line radii are too close: {radii}",
         )
+
+    def test_first_generation_text_spacing_handles_one_and_two_lines(self):
+        root = branch(
+            "root",
+            1,
+            children=(branch("child", 2, children=(branch("grandchild", 3),)),),
+        )
+        canvas = a0_canvas(descendant_generations=3)
+        labels = {
+            "root": "GEN1 Root",
+            "child": "GEN2 Child",
+            "grandchild": "GEN3 Grandchild",
+        }
+
+        for date_label, expected in (
+            ("", ["GEN1 Root"]),
+            ("1908–1981", ["GEN1 Root", "1908–1981"]),
+        ):
+            scene = layout_descendants(
+                canvas,
+                (root,),
+                name_lookup=labels.__getitem__,
+                dates_lookup=lambda _handle: date_label,
+            )
+            paths = [
+                node for node in scene.children
+                if isinstance(node, ScenePathText)
+                and node.content in set(expected)
+            ]
+
+            self.assertCountEqual([node.content for node in paths], expected)
+            self.assertEqual(len(paths), len(expected))
+            if len(paths) == 2:
+                radii = sorted(
+                    _path_radius(
+                        node.path,
+                        canvas.center_cx_mm,
+                        canvas.center_cy_mm,
+                    )
+                    for node in paths
+                )
+                self.assertGreaterEqual(
+                    radii[1] - radii[0],
+                    _DESCENDANT_FIRST_GEN_LINE_GAP_MM - 1e-3,
+                )
+
+    def test_first_generation_fallback_avoids_overlapping_lines_on_small_pages(self):
+        root = branch(
+            "root",
+            1,
+            children=(
+                branch(
+                    "child",
+                    2,
+                    children=(
+                        branch(
+                            "grandchild",
+                            3,
+                            children=(branch("great-grandchild", 4),),
+                        ),
+                    ),
+                ),
+            ),
+            spouse="root-spouse",
+        )
+        labels = {
+            "root": "GEN1 Root",
+            "root-spouse": "GEN1 Spouse",
+            "child": "GEN2 Child",
+            "grandchild": "GEN3 Grandchild",
+            "great-grandchild": "GEN4 Great Grandchild",
+        }
+        dates = {
+            handle: "1908–1981"
+            for handle in labels
+        }
+        regions = (
+            ("A5", PaperRegion(PaperSize.A5, Orientation.LANDSCAPE)),
+            ("A4", PaperRegion(PaperSize.A4, Orientation.LANDSCAPE)),
+            (
+                "custom",
+                PaperRegion(
+                    PaperSize.CUSTOM,
+                    Orientation.LANDSCAPE,
+                    custom_width_mm=160,
+                    custom_height_mm=160,
+                ),
+            ),
+        )
+
+        for name, region in regions:
+            canvas = calculate_canvas(
+                region,
+                ancestor_generations=5,
+                descendant_generations=4,
+            )
+            scene = layout_descendants(
+                canvas,
+                (root,),
+                name_lookup=labels.__getitem__,
+                dates_lookup=dates.__getitem__,
+            )
+            paths = [
+                node for node in scene.children
+                if isinstance(node, ScenePathText)
+                and "GEN1" in node.content
+            ]
+
+            self.assertEqual(
+                len(paths),
+                1,
+                msg=f"{name} kept overlapping first-generation lines",
+            )
+            self.assertIn("GEN1 Root", paths[0].content)
+            self.assertIn("GEN1 Spouse", paths[0].content)
+            self.assertNotIn("1908", paths[0].content)
+
+    def test_descendant_arc_labels_are_foreground_of_later_generation_sectors(self):
+        root = branch(
+            "root",
+            1,
+            children=(branch("child", 2, children=(branch("grandchild", 3),)),),
+            spouse="root-spouse",
+        )
+        scene = layout_descendants(
+            calculate_canvas(
+                PaperRegion(PaperSize.A5, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=3,
+            ),
+            (root,),
+            name_lookup={
+                "root": "GEN1 Root",
+                "root-spouse": "GEN1 Spouse",
+                "child": "GEN2 Child",
+                "grandchild": "GEN3 Grandchild",
+            }.__getitem__,
+            dates_lookup=lambda _handle: "1908–1981",
+        )
+        sector_indexes = [
+            index for index, node in enumerate(scene.children)
+            if isinstance(node, SceneSector)
+        ]
+        arc_label_indexes = [
+            index for index, node in enumerate(scene.children)
+            if isinstance(node, ScenePathText)
+        ]
+
+        self.assertTrue(sector_indexes)
+        self.assertTrue(arc_label_indexes)
+        self.assertGreater(min(arc_label_indexes), max(sector_indexes))
 
     def test_single_generation_descendant_portraits_are_larger_than_previous_target(self):
         root = branch("root", 1, spouse="root-spouse")

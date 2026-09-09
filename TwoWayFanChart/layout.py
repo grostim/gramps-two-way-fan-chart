@@ -1749,6 +1749,7 @@ def layout_descendants(
 
     all_children: list = []
     measure_only = True
+    union_fill_order = 0
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
     name_cache: dict[str, str] = {}
@@ -1945,9 +1946,10 @@ def layout_descendants(
         alloc_sweep: float,
         depth: int,
         branch_index: int,
-        union_index: int | None = None,
+        union_fill_index: int | None = None,
     ) -> None:
         """Recursively place a branch and its children."""
+        nonlocal union_fill_order
         mid_angle = alloc_start + alloc_sweep / 2.0
 
         if max_gen >= 3:
@@ -1969,11 +1971,11 @@ def layout_descendants(
         # Emit sector for this branch
         if not measure_only:
             fill = descendant_fill(branch_index)
-            if depth == 2 and union_index is not None:
+            if depth == 2 and union_fill_index is not None:
                 # Adjacent union blocks need a visible distinction in addition
                 # to the family header; otherwise their child sectors look
                 # merged when the generic palette repeats a fill.
-                fill = descendant_fill(branch_index + union_index)
+                fill = descendant_fill(union_fill_index)
             all_children.append(SceneSector(
                 inner_radius=gen_inner,
                 outer_radius=gen_outer,
@@ -2549,6 +2551,10 @@ def layout_descendants(
                 total_sweep=alloc_sweep,
             )
             for union_allocation in union_allocations:
+                union_fill_index = None
+                if depth == 1:
+                    union_fill_index = union_fill_order
+                    union_fill_order += 1
                 child_allocs = _allocate_descendant_branches_by_demand(
                     union_allocation.children,
                     start_angle=union_allocation.start_angle,
@@ -2564,7 +2570,7 @@ def layout_descendants(
                         child_alloc.sweep_angle,
                         depth + 1,
                         branch_index,
-                        union_allocation.union_index,
+                        union_fill_index,
                     )
 
             if depth == 1 and len(union_allocations) > 1:
@@ -2689,6 +2695,7 @@ def layout_descendants(
     }
     measure_only = False
     all_children = []
+    union_fill_order = 0
     for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
         _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
 

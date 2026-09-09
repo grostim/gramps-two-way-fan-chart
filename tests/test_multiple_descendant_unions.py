@@ -271,10 +271,20 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         person = branch(
             "i0893",
             1,
-            spouse_handles=("spouse-0335", "spouse-0340"),
+            spouse_handles=(
+                "spouse-0335",
+                "spouse-empty-1",
+                "spouse-empty-2",
+                "spouse-0340",
+            ),
             children=(child_f0335, child_f0335_b, child_f0340),
-            children_by_union=((child_f0335, child_f0335_b), (child_f0340,)),
-            family_gramps_ids=("F0335", "F0340"),
+            children_by_union=(
+                (child_f0335, child_f0335_b),
+                (),
+                (),
+                (child_f0340,),
+            ),
+            family_gramps_ids=("F0335", None, None, "F0340"),
         )
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),

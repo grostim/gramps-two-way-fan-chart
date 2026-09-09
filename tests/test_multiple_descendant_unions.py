@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 import unittest
 
 from TwoWayFanChart.extract import extract_descendant_branches
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
-from TwoWayFanChart.layout import calculate_canvas, layout_descendants
+from TwoWayFanChart.layout import (
+    _outward_radial_rotation,
+    calculate_canvas,
+    layout_descendants,
+)
 from TwoWayFanChart.model import (
     DescendantBranch,
     PersonNode,
@@ -283,6 +288,24 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(labels.count("F0335"), 1)
         self.assertEqual(labels.count("F0340"), 1)
+        marker_nodes = {
+            node.content: node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content in {"F0335", "F0340"}
+        }
+        for marker in marker_nodes.values():
+            radial_angle = math.degrees(
+                math.atan2(
+                    marker.x - canvas.center_cx_mm,
+                    -(marker.y - canvas.center_cy_mm),
+                )
+            ) % 360.0
+            radial_rotation = _outward_radial_rotation(radial_angle)
+            rotation_delta = (
+                (marker.rotation - radial_rotation + 180.0) % 360.0
+            ) - 180.0
+            self.assertAlmostEqual(abs(rotation_delta), 90.0, delta=1e-6)
 
 
 if __name__ == "__main__":

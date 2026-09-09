@@ -2478,7 +2478,7 @@ def layout_descendants(
                         fill=TEXT_DARK,
                         anchor="middle",
                         font_weight="bold",
-                        rotation=_outward_radial_rotation(label_angle),
+                        rotation=_outward_radial_rotation(label_angle) + 90.0,
                         max_width=width_limit,
                     ))
 

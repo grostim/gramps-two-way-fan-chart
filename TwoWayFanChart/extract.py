@@ -305,6 +305,7 @@ def extract_descendant_branches(
 
         unions: list[UnionBranch] = []
         children: list[DescendantBranch] = []
+        children_by_union: list[tuple[DescendantBranch, ...]] = []
         for union_index, family in enumerate(
             _select_descendant_families(
                 database, person, descendant_family_policy
@@ -326,6 +327,7 @@ def extract_descendant_branches(
                 tuple(relation for _, relation in child_refs_with_relations),
             )
             unions.append(union)
+            union_children: list[DescendantBranch] = []
             if generation < generations:
                 for child_index, (child_ref, child_relation) in enumerate(
                     child_refs_with_relations
@@ -338,7 +340,9 @@ def extract_descendant_branches(
                         path + (person_handle,),
                     )
                     if child is not None:
+                        union_children.append(child)
                         children.append(child)
+            children_by_union.append(tuple(union_children))
         return DescendantBranch(
             position_id,
             _person_node(person),
@@ -346,6 +350,7 @@ def extract_descendant_branches(
             tuple(unions),
             tuple(children),
             relation,
+            children_by_union=tuple(children_by_union),
         )
 
     branches: list[DescendantBranch] = []

@@ -14,7 +14,7 @@ from pathlib import Path
 try:
     from TwoWayFanChart.config import ChartConfig, OutputFormat
     from TwoWayFanChart.extract import extract_chart_graph
-    from TwoWayFanChart.facts import simple_name, simple_name_full, simple_dates
+    from TwoWayFanChart.facts import simple_name, simple_dates
     from TwoWayFanChart.media import prepare_portrait_data_uri, select_portrait
     from TwoWayFanChart.privacy import (
         classify_visibility,
@@ -36,7 +36,7 @@ try:
 except ModuleNotFoundError:
     from config import ChartConfig, OutputFormat  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
-    from facts import simple_name, simple_name_full, simple_dates  # type: ignore[no-redef]
+    from facts import simple_name, simple_dates  # type: ignore[no-redef]
     from media import prepare_portrait_data_uri, select_portrait  # type: ignore[no-redef]
     from privacy import (  # type: ignore[no-redef]
         classify_visibility,

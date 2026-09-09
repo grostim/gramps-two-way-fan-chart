@@ -1405,6 +1405,109 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
     return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8))
 
 
+def _children_grouped_by_union(
+    branch: DescendantBranch,
+) -> tuple[tuple[DescendantBranch, ...], ...]:
+    """Return descendant children grouped by their recorded union.
+
+    New extraction results carry the grouping explicitly. The fallback keeps
+    older hand-built graph fixtures usable by matching the recorded child
+    handles in each ``UnionBranch`` rather than assigning every child to the
+    first union.
+    """
+    if branch.children_by_union:
+        return branch.children_by_union
+    if not branch.children:
+        return tuple(() for _union in branch.unions)
+    if not branch.unions:
+        return (branch.children,)
+
+    remaining = list(branch.children)
+    groups: list[tuple[DescendantBranch, ...]] = []
+    for union in branch.unions:
+        group: list[DescendantBranch] = []
+        for child_handle in union.child_handles:
+            match_index = next(
+                (
+                    index
+                    for index, child in enumerate(remaining)
+                    if child.person.handle == child_handle
+                ),
+                None,
+            )
+            if match_index is not None:
+                group.append(remaining.pop(match_index))
+        groups.append(tuple(group))
+
+    # Do not silently drop children from legacy fixtures whose union metadata
+    # is incomplete. They remain visible under the final recorded union.
+    if remaining:
+        if groups:
+            groups[-1] = groups[-1] + tuple(remaining)
+        else:
+            groups.append(tuple(remaining))
+    return tuple(groups)
+
+
+def _descendant_group_angle_demand(
+    children: tuple[DescendantBranch, ...],
+) -> float:
+    """Return the deepest-generation demand for one union's children."""
+    counts: dict[int, int] = {}
+    for child in children:
+        for generation, count in _descendant_generation_counts(child).items():
+            counts[generation] = counts.get(generation, 0) + count
+    return max(
+        (
+            count * _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 0.8)
+            for generation, count in counts.items()
+        ),
+        default=0.8,
+    )
+
+
+def _allocate_descendant_children(
+    branch: DescendantBranch,
+    *,
+    start_angle: float,
+    total_sweep: float,
+) -> tuple[DescendantBranchAllocation, ...]:
+    """Allocate children in contiguous angular blocks per union.
+
+    Each union receives a block sized from the demand of its own children;
+    children from different spouses therefore cannot interleave in the same
+    descendant sector.
+    """
+    groups = _children_grouped_by_union(branch)
+    nonempty_groups = [group for group in groups if group]
+    if len(nonempty_groups) <= 1:
+        children = nonempty_groups[0] if nonempty_groups else branch.children
+        return _allocate_descendant_branches_by_demand(
+            tuple(children),
+            start_angle=start_angle,
+            total_sweep=total_sweep,
+        )
+
+    demands = [_descendant_group_angle_demand(group) for group in nonempty_groups]
+    total_demand = sum(demands) or float(len(nonempty_groups))
+    allocations: list[DescendantBranchAllocation] = []
+    angle = start_angle
+    for group_index, (group, demand) in enumerate(zip(nonempty_groups, demands)):
+        if group_index == len(nonempty_groups) - 1:
+            group_sweep = start_angle + total_sweep - angle
+        else:
+            group_sweep = total_sweep * demand / total_demand
+        allocations.extend(
+            _allocate_descendant_branches_by_demand(
+                tuple(group),
+                start_angle=angle,
+                total_sweep=group_sweep,
+            )
+        )
+        angle += group_sweep
+    return tuple(allocations)
+
+
 def _allocate_descendant_branches_by_demand(
     branches: tuple[DescendantBranch, ...],
     *,
@@ -1640,22 +1743,29 @@ def layout_descendants(
         raw_label = _descendant_label(branch, name_lookup)
         child_label = _short(raw_label, depth)
 
-        spouse_handle: str | None = None
-        spouse_name: str | None = None
-        spouse_medallion_label: str | None = None
+        spouse_entries: list[tuple[str, str, str]] = []
         if depth == 1 or (depth < max_gen and max_gen > 1):
             for union in branch.unions:
                 if union.spouse_handle:
                     sp_raw = _spouse_label(union, name_lookup)
                     if sp_raw:
-                        spouse_handle = union.spouse_handle
-                        spouse_medallion_label = sp_raw
-                        spouse_name = _short(sp_raw, depth)
-                        break
+                        spouse_entries.append(
+                            (
+                                union.spouse_handle,
+                                sp_raw,
+                                _short(sp_raw, depth),
+                            )
+                        )
+
+        spouse_handle = spouse_entries[0][0] if spouse_entries else None
+        spouse_medallion_label = spouse_entries[0][1] if spouse_entries else None
+        spouse_display_name = " / ".join(
+            entry[2] for entry in spouse_entries if entry[2]
+        )
 
         if raw_label == "Personne privée" and spouse_medallion_label == "Personne privée":
             child_label = "Personnes privées"
-            spouse_name = None
+            spouse_display_name = ""
 
         # Place one portrait medallion or a tangent couple pair when the local
         # sector can sustain a readable circle. A narrow sector falls back to
@@ -1761,17 +1871,19 @@ def layout_descendants(
                 else ""
             )
             if depth == 1:
-                spouse_dates = (
-                    dates_lookup(spouse_handle)
-                    if dates_lookup is not None and spouse_handle
-                    else ""
-                )
                 lines = [
                     (child_label, True, TEXT_DARK),
                     (child_dates, False, TEXT_GREY),
-                    (f"× {spouse_name}" if spouse_name else "", True, TEXT_DARK),
-                    (spouse_dates if spouse_name else "", False, TEXT_GREY),
                 ]
+                for spouse_handle, _spouse_raw, spouse_short in spouse_entries:
+                    lines.append((f"× {spouse_short}", True, TEXT_DARK))
+                    spouse_dates = (
+                        dates_lookup(spouse_handle)
+                        if dates_lookup is not None
+                        else ""
+                    )
+                    if spouse_dates:
+                        lines.append((spouse_dates, False, TEXT_GREY))
                 lines = [line for line in lines if line[0]]
                 text_start = gen_inner + 2.0
                 text_end = med_text_inner - 2.0
@@ -1818,7 +1930,7 @@ def layout_descendants(
                     text_r * math.radians(max(alloc_sweep - 0.25, 0.0)) - 1.0,
                 )
 
-                if spouse_name:
+                if spouse_display_name:
                     # Medium sectors use two parallel radial rails. Narrower
                     # sectors preserve both identities and the union marker in
                     # one compact rail; dates are sacrificed before either name.
@@ -1831,7 +1943,7 @@ def layout_descendants(
                             max_width=text_width,
                         )
                         spouse_fit, spouse_size, spouse_width = _fit_text_to_width(
-                            f"× {spouse_name}",
+                            f"× {spouse_display_name}",
                             target_size=name_target,
                             minimum_size=name_minimum,
                             max_width=text_width,
@@ -1859,7 +1971,7 @@ def layout_descendants(
                     else:
                         couple_fit, couple_size, couple_width = _fit_couple_to_width(
                             child_label,
-                            spouse_name,
+                            spouse_display_name,
                             target_size=name_target,
                             minimum_size=name_minimum,
                             max_width=text_width,
@@ -1953,22 +2065,24 @@ def layout_descendants(
                         font_size=outer_r * (9.5 / 600),
                         fill=TEXT_GREY,
                     ))
-                if spouse_name:
+                if spouse_display_name:
                     all_children.append(ScenePathText(
                         path=_arc_text_path(
                             cx, cy, outer_r * (317 / 600),
                             alloc_start, alloc_start + alloc_sweep,
                             lower=True,
                         ),
-                        content=f"× {spouse_name}",
+                        content=f"× {spouse_display_name}",
                         font_size=font_size,
                         fill=TEXT_DARK,
                     ))
-                    spouse_dates = (
-                        dates_lookup(spouse_handle)
-                        if dates_lookup is not None and spouse_handle
-                        else ""
-                    )
+                    spouse_date_parts: list[str] = []
+                    if dates_lookup is not None:
+                        for handle, _raw, _short_name in spouse_entries:
+                            date_label = dates_lookup(handle)
+                            if date_label:
+                                spouse_date_parts.append(date_label)
+                    spouse_dates = " / ".join(spouse_date_parts)
                     if spouse_dates:
                         all_children.append(ScenePathText(
                             path=_arc_text_path(
@@ -2008,8 +2122,8 @@ def layout_descendants(
         # Place children within the allocated sweep. Reuse the same deep-demand
         # allocator as the capacity pass so geometry and rendering stay aligned.
         if branch.children:
-            child_allocs = _allocate_descendant_branches_by_demand(
-                branch.children,
+            child_allocs = _allocate_descendant_children(
+                branch,
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
             )

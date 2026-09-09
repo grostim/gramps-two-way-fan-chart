@@ -442,9 +442,11 @@ _EMPTY_VITALS = VitalDates(
 def simple_name(database, handle: str | None) -> str:
     """Return the preferred short display name for a person handle.
 
-    Priority is: call name + nickname, nickname alone, then call name or
-    the last given name. The surname is returned in Gramps' ``Surname, Given``
-    order and is reordered by the layout layer when needed.
+    Priority is: call name, then the last given name as a fallback. A
+    nickname is appended to that usage-name candidate. The surname is
+    returned in Gramps' ``Surname, Given`` order and is reordered by the
+    layout layer when needed. Only the usage name is retained; other given
+    names never reach the chart label.
     """
     if not handle:
         return ""
@@ -465,13 +467,11 @@ def simple_name(database, handle: str | None) -> str:
 
     if call:
         given = call
-        if nickname:
-            given = f"{call} « {nickname} »"
-    elif nickname:
-        given = f"« {nickname} »"
     else:
         first_name = name.get_first_name().strip()
         given = first_name.split()[-1] if first_name else ""
+    if nickname:
+        given = f'{given} "{nickname}"'.strip()
 
     surname = ""
     try:

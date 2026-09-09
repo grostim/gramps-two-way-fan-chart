@@ -245,6 +245,22 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertTrue(any("Spouse F0335" in label for label in labels))
         self.assertTrue(any("Spouse F0340" in label for label in labels))
+        self.assertFalse(any("Spouse F0335 / Spouse F0340" in label for label in labels))
+        self.assertEqual(labels.count("I0893"), 2)
+        first_generation_sectors = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+            and math.isclose(
+                node.inner_radius,
+                canvas.descendant_outer_radius_mm * (202 / 600),
+            )
+            and math.isclose(
+                node.outer_radius,
+                canvas.descendant_outer_radius_mm * (350 / 600),
+            )
+        ]
+        self.assertEqual(len(first_generation_sectors), 2)
 
     def test_layout_labels_each_nonempty_union_block(self):
         child_f0335 = DescendantBranch(
@@ -365,6 +381,54 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             self.assertLess(abs(delta), math.radians(1.0))
             self.assertGreaterEqual(header.font_size, 3.0)
         self.assertGreaterEqual(marker_nodes["F0340"].font_size, 3.6)
+
+    def test_dense_layout_splits_multiple_union_cells(self):
+        grandchild = DescendantBranch(
+            "grandchild",
+            PersonNode("grandchild", "I3001"),
+            3,
+            (),
+            (),
+        )
+        child_a = DescendantBranch(
+            "child-a",
+            PersonNode("child-a", "I1001"),
+            2,
+            (),
+            (grandchild,),
+        )
+        child_b = DescendantBranch(
+            "child-b",
+            PersonNode("child-b", "I1003"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "i0893",
+            1,
+            spouse_handles=("spouse-0335", "spouse-0340"),
+            children=(child_a, child_b),
+            children_by_union=((child_a,), (child_b,)),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=3,
+        )
+        scene = layout_descendants(
+            canvas,
+            (person,),
+            name_lookup=lambda handle: handle.replace("-", " "),
+            dates_lookup=lambda _handle: "",
+        )
+        labels = [
+            node.content
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+        ]
+        self.assertEqual(labels.count("i0893"), 2)
+        self.assertFalse(any(" / " in label for label in labels))
 
 
 if __name__ == "__main__":

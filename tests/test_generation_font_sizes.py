@@ -174,6 +174,42 @@ class GenerationFontSizeTests(unittest.TestCase):
         self.assertEqual(len(names), 10)
         self.assertEqual(len({round(node.font_size, 9) for node in names}), 1)
 
+    def test_measurement_caches_name_and_date_lookups(self):
+        root = branch(
+            "root",
+            1,
+            children=(branch("child", 2),),
+            spouse="root-spouse",
+        )
+        labels = {
+            "root": "Root",
+            "root-spouse": "Root Spouse",
+            "child": "Child",
+        }
+        name_calls = []
+        date_calls = []
+
+        def name_lookup(handle):
+            name_calls.append(handle)
+            return labels[handle]
+
+        def dates_lookup(handle):
+            date_calls.append(handle)
+            return "1900–1980"
+
+        scene = layout_descendants(
+            canvas(),
+            (root,),
+            name_lookup=name_lookup,
+            dates_lookup=dates_lookup,
+        )
+
+        self.assertTrue(scene.children)
+        self.assertEqual(set(name_calls), set(labels))
+        self.assertEqual(len(name_calls), len(set(name_calls)))
+        self.assertEqual(set(date_calls), set(labels))
+        self.assertEqual(len(date_calls), len(set(date_calls)))
+
 
 if __name__ == "__main__":
     unittest.main()

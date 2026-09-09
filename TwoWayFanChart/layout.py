@@ -1742,6 +1742,8 @@ def layout_descendants(
     measure_only = True
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
+    name_cache: dict[str, str] = {}
+    date_cache: dict[str, str] = {}
     inner_r = canvas.descendant_inner_radius_mm
     outer_r = canvas.descendant_outer_radius_mm
     max_gen = max(_max_desc_depth(b) for b in branches) if branches else 1
@@ -1759,6 +1761,20 @@ def layout_descendants(
 
     cx = canvas.center_cx_mm
     cy = canvas.center_cy_mm
+
+    def _name_label(handle: str | None) -> str:
+        if not handle:
+            return ""
+        if handle not in name_cache:
+            name_cache[handle] = name_lookup(handle)
+        return name_cache[handle]
+
+    def _date_label(handle: str | None) -> str:
+        if dates_lookup is None or not handle:
+            return ""
+        if handle not in date_cache:
+            date_cache[handle] = dates_lookup(handle)
+        return date_cache[handle]
 
     def _short(label: str, depth: int) -> str:
         if shortener is None or not label:
@@ -1879,6 +1895,8 @@ def layout_descendants(
         portrait: str | None,
         highlighted: bool = False,
     ) -> None:
+        if measure_only:
+            return
         all_children.append(SceneCircle(
             cx=x,
             cy=y,
@@ -1939,27 +1957,28 @@ def layout_descendants(
             gen_outer = gen_inner + ring_width - _RING_GAP_MM
 
         # Emit sector for this branch
-        fill = descendant_fill(branch_index)
-        all_children.append(SceneSector(
-            inner_radius=gen_inner,
-            outer_radius=gen_outer,
-            start_angle=alloc_start,
-            sweep_angle=alloc_sweep,
-            fill=fill,
-            stroke=SECTOR_STROKE,
-            stroke_width=SECTOR_STROKE_WIDTH,
-            cx=cx,
-            cy=cy,
-        ))
+        if not measure_only:
+            fill = descendant_fill(branch_index)
+            all_children.append(SceneSector(
+                inner_radius=gen_inner,
+                outer_radius=gen_outer,
+                start_angle=alloc_start,
+                sweep_angle=alloc_sweep,
+                fill=fill,
+                stroke=SECTOR_STROKE,
+                stroke_width=SECTOR_STROKE_WIDTH,
+                cx=cx,
+                cy=cy,
+            ))
 
-        raw_label = _descendant_label(branch, name_lookup)
+        raw_label = _descendant_label(branch, _name_label)
         child_label = _short(raw_label, depth)
 
         spouse_entries: list[tuple[str, str, str]] = []
         if depth == 1 or (depth < max_gen and max_gen > 1):
             for union in branch.unions:
                 if union.spouse_handle:
-                    sp_raw = _spouse_label(union, name_lookup)
+                    sp_raw = _spouse_label(union, _name_label)
                     if sp_raw:
                         spouse_entries.append(
                             (
@@ -2133,24 +2152,25 @@ def layout_descendants(
                 marker_x, marker_y = _polar(
                     cx, cy, marker_distance, marker_angle
                 )
-                all_children.append(SceneMarker(
-                    cx=marker_x,
-                    cy=marker_y,
-                    radius=marker_radius,
-                ))
+                if not measure_only:
+                    all_children.append(SceneMarker(
+                        cx=marker_x,
+                        cy=marker_y,
+                        radius=marker_radius,
+                    ))
 
         # Labels use ring-local capacity in dense reports. The standard two-ring
         # publication geometry remains byte-for-byte compatible below.
         if child_label and adaptive_single_generation:
             child_dates = (
-                dates_lookup(branch.person.handle)
+                _date_label(branch.person.handle)
                 if dates_lookup is not None and branch.person
                 else ""
             )
             spouse_date_parts: list[str] = []
             if dates_lookup is not None:
                 for handle, _spouse_raw, _spouse_short in spouse_entries:
-                    date_label = dates_lookup(handle)
+                    date_label = _date_label(handle)
                     if date_label:
                         spouse_date_parts.append(date_label)
             spouse_dates = " / ".join(spouse_date_parts)
@@ -2198,23 +2218,24 @@ def layout_descendants(
                     )
                 if not fitted:
                     continue
-                all_children.append(ScenePathText(
-                    path=_arc_text_path(
-                        cx,
-                        cy,
-                        line_r,
-                        alloc_start,
-                        alloc_start + alloc_sweep,
-                        lower=True,
-                    ),
-                    content=fitted,
-                    font_size=fitted_size,
-                    fill=fill_color,
-                    max_width=width_limit,
-                ))
+                if not measure_only:
+                    all_children.append(ScenePathText(
+                        path=_arc_text_path(
+                            cx,
+                            cy,
+                            line_r,
+                            alloc_start,
+                            alloc_start + alloc_sweep,
+                            lower=True,
+                        ),
+                        content=fitted,
+                        font_size=fitted_size,
+                        fill=fill_color,
+                        max_width=width_limit,
+                    ))
         elif child_label and adaptive_dense:
             child_dates = (
-                dates_lookup(branch.person.handle)
+                _date_label(branch.person.handle)
                 if dates_lookup is not None and branch.person
                 else ""
             )
@@ -2226,7 +2247,7 @@ def layout_descendants(
                 for spouse_handle, _spouse_raw, spouse_short in spouse_entries:
                     lines.append((f"× {spouse_short}", True, TEXT_DARK))
                     spouse_dates = (
-                        dates_lookup(spouse_handle)
+                        _date_label(spouse_handle)
                         if dates_lookup is not None
                         else ""
                     )
@@ -2272,20 +2293,21 @@ def layout_descendants(
                         )
                     if not fitted:
                         continue
-                    all_children.append(ScenePathText(
-                        path=_arc_text_path(
-                            cx,
-                            cy,
-                            line_r,
-                            alloc_start,
-                            alloc_start + alloc_sweep,
-                            lower=True,
-                        ),
-                        content=fitted,
-                        font_size=fitted_size,
-                        fill=fill_color,
-                        max_width=width_limit,
-                    ))
+                    if not measure_only:
+                        all_children.append(ScenePathText(
+                            path=_arc_text_path(
+                                cx,
+                                cy,
+                                line_r,
+                                alloc_start,
+                                alloc_start + alloc_sweep,
+                                lower=True,
+                            ),
+                            content=fitted,
+                            font_size=fitted_size,
+                            fill=fill_color,
+                            max_width=width_limit,
+                        ))
             else:
                 text_start = gen_inner + 2.0
                 text_end = med_text_inner - 2.0
@@ -2330,16 +2352,17 @@ def layout_descendants(
                             tx, ty = _tangent_offset(
                                 base_x, base_y, mid_angle, offset
                             )
-                            all_children.append(SceneText(
-                                x=tx,
-                                y=ty,
-                                content=content,
-                                font_size=size,
-                                fill=color,
-                                anchor="middle",
-                                rotation=rotation,
-                                max_width=width,
-                            ))
+                            if not measure_only:
+                                all_children.append(SceneText(
+                                    x=tx,
+                                    y=ty,
+                                    content=content,
+                                    font_size=size,
+                                    fill=color,
+                                    anchor="middle",
+                                    rotation=rotation,
+                                    max_width=width,
+                                ))
                     else:
                         couple_fit, couple_size, couple_width = _fit_generation_couple(
                             child_label,
@@ -2350,16 +2373,17 @@ def layout_descendants(
                             max_width=text_width,
                         )
                         if couple_fit:
-                            all_children.append(SceneText(
-                                x=base_x,
-                                y=base_y,
-                                content=couple_fit,
-                                font_size=couple_size,
-                                fill=TEXT_DARK,
-                                anchor="middle",
-                                rotation=rotation,
-                                max_width=couple_width,
-                            ))
+                            if not measure_only:
+                                all_children.append(SceneText(
+                                    x=base_x,
+                                    y=base_y,
+                                    content=couple_fit,
+                                    font_size=couple_size,
+                                    fill=TEXT_DARK,
+                                    anchor="middle",
+                                    rotation=rotation,
+                                    max_width=couple_width,
+                                ))
                 else:
                     fitted_name, name_size, name_width = _fit_generation_name(
                         child_label,
@@ -2385,113 +2409,121 @@ def layout_descendants(
                         name_x, name_y = _tangent_offset(
                             base_x, base_y, mid_angle, -lane_offset
                         )
-                        all_children.append(SceneText(
-                            x=name_x,
-                            y=name_y,
-                            content=fitted_name,
-                            font_size=name_size,
-                            fill=TEXT_DARK,
-                            anchor="middle",
-                            rotation=rotation,
-                            max_width=name_width,
-                        ))
+                        if not measure_only:
+                            all_children.append(SceneText(
+                                x=name_x,
+                                y=name_y,
+                                content=fitted_name,
+                                font_size=name_size,
+                                fill=TEXT_DARK,
+                                anchor="middle",
+                                rotation=rotation,
+                                max_width=name_width,
+                            ))
                     if show_date_lane:
                         date_x, date_y = _tangent_offset(
                             base_x, base_y, mid_angle, lane_offset
                         )
-                        all_children.append(SceneText(
-                            x=date_x,
-                            y=date_y,
-                            content=date_fit,
-                            font_size=min(date_size, name_size),
-                            fill=TEXT_GREY,
-                            anchor="middle",
-                            rotation=rotation,
-                            max_width=date_width,
-                        ))
+                        if not measure_only:
+                            all_children.append(SceneText(
+                                x=date_x,
+                                y=date_y,
+                                content=date_fit,
+                                font_size=min(date_size, name_size),
+                                fill=TEXT_GREY,
+                                anchor="middle",
+                                rotation=rotation,
+                                max_width=date_width,
+                            ))
         elif child_label:
             if depth == 1:
                 label_r = outer_r * (278 / 600)
                 font_size = outer_r * (12 / 600)
-                all_children.append(ScenePathText(
-                    path=_arc_text_path(
-                        cx, cy, label_r,
-                        alloc_start, alloc_start + alloc_sweep,
-                        lower=True,
-                    ),
-                    content=child_label,
-                    font_size=font_size,
-                    fill=TEXT_DARK,
-                ))
+                if not measure_only:
+                    all_children.append(ScenePathText(
+                        path=_arc_text_path(
+                            cx, cy, label_r,
+                            alloc_start, alloc_start + alloc_sweep,
+                            lower=True,
+                        ),
+                        content=child_label,
+                        font_size=font_size,
+                        fill=TEXT_DARK,
+                    ))
                 child_dates = (
-                    dates_lookup(branch.person.handle)
+                    _date_label(branch.person.handle)
                     if dates_lookup is not None and branch.person
                     else ""
                 )
                 if child_dates:
-                    all_children.append(ScenePathText(
-                        path=_arc_text_path(
-                            cx, cy, outer_r * (297 / 600),
-                            alloc_start, alloc_start + alloc_sweep,
-                            lower=True,
-                        ),
-                        content=child_dates,
-                        font_size=outer_r * (9.5 / 600),
-                        fill=TEXT_GREY,
-                    ))
+                    if not measure_only:
+                        all_children.append(ScenePathText(
+                            path=_arc_text_path(
+                                cx, cy, outer_r * (297 / 600),
+                                alloc_start, alloc_start + alloc_sweep,
+                                lower=True,
+                            ),
+                            content=child_dates,
+                            font_size=outer_r * (9.5 / 600),
+                            fill=TEXT_GREY,
+                        ))
                 if spouse_display_name:
-                    all_children.append(ScenePathText(
-                        path=_arc_text_path(
-                            cx, cy, outer_r * (317 / 600),
-                            alloc_start, alloc_start + alloc_sweep,
-                            lower=True,
-                        ),
-                        content=f"× {spouse_display_name}",
-                        font_size=font_size,
-                        fill=TEXT_DARK,
-                    ))
+                    if not measure_only:
+                        all_children.append(ScenePathText(
+                            path=_arc_text_path(
+                                cx, cy, outer_r * (317 / 600),
+                                alloc_start, alloc_start + alloc_sweep,
+                                lower=True,
+                            ),
+                            content=f"× {spouse_display_name}",
+                            font_size=font_size,
+                            fill=TEXT_DARK,
+                        ))
                     spouse_date_parts: list[str] = []
                     if dates_lookup is not None:
                         for handle, _raw, _short_name in spouse_entries:
-                            date_label = dates_lookup(handle)
+                            date_label = _date_label(handle)
                             if date_label:
                                 spouse_date_parts.append(date_label)
                     spouse_dates = " / ".join(spouse_date_parts)
                     if spouse_dates:
-                        all_children.append(ScenePathText(
-                            path=_arc_text_path(
-                                cx, cy, outer_r * (337 / 600),
-                                alloc_start, alloc_start + alloc_sweep,
-                                lower=True,
-                            ),
-                            content=spouse_dates,
-                            font_size=outer_r * (9.5 / 600),
-                            fill=TEXT_GREY,
-                        ))
+                        if not measure_only:
+                            all_children.append(ScenePathText(
+                                path=_arc_text_path(
+                                    cx, cy, outer_r * (337 / 600),
+                                    alloc_start, alloc_start + alloc_sweep,
+                                    lower=True,
+                                ),
+                                content=spouse_dates,
+                                font_size=outer_r * (9.5 / 600),
+                                fill=TEXT_GREY,
+                            ))
             else:
                 text_r = outer_r * (482 / 600)
                 tx, ty = _polar(cx, cy, text_r, mid_angle)
                 rot = _outward_radial_rotation(mid_angle)
-                all_children.append(SceneText(
-                    x=tx, y=ty,
-                    content=child_label,
-                    font_size=outer_r * (10.5 / 600),
-                    fill=TEXT_DARK,
-                    anchor="middle",
-                    rotation=rot,
-                ))
+                if not measure_only:
+                    all_children.append(SceneText(
+                        x=tx, y=ty,
+                        content=child_label,
+                        font_size=outer_r * (10.5 / 600),
+                        fill=TEXT_DARK,
+                        anchor="middle",
+                        rotation=rot,
+                    ))
                 if dates_lookup is not None and branch.person:
-                    dates_label = dates_lookup(branch.person.handle)
+                    dates_label = _date_label(branch.person.handle)
                     if dates_label:
                         dx, dy = _polar(cx, cy, outer_r * (554 / 600), mid_angle)
-                        all_children.append(SceneText(
-                            x=dx, y=dy,
-                            content=dates_label,
-                            font_size=outer_r * (8.5 / 600),
-                            fill=TEXT_GREY,
-                            anchor="middle",
-                            rotation=rot,
-                        ))
+                        if not measure_only:
+                            all_children.append(SceneText(
+                                x=dx, y=dy,
+                                content=dates_label,
+                                font_size=outer_r * (8.5 / 600),
+                                fill=TEXT_GREY,
+                                anchor="middle",
+                                rotation=rot,
+                            ))
 
         # Place children within the allocated sweep. Reuse the same deep-demand
         # allocator as the capacity pass so geometry and rendering stay aligned.
@@ -2537,7 +2569,7 @@ def layout_descendants(
                     union = branch.unions[union_index]
                     label = union.family_gramps_id
                     if not label:
-                        spouse_label = _spouse_label(union, name_lookup)
+                        spouse_label = _spouse_label(union, _name_label)
                         label = _short(spouse_label or "", depth + 1)
                     if not label:
                         continue
@@ -2568,17 +2600,18 @@ def layout_descendants(
                         label_radius,
                         label_angle,
                     )
-                    all_children.append(SceneText(
-                        x=label_x,
-                        y=label_y,
-                        content=fitted,
-                        font_size=fitted_size,
-                        fill=TEXT_DARK,
-                        anchor="middle",
-                        font_weight="bold",
-                        rotation=_outward_radial_rotation(label_angle),
-                        max_width=width_limit,
-                    ))
+                    if not measure_only:
+                        all_children.append(SceneText(
+                            x=label_x,
+                            y=label_y,
+                            content=fitted,
+                            font_size=fitted_size,
+                            fill=TEXT_DARK,
+                            anchor="middle",
+                            font_weight="bold",
+                            rotation=_outward_radial_rotation(label_angle),
+                            max_width=width_limit,
+                        ))
 
     # Measure every name once so the smallest fitting size becomes the
     # generation-wide contract. The second pass then renders all names in that

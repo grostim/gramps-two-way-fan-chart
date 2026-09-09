@@ -69,6 +69,8 @@ _LEGEND_ZONE_MM = 18.0  # legend at bottom
 _STATS_ZONE_MM = 6.0  # statistics line
 _MIN_CENTER_RADIUS_MM = 8.0  # minimum medallion radius
 _RING_GAP_MM = 0.3  # white space between generation rings
+_ANCESTOR_TITLE_GAP_MM = 4.0
+_DESCENDANT_TITLE_GAP_MM = 8.0
 _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
@@ -140,7 +142,20 @@ def calculate_canvas(
     )
 
     cx = paper.effective_margin_left_mm + content_w / 2
-    cy = paper.effective_margin_top_mm + content_h / 2
+
+    # The two halves do not have the same visual height: the descendant fan
+    # is intentionally compact while the ancestor fan fills the publication
+    # radius. Center the visible composition bounds instead of the rosace
+    # itself, so the lower paper margin is not needlessly oversized.
+    top_extent = ancestor_outer + (
+        _ANCESTOR_TITLE_GAP_MM if ancestor_generations > 0 else 0.0
+    )
+    bottom_extent = descendant_outer + (
+        _DESCENDANT_TITLE_GAP_MM if descendant_generations > 0 else 0.0
+    )
+    cy = paper.effective_margin_top_mm + (
+        content_h + top_extent - bottom_extent
+    ) / 2
 
     return ChartCanvas(
         page_width_mm=paper.width_mm,
@@ -1189,7 +1204,7 @@ def layout_titles(
 
     if ancestor_generations > 0:
         # Title above the top arc
-        title_y = cy - canvas.ancestor_outer_radius_mm - 4
+        title_y = cy - canvas.ancestor_outer_radius_mm - _ANCESTOR_TITLE_GAP_MM
         generation_word = "GÉNÉRATION" if ancestor_generations == 1 else "GÉNÉRATIONS"
         title_text = f"ASCENDANTS · {ancestor_generations} {generation_word}"
         children.append(SceneText(
@@ -1202,7 +1217,7 @@ def layout_titles(
 
     if descendant_generations > 0:
         # Title below the bottom arc
-        title_y = cy + canvas.descendant_outer_radius_mm + 8
+        title_y = cy + canvas.descendant_outer_radius_mm + _DESCENDANT_TITLE_GAP_MM
         generation_word = "GÉNÉRATION" if descendant_generations == 1 else "GÉNÉRATIONS"
         title_text = f"DESCENDANTS · {descendant_generations} {generation_word}"
         children.append(SceneText(

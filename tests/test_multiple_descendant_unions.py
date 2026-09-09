@@ -14,6 +14,7 @@ from TwoWayFanChart.layout import (
 from TwoWayFanChart.model import (
     DescendantBranch,
     PersonNode,
+    SceneSector,
     ScenePathText,
     SceneText,
     UnionBranch,
@@ -253,6 +254,13 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             (),
             (),
         )
+        child_f0335_b = DescendantBranch(
+            "child-f0335-b",
+            PersonNode("child-f0335-b", "I1002"),
+            2,
+            (),
+            (),
+        )
         child_f0340 = DescendantBranch(
             "child-f0340",
             PersonNode("child-f0340", "I1003"),
@@ -264,8 +272,8 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             "i0893",
             1,
             spouse_handles=("spouse-0335", "spouse-0340"),
-            children=(child_f0335, child_f0340),
-            children_by_union=((child_f0335,), (child_f0340,)),
+            children=(child_f0335, child_f0335_b, child_f0340),
+            children_by_union=((child_f0335, child_f0335_b), (child_f0340,)),
             family_gramps_ids=("F0335", "F0340"),
         )
         canvas = calculate_canvas(
@@ -277,31 +285,89 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         scene = layout_descendants(
             canvas,
             (person,),
-            name_lookup=lambda handle: handle.replace("-", " "),
+            name_lookup=lambda handle: {
+                "spouse-0335": "spouse 0335",
+                "spouse-0340": "spouse 0340",
+                "child-f0335": "child f0335",
+                "child-f0335-b": "child f0335 b",
+                "child-f0340": "child f0340",
+            }.get(handle, handle.replace("-", " ")),
             dates_lookup=lambda _handle: "",
         )
-        labels = [
-            node.content
-            for node in scene.children
-            if isinstance(node, (SceneText, ScenePathText))
-        ]
+        labels = [node.content for node in scene.children
+                  if isinstance(node, (SceneText, ScenePathText))]
 
-        self.assertEqual(labels.count("F0335"), 1)
-        self.assertEqual(labels.count("F0340"), 1)
+        self.assertEqual(labels.count("F0335 · spouse 0335"), 1)
+        self.assertEqual(labels.count("F0340 · spouse 0340"), 1)
+        sectors = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+        ]
+        self.assertGreaterEqual(len(sectors), 4)
+        self.assertEqual(sectors[-3].fill, sectors[-2].fill)
+        self.assertNotEqual(sectors[-2].fill, sectors[-1].fill)
         marker_nodes = {
+            node.content.split(" · ", 1)[0]: node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content.split(" · ", 1)[0] in {"F0335", "F0340"}
+        }
+        child_nodes = {
             node.content: node
             for node in scene.children
             if isinstance(node, SceneText)
-            and node.content in {"F0335", "F0340"}
+            and node.content in {
+                "child f0335",
+                "child f0335 b",
+                "child f0340",
+            }
         }
+
+        def radial_angle(node):
+            return math.degrees(
+                math.atan2(
+                    node.x - canvas.center_cx_mm,
+                    -(node.y - canvas.center_cy_mm),
+                )
+            ) % 360.0
+
+        def circular_mean(angles):
+            return math.degrees(
+                math.atan2(
+                    sum(math.sin(math.radians(angle)) for angle in angles),
+                    sum(math.cos(math.radians(angle)) for angle in angles),
+                )
+            ) % 360.0
+
+        def angular_distance(left, right):
+            return abs((left - right + 180.0) % 360.0 - 180.0)
+
+        self.assertLess(
+            angular_distance(
+                radial_angle(marker_nodes["F0335"]),
+                circular_mean([
+                    radial_angle(child_nodes["child f0335"]),
+                    radial_angle(child_nodes["child f0335 b"]),
+                ]),
+            ),
+            1.0,
+        )
+        self.assertLess(
+            angular_distance(
+                radial_angle(marker_nodes["F0340"]),
+                radial_angle(child_nodes["child f0340"]),
+            ),
+            1.0,
+        )
         for marker in marker_nodes.values():
-            radial_angle = math.degrees(
+            marker_angle = math.degrees(
                 math.atan2(
                     marker.x - canvas.center_cx_mm,
                     -(marker.y - canvas.center_cy_mm),
                 )
             ) % 360.0
-            radial_rotation = _outward_radial_rotation(radial_angle)
+            radial_rotation = _outward_radial_rotation(marker_angle)
             rotation_delta = (
                 (marker.rotation - radial_rotation + 180.0) % 360.0
             ) - 180.0

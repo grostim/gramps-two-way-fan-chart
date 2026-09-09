@@ -1842,6 +1842,7 @@ def layout_descendants(
         alloc_sweep: float,
         depth: int,
         branch_index: int,
+        union_index: int | None = None,
     ) -> None:
         """Recursively place a branch and its children."""
         mid_angle = alloc_start + alloc_sweep / 2.0
@@ -1864,6 +1865,10 @@ def layout_descendants(
 
         # Emit sector for this branch
         fill = descendant_fill(branch_index)
+        if depth == 2 and union_index is not None:
+            # Adjacent union blocks need a visible distinction in addition to
+            # the family header; otherwise their child sectors look merged.
+            fill = descendant_fill(branch_index + union_index)
         all_children.append(SceneSector(
             inner_radius=gen_inner,
             outer_radius=gen_outer,
@@ -2419,6 +2424,7 @@ def layout_descendants(
                         child_alloc.sweep_angle,
                         depth + 1,
                         branch_index,
+                        union_allocation.union_index,
                     )
 
             if depth == 1 and len(union_allocations) > 1:
@@ -2429,32 +2435,38 @@ def layout_descendants(
                     depth + 1,
                 )
                 label_radius = label_inner + min(
-                    8.0,
-                    max(3.0, (label_outer - label_inner) * 0.18),
+                    12.0,
+                    max(5.0, (label_outer - label_inner) * 0.24),
                 )
                 for union_allocation in union_allocations:
                     union_index = union_allocation.union_index
                     if not 0 <= union_index < len(branch.unions):
                         continue
                     union = branch.unions[union_index]
-                    label = union.family_gramps_id
-                    if not label:
-                        spouse_label = _spouse_label(union, name_lookup)
-                        label = _short(spouse_label or "", depth + 1)
+                    family_label = union.family_gramps_id or ""
+                    spouse_label = _short(
+                        _spouse_label(union, name_lookup) or "",
+                        depth + 1,
+                    )
+                    label = " · ".join(
+                        part
+                        for part in (family_label, spouse_label)
+                        if part
+                    )
                     if not label:
                         continue
                     label_width = max(
                         0.0,
                         label_radius
                         * math.radians(
-                            max(union_allocation.sweep_angle - 1.0, 0.0)
+                            max(union_allocation.sweep_angle - 2.0, 0.0)
                         )
-                        - 1.0,
+                        - 1.5,
                     )
                     fitted, fitted_size, width_limit = _fit_text_to_width(
                         label,
-                        target_size=3.2,
-                        minimum_size=2.2,
+                        target_size=4.2,
+                        minimum_size=3.0,
                         max_width=label_width,
                         allow_ellipsis=False,
                     )

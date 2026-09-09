@@ -69,7 +69,7 @@ _LEGEND_ZONE_MM = 18.0  # legend at bottom
 _STATS_ZONE_MM = 6.0  # statistics line
 _MIN_CENTER_RADIUS_MM = 8.0  # minimum medallion radius
 _RING_GAP_MM = 0.3  # white space between generation rings
-_DESCENDANT_FIRST_GEN_LINE_GAP_MM = 5.0  # minimum readable baseline gap
+_DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
 # and its regression probes share one geometric contract.
@@ -295,6 +295,70 @@ def _fit_text_to_width(
         else:
             fitted = "…" if estimate_text_width("…", size) <= available else ""
     return fitted, size, available
+
+
+def _first_generation_line_layout(
+    lines: list[tuple[str, bool, str]],
+    *,
+    text_start: float,
+    text_end: float,
+) -> list[tuple[tuple[str, bool, str], float]]:
+    """Place first-generation text without collapsing readable radial lanes.
+
+    Dates are optional when a compact page cannot sustain the requested
+    spacing. Identity lines are retained first; if even those identities cannot
+    occupy separate lanes, they are combined into one lane instead of sharing a
+    radius. The latter keeps the data visible while avoiding an unreadable
+    overlay on A4/A5 and custom small canvases.
+    """
+    radial_span = max(0.0, text_end - text_start)
+    selected = list(lines)
+    if len(selected) > 1:
+        maximum_line_count = max(
+            1,
+            math.floor(
+                (radial_span + 1e-9) / _DESCENDANT_FIRST_GEN_LINE_GAP_MM
+            ) + 1,
+        )
+        if maximum_line_count < len(selected):
+            identity_lines = [line for line in selected if line[1]]
+            if len(identity_lines) > maximum_line_count:
+                selected = [
+                    (
+                        " / ".join(line[0] for line in identity_lines),
+                        True,
+                        TEXT_DARK,
+                    )
+                ]
+            else:
+                # Drop optional date lanes before sacrificing either identity.
+                selected = identity_lines
+
+    if len(selected) <= 1:
+        radii = [text_start + radial_span / 2.0] if selected else []
+    elif radial_span / len(selected) >= _DESCENDANT_FIRST_GEN_LINE_GAP_MM:
+        # Preserve the generous full-span composition when it is already
+        # readable; this avoids shrinking the established A0 layout.
+        radii = [
+            text_start + radial_span * (index + 0.5) / len(selected)
+            for index in range(len(selected))
+        ]
+    else:
+        maximum_line_gap = radial_span / (len(selected) - 1)
+        preferred_line_gap = max(
+            _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
+            radial_span / (len(selected) + 1),
+        )
+        line_gap = min(preferred_line_gap, maximum_line_gap)
+        first_line_offset = (
+            radial_span - line_gap * (len(selected) - 1)
+        ) / 2.0
+        radii = [
+            text_start + first_line_offset + line_gap * index
+            for index in range(len(selected))
+        ]
+
+    return list(zip(selected, radii))
 
 
 def _fit_couple_to_width(
@@ -2256,22 +2320,11 @@ def layout_descendants(
                 lines = [line for line in lines if line[0]]
                 text_start = gen_inner + 2.0
                 text_end = med_text_inner - 2.0
-                radial_span = max(0.0, text_end - text_start)
-                if len(lines) == 1:
-                    first_line_offset = radial_span / 2.0
-                    line_gap = 0.0
-                else:
-                    maximum_line_gap = radial_span / (len(lines) - 1)
-                    preferred_line_gap = max(
-                        _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
-                        radial_span / (len(lines) + 1),
-                    )
-                    line_gap = min(preferred_line_gap, maximum_line_gap)
-                    first_line_offset = (
-                        radial_span - line_gap * (len(lines) - 1)
-                    ) / 2.0
-                for line_index, (content, is_name, fill_color) in enumerate(lines):
-                    line_r = text_start + first_line_offset + line_gap * line_index
+                for (content, is_name, fill_color), line_r in _first_generation_line_layout(
+                    lines,
+                    text_start=text_start,
+                    text_end=text_end,
+                ):
                     angular_width = max(
                         0.0,
                         line_r * math.radians(max(alloc_sweep - 1.0, 0.0)) - 2.0,
@@ -2629,4 +2682,10 @@ def layout_descendants(
     for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
         _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
 
-    return SceneNode(children=tuple(all_children))
+    # The SVG backend renders circular arc labels as ordinary text at the arc
+    # midpoint. Keep those labels above later-generation sectors: otherwise a
+    # child ring can paint over the tangent ends of a first-generation label on
+    # compact pages, making a complete identity look truncated.
+    arc_labels = [node for node in all_children if isinstance(node, ScenePathText)]
+    scene_geometry = [node for node in all_children if not isinstance(node, ScenePathText)]
+    return SceneNode(children=tuple(scene_geometry + arc_labels))

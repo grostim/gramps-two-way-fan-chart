@@ -1550,6 +1550,19 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
     for generation, count in _descendant_generation_counts(branch).items():
         slot = _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 0.8)
         demand = max(demand, count * slot)
+    # A multi-union branch is split into one contiguous cell per union after
+    # the branch-level sweep is allocated. Reserve the sum of those visible
+    # cell floors here as well, otherwise the outer allocator can give the
+    # branch one person's width and split every union cell below its floor.
+    if len(branch.unions) > 1:
+        groups = list(_children_grouped_by_union(branch))
+        if len(groups) < len(branch.unions):
+            groups.extend(() for _ in range(len(branch.unions) - len(groups)))
+        cell_floor = _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8)
+        demand += sum(
+            max(_descendant_group_angle_demand(group), cell_floor)
+            for group in groups[: len(branch.unions)]
+        )
     return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8))
 
 
@@ -1861,9 +1874,10 @@ def layout_descendants(
     # Assign colors once per semantic union, including unions without visible
     # children, and reuse the assignment for the union cell and every
     # descendant sector placed below that union. The render pass repeats the
-    # traversal, so keeping this map across both passes prevents nested
+    # traversal, keeping this map across both passes prevents nested
     # branches from shifting the palette.
     union_fill_indices: dict[tuple[str, int], int] = {}
+    branch_fill_indices: dict[str, int] = {}
     next_union_fill_index = 0
     last_populated_union_fill: str | None = None
     name_size_candidates: dict[int, list[float]] = {}
@@ -1971,6 +1985,18 @@ def layout_descendants(
             return inherited_union_fill_index
         if len(branch.unions) == 1:
             return _stable_union_fill_index(branch, 0)
+        if not branch.unions:
+            if branch.position_id not in branch_fill_indices:
+                nonlocal last_populated_union_fill, next_union_fill_index
+                fill_index = next_union_fill_index
+                next_union_fill_index += 1
+                if last_populated_union_fill is not None:
+                    while descendant_fill(fill_index) == last_populated_union_fill:
+                        fill_index += 1
+                        next_union_fill_index = fill_index + 1
+                branch_fill_indices[branch.position_id] = fill_index
+                last_populated_union_fill = descendant_fill(fill_index)
+            return branch_fill_indices[branch.position_id]
         return branch_index
 
     def _fit_generation_name(
@@ -2937,9 +2963,10 @@ def layout_descendants(
                                                 max_width=text_width,
                                             ))
                                 else:
-                                    couple_fit, couple_size, couple_width = _fit_couple_to_width(
+                                    couple_fit, couple_size, couple_width = _fit_generation_couple(
                                         block_child_label,
                                         block_spouse,
+                                        depth,
                                         target_size=name_target,
                                         minimum_size=name_minimum,
                                         max_width=text_width,
@@ -2957,9 +2984,10 @@ def layout_descendants(
                                                 max_width=couple_width,
                                             ))
                             else:
-                                couple_fit, couple_size, couple_width = _fit_couple_to_width(
+                                couple_fit, couple_size, couple_width = _fit_generation_couple(
                                     block_child_label,
                                     block_spouse,
+                                    depth,
                                     target_size=name_target,
                                     minimum_size=name_minimum,
                                     max_width=text_width,

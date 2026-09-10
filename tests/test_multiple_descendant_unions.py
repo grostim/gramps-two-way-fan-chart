@@ -7,6 +7,7 @@ import unittest
 from TwoWayFanChart.extract import extract_descendant_branches
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
+    _allocate_descendant_branches_by_demand,
     _allocate_descendant_union_cells,
     _allocate_descendant_union_groups,
     _upright_tangent_rotation,
@@ -432,6 +433,178 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         ]
         self.assertEqual(labels.count("i0893"), 2)
         self.assertFalse(any(" / " in label for label in labels))
+
+    def test_multi_union_branch_demand_includes_union_cell_demands(self):
+        first_child = DescendantBranch(
+            "demand-child-0",
+            PersonNode("demand-child-0", "I1001"),
+            2,
+            (),
+            (),
+        )
+        second_child = DescendantBranch(
+            "demand-child-1",
+            PersonNode("demand-child-1", "I1002"),
+            2,
+            (),
+            (),
+        )
+        multi_union = branch(
+            "demand-person",
+            1,
+            spouse_handles=("demand-spouse-0", "demand-spouse-1"),
+            children=(first_child, second_child),
+            children_by_union=((first_child,), (second_child,)),
+        )
+        siblings = tuple(
+            DescendantBranch(
+                f"demand-sibling-{index}",
+                PersonNode(f"demand-sibling-{index}", f"I20{index}"),
+                1,
+                (),
+                (),
+            )
+            for index in range(11)
+        )
+
+        allocation = _allocate_descendant_branches_by_demand(
+            (multi_union,) + siblings,
+            start_angle=96.0,
+            total_sweep=168.0,
+        )[0]
+        cells = _allocate_descendant_union_cells(
+            multi_union,
+            start_angle=allocation.start_angle,
+            total_sweep=allocation.sweep_angle,
+        )
+
+        self.assertEqual(len(cells), 2)
+        self.assertGreaterEqual(
+            min(cell.sweep_angle for cell in cells),
+            14.0 - 1e-6,
+        )
+
+    def test_unmarried_branch_reserves_palette_slot_before_union_branch(self):
+        unmarried = DescendantBranch(
+            "unmarried",
+            PersonNode("unmarried", "I1001"),
+            1,
+            (),
+            (),
+        )
+        child = DescendantBranch(
+            "married-child",
+            PersonNode("married-child", "I1002"),
+            2,
+            (),
+            (),
+        )
+        married = branch(
+            "married",
+            1,
+            spouse_handles=("married-spouse",),
+            children=(child,),
+            children_by_union=((child,),),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+
+        scene = layout_descendants(
+            canvas,
+            (unmarried, married),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        first_ring = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+            and math.isclose(
+                node.inner_radius,
+                canvas.descendant_outer_radius_mm * (202 / 600),
+            )
+            and math.isclose(
+                node.outer_radius,
+                canvas.descendant_outer_radius_mm * (350 / 600),
+            )
+        ]
+
+        self.assertEqual(len(first_ring), 2)
+        self.assertNotEqual(first_ring[0].fill, first_ring[1].fill)
+
+    def test_compact_multi_union_couples_share_generation_font_size(self):
+        first_child = DescendantBranch(
+            "compact-child-0",
+            PersonNode("compact-child-0", "I1001"),
+            3,
+            (),
+            (),
+        )
+        second_child = DescendantBranch(
+            "compact-child-1",
+            PersonNode("compact-child-1", "I1002"),
+            3,
+            (),
+            (),
+        )
+        target = branch(
+            "compact-target",
+            2,
+            spouse_handles=("compact-spouse-short", "compact-spouse-long"),
+            children=(first_child, second_child),
+            children_by_union=((first_child,), (second_child,)),
+        )
+        siblings = tuple(
+            DescendantBranch(
+                f"compact-sibling-{index}",
+                PersonNode(f"compact-sibling-{index}", f"I30{index}"),
+                2,
+                (),
+                (),
+            )
+            for index in range(200)
+        )
+        root = DescendantBranch(
+            "compact-root",
+            PersonNode("compact-root", "I0001"),
+            1,
+            (),
+            (target,) + siblings,
+        )
+        labels = {
+            "compact-root": "Compact Root",
+            "compact-target": "Compact Target",
+            "compact-spouse-short": "Short Spouse",
+            "compact-spouse-long": "A Much Longer Spouse Name",
+            "compact-child-0": "Compact Child 0",
+            "compact-child-1": "Compact Child 1",
+        }
+
+        scene = layout_descendants(
+            calculate_canvas(
+                PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=3,
+            ),
+            (root,),
+            name_lookup=lambda handle: labels.get(handle, handle),
+            dates_lookup=lambda _handle: "",
+        )
+        compact_couples = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and "Compact Target" in node.content
+        ]
+
+        self.assertEqual(len(compact_couples), 2)
+        self.assertEqual(
+            len({round(node.font_size, 9) for node in compact_couples}),
+            1,
+        )
 
     def test_union_cell_and_child_sector_keep_same_fill_with_empty_unions(self):
         first_child = DescendantBranch(

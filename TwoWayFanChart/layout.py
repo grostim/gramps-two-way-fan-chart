@@ -1692,10 +1692,10 @@ def _allocate_descendant_union_cells(
     start_angle: float,
     total_sweep: float,
 ) -> tuple[_DescendantUnionAllocation, ...]:
-    """Allocate one first-generation cell per recorded union.
+    """Allocate one cell per recorded union at any descendant depth.
 
     Unlike child-sector allocation, a marriage with no visible children still
-    needs a cell. This keeps the first-generation person/spouse presentation
+    needs a cell. This keeps each generation's person/spouse presentation
     one-to-one with the recorded unions. The child allocations deliberately
     reuse these exact intervals so every union is a continuous radial cell.
     """
@@ -2066,7 +2066,7 @@ def layout_descendants(
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
             )
-            if depth == 1 and len(branch.unions) > 1
+            if len(branch.unions) > 1
             else ()
         )
 
@@ -2124,7 +2124,10 @@ def layout_descendants(
         child_label = _short(raw_label, depth)
 
         spouse_entries: list[tuple[str, str, str]] = []
-        if depth == 1 or (depth < max_gen and max_gen > 1):
+        if depth == 1 or (depth < max_gen and max_gen > 1) or union_cells:
+            # ``union_cells`` extends the spouse contract to multi-union people at
+            # the final configured depth: each marriage cell names its own spouse
+            # even when no further descendant ring exists below it.
             for union in branch.unions:
                 if union.spouse_handle:
                     sp_raw = _spouse_label(union, _name_label)
@@ -2286,8 +2289,9 @@ def layout_descendants(
         # The requested default keeps the descendant GEN1 medallions as the
         # visual entry points, but removes every medallion from GEN2 onward.
         # Text and couple labels remain available in those rings.
-        # A multi-union first generation gets one local couple pair per cell;
-        # the single branch-level pair would straddle the union boundary.
+        # A multi-union branch gets one local couple pair per cell; the single
+        # branch-level pair would straddle the union boundary. Deep-generation
+        # cells stay text-only, matching their ring's medallion policy.
         show_medallion = depth == 1 and not union_cells
         adaptive_single_generation = max_gen == 1
         adaptive_dense = max_gen >= 3
@@ -2443,7 +2447,7 @@ def layout_descendants(
                         radius=marker_radius,
                     ))
 
-        if union_cells:
+        if union_cells and depth == 1:
             union_text_inners: list[float] = []
             for cell in union_cells:
                 entry = _spouse_entry_for_union(cell.union_index)
@@ -2727,129 +2731,209 @@ def layout_descendants(
                 text_start = gen_inner + 2.0
                 text_end = med_text_inner - 2.0
                 text_width = max(0.0, text_end - text_start)
-                text_r = (text_start + text_end) / 2.0
                 name_target = {2: 4.2, 3: 3.6, 4: 3.2, 5: 3.0}.get(depth, 3.0)
                 name_minimum = 3.2 if depth == 2 else 2.8
-                base_x, base_y = _polar(cx, cy, text_r, mid_angle)
-                rotation = _outward_radial_rotation(mid_angle)
-                angular_capacity = max(
-                    0.0,
-                    text_r * math.radians(max(alloc_sweep - 0.25, 0.0)) - 1.0,
-                )
 
-                if spouse_display_name:
-                    # Medium sectors use two parallel radial rails. Narrower
-                    # sectors preserve both identities and the union marker in
-                    # one compact rail; dates are sacrificed before either name.
-                    parallel_capacity = name_target * 2.35
-                    if angular_capacity >= parallel_capacity:
-                        child_fit, child_size, child_width = _fit_generation_name(
+                def _render_intermediate_block(
+                    block_mid_angle: float,
+                    block_sweep: float,
+                    block_spouse: str,
+                ) -> None:
+                    """Render one intermediate-generation block or union cell."""
+                    text_r = (text_start + text_end) / 2.0
+                    base_x, base_y = _polar(cx, cy, text_r, block_mid_angle)
+                    rotation = _outward_radial_rotation(block_mid_angle)
+                    angular_capacity = max(
+                        0.0,
+                        text_r * math.radians(max(block_sweep - 0.25, 0.0)) - 1.0,
+                    )
+
+                    if block_spouse:
+                        # Medium sectors use two parallel radial rails. Narrower
+                        # sectors preserve both identities and the union marker in
+                        # one compact rail; dates are sacrificed before either name.
+                        parallel_capacity = name_target * 2.35
+                        if angular_capacity >= parallel_capacity:
+                            child_fit, child_size, child_width = _fit_generation_name(
+                                child_label,
+                                depth,
+                                target_size=name_target,
+                                minimum_size=name_minimum,
+                                max_width=text_width,
+                            )
+                            spouse_fit, spouse_size, spouse_width = _fit_generation_name(
+                                f"\u00d7 {block_spouse}",
+                                depth,
+                                target_size=name_target,
+                                minimum_size=name_minimum,
+                                max_width=text_width,
+                            )
+                            lane_offset = max(child_size, spouse_size) * 0.68
+                            for content, size, width, offset, color in (
+                                (child_fit, child_size, child_width, -lane_offset, TEXT_DARK),
+                                (spouse_fit, spouse_size, spouse_width, lane_offset, TEXT_DARK),
+                            ):
+                                if not content:
+                                    continue
+                                tx, ty = _tangent_offset(
+                                    base_x, base_y, block_mid_angle, offset
+                                )
+                                if not measure_only:
+                                    all_children.append(SceneText(
+                                        x=tx,
+                                        y=ty,
+                                        content=content,
+                                        font_size=size,
+                                        fill=color,
+                                        anchor="middle",
+                                        rotation=rotation,
+                                        max_width=width,
+                                    ))
+                        else:
+                            # A multi-union cell keeps full identities even when the
+                            # couple does not fit side by side: stack the person and
+                            # spouse onto separate radial lanes at a reduced common
+                            # size instead of truncating either name. The stacked
+                            # size is derived from the cell's own tangential arc so
+                            # neither rail can cross the union boundary.
+                            if union_cells:
+                                half_arc = (
+                                    text_r
+                                    * math.radians(max(block_sweep, 0.0))
+                                    / 2.0
+                                )
+                                stack_size = min(
+                                    name_target,
+                                    (half_arc - 0.3) / 1.12,
+                                )
+                                stack_floor = name_minimum * 0.75
+                                if stack_size >= stack_floor and text_width >= stack_size * 2.1:
+                                    for content, offset in (
+                                        (child_label, -stack_size * 0.62),
+                                        (f"\u00d7 {block_spouse}", stack_size * 0.62),
+                                    ):
+                                        if not content:
+                                            continue
+                                        tx, ty = _tangent_offset(
+                                            base_x, base_y, block_mid_angle, offset
+                                        )
+                                        if not measure_only:
+                                            all_children.append(SceneText(
+                                                x=tx,
+                                                y=ty,
+                                                content=content,
+                                                font_size=stack_size,
+                                                fill=TEXT_DARK,
+                                                anchor="middle",
+                                                rotation=rotation,
+                                                max_width=text_width,
+                                            ))
+                                else:
+                                    couple_fit, couple_size, couple_width = _fit_couple_to_width(
+                                        child_label,
+                                        block_spouse,
+                                        target_size=name_target,
+                                        minimum_size=name_minimum,
+                                        max_width=text_width,
+                                    )
+                                    if couple_fit:
+                                        if not measure_only:
+                                            all_children.append(SceneText(
+                                                x=base_x,
+                                                y=base_y,
+                                                content=couple_fit,
+                                                font_size=couple_size,
+                                                fill=TEXT_DARK,
+                                                anchor="middle",
+                                                rotation=rotation,
+                                                max_width=couple_width,
+                                            ))
+                            else:
+                                couple_fit, couple_size, couple_width = _fit_couple_to_width(
+                                    child_label,
+                                    block_spouse,
+                                    target_size=name_target,
+                                    minimum_size=name_minimum,
+                                    max_width=text_width,
+                                )
+                                if couple_fit:
+                                    if not measure_only:
+                                        all_children.append(SceneText(
+                                            x=base_x,
+                                            y=base_y,
+                                            content=couple_fit,
+                                            font_size=couple_size,
+                                            fill=TEXT_DARK,
+                                            anchor="middle",
+                                            rotation=rotation,
+                                            max_width=couple_width,
+                                        ))
+                    else:
+                        fitted_name, name_size, name_width = _fit_generation_name(
                             child_label,
                             depth,
                             target_size=name_target,
                             minimum_size=name_minimum,
                             max_width=text_width,
                         )
-                        spouse_fit, spouse_size, spouse_width = _fit_generation_name(
-                            f"× {spouse_display_name}",
-                            depth,
-                            target_size=name_target,
-                            minimum_size=name_minimum,
+                        date_target = min(3.0, name_size * 0.84)
+                        date_minimum = min(2.4, date_target)
+                        date_fit, date_size, date_width = _fit_text_to_width(
+                            child_dates,
+                            target_size=date_target,
+                            minimum_size=date_minimum,
                             max_width=text_width,
                         )
-                        lane_offset = max(child_size, spouse_size) * 0.68
-                        for content, size, width, offset, color in (
-                            (child_fit, child_size, child_width, -lane_offset, TEXT_DARK),
-                            (spouse_fit, spouse_size, spouse_width, lane_offset, TEXT_DARK),
-                        ):
-                            if not content:
-                                continue
-                            tx, ty = _tangent_offset(
-                                base_x, base_y, mid_angle, offset
+                        show_date_lane = bool(
+                            date_fit
+                            and angular_capacity >= (name_size + date_size) * 1.18
+                        )
+                        lane_offset = max(name_size, date_size) * 0.58 if show_date_lane else 0.0
+                        if fitted_name:
+                            name_x, name_y = _tangent_offset(
+                                base_x, base_y, block_mid_angle, -lane_offset
                             )
                             if not measure_only:
                                 all_children.append(SceneText(
-                                    x=tx,
-                                    y=ty,
-                                    content=content,
-                                    font_size=size,
-                                    fill=color,
-                                    anchor="middle",
-                                    rotation=rotation,
-                                    max_width=width,
-                                ))
-                    else:
-                        couple_fit, couple_size, couple_width = _fit_generation_couple(
-                            child_label,
-                            spouse_display_name,
-                            depth,
-                            target_size=name_target,
-                            minimum_size=name_minimum,
-                            max_width=text_width,
-                        )
-                        if couple_fit:
-                            if not measure_only:
-                                all_children.append(SceneText(
-                                    x=base_x,
-                                    y=base_y,
-                                    content=couple_fit,
-                                    font_size=couple_size,
+                                    x=name_x,
+                                    y=name_y,
+                                    content=fitted_name,
+                                    font_size=name_size,
                                     fill=TEXT_DARK,
                                     anchor="middle",
                                     rotation=rotation,
-                                    max_width=couple_width,
+                                    max_width=name_width,
                                 ))
+                        if show_date_lane:
+                            date_x, date_y = _tangent_offset(
+                                base_x, base_y, block_mid_angle, lane_offset
+                            )
+                            if not measure_only:
+                                all_children.append(SceneText(
+                                    x=date_x,
+                                    y=date_y,
+                                    content=date_fit,
+                                    font_size=min(date_size, name_size),
+                                    fill=TEXT_GREY,
+                                    anchor="middle",
+                                    rotation=rotation,
+                                    max_width=date_width,
+                                ))
+
+                if union_cells:
+                    for cell in union_cells:
+                        entry = _spouse_entry_for_union(cell.union_index)
+                        _render_intermediate_block(
+                            cell.start_angle + cell.sweep_angle / 2.0,
+                            cell.sweep_angle,
+                            entry[2] if entry else "",
+                        )
                 else:
-                    fitted_name, name_size, name_width = _fit_generation_name(
-                        child_label,
-                        depth,
-                        target_size=name_target,
-                        minimum_size=name_minimum,
-                        max_width=text_width,
+                    _render_intermediate_block(
+                        mid_angle,
+                        alloc_sweep,
+                        spouse_display_name,
                     )
-                    date_target = min(3.0, name_size * 0.84)
-                    date_minimum = min(2.4, date_target)
-                    date_fit, date_size, date_width = _fit_text_to_width(
-                        child_dates,
-                        target_size=date_target,
-                        minimum_size=date_minimum,
-                        max_width=text_width,
-                    )
-                    show_date_lane = bool(
-                        date_fit
-                        and angular_capacity >= (name_size + date_size) * 1.18
-                    )
-                    lane_offset = max(name_size, date_size) * 0.58 if show_date_lane else 0.0
-                    if fitted_name:
-                        name_x, name_y = _tangent_offset(
-                            base_x, base_y, mid_angle, -lane_offset
-                        )
-                        if not measure_only:
-                            all_children.append(SceneText(
-                                x=name_x,
-                                y=name_y,
-                                content=fitted_name,
-                                font_size=name_size,
-                                fill=TEXT_DARK,
-                                anchor="middle",
-                                rotation=rotation,
-                                max_width=name_width,
-                            ))
-                    if show_date_lane:
-                        date_x, date_y = _tangent_offset(
-                            base_x, base_y, mid_angle, lane_offset
-                        )
-                        if not measure_only:
-                            all_children.append(SceneText(
-                                x=date_x,
-                                y=date_y,
-                                content=date_fit,
-                                font_size=min(date_size, name_size),
-                                fill=TEXT_GREY,
-                                anchor="middle",
-                                rotation=rotation,
-                                max_width=date_width,
-                            ))
         elif child_label:
             if depth == 1:
                 label_r = outer_r * (278 / 600)
@@ -2931,31 +3015,56 @@ def layout_descendants(
                                 fill=TEXT_GREY,
                             ))
             else:
-                text_r = outer_r * (482 / 600)
-                tx, ty = _polar(cx, cy, text_r, mid_angle)
-                rot = _outward_radial_rotation(mid_angle)
-                if not measure_only:
-                    all_children.append(SceneText(
-                        x=tx, y=ty,
-                        content=child_label,
-                        font_size=outer_r * (10.5 / 600),
-                        fill=TEXT_DARK,
-                        anchor="middle",
-                        rotation=rot,
-                    ))
-                if dates_lookup is not None and branch.person:
-                    dates_label = _date_label(branch.person.handle)
-                    if dates_label:
-                        dx, dy = _polar(cx, cy, outer_r * (554 / 600), mid_angle)
+                def _render_plain_block(
+                    block_mid_angle: float,
+                    block_spouse: str = "",
+                ) -> None:
+                    """Render one plain intermediate block or union cell."""
+                    tx, ty = _polar(cx, cy, outer_r * (482 / 600), block_mid_angle)
+                    rot = _outward_radial_rotation(block_mid_angle)
+                    if not measure_only:
+                        all_children.append(SceneText(
+                            x=tx, y=ty,
+                            content=child_label,
+                            font_size=outer_r * (10.5 / 600),
+                            fill=TEXT_DARK,
+                            anchor="middle",
+                            rotation=rot,
+                        ))
+                    if block_spouse:
+                        sx, sy = _polar(cx, cy, outer_r * (518 / 600), block_mid_angle)
                         if not measure_only:
                             all_children.append(SceneText(
-                                x=dx, y=dy,
-                                content=dates_label,
-                                font_size=outer_r * (8.5 / 600),
-                                fill=TEXT_GREY,
+                                x=sx, y=sy,
+                                content=f"\u00d7 {block_spouse}",
+                                font_size=outer_r * (9.5 / 600),
+                                fill=TEXT_DARK,
                                 anchor="middle",
                                 rotation=rot,
                             ))
+                    if dates_lookup is not None and branch.person:
+                        dates_label = _date_label(branch.person.handle)
+                        if dates_label:
+                            dx, dy = _polar(cx, cy, outer_r * (554 / 600), block_mid_angle)
+                            if not measure_only:
+                                all_children.append(SceneText(
+                                    x=dx, y=dy,
+                                    content=dates_label,
+                                    font_size=outer_r * (8.5 / 600),
+                                    fill=TEXT_GREY,
+                                    anchor="middle",
+                                    rotation=rot,
+                                ))
+
+                if union_cells:
+                    for cell in union_cells:
+                        entry = _spouse_entry_for_union(cell.union_index)
+                        _render_plain_block(
+                            cell.start_angle + cell.sweep_angle / 2.0,
+                            entry[2] if entry else "",
+                        )
+                else:
+                    _render_plain_block(mid_angle, spouse_display_name)
 
         # Place children within the allocated sweep. Reuse the same deep-demand
         # allocator as the capacity pass so geometry and rendering stay aligned.
@@ -2968,7 +3077,7 @@ def layout_descendants(
             )
             for union_allocation in union_allocations:
                 union_fill_index = None
-                if depth == 1 and union_allocation.children:
+                if union_allocation.children:
                     union_fill_index = union_fill_order
                     union_fill_order += 1
                 child_allocs = _allocate_descendant_branches_by_demand(
@@ -2989,7 +3098,7 @@ def layout_descendants(
                         union_fill_index,
                     )
 
-            if depth == 1 and len(union_allocations) > 1:
+            if len(union_allocations) > 1 and depth < max_gen:
                 label_inner, label_outer = _descendant_ring_bounds(
                     inner_r,
                     outer_r,
@@ -3033,6 +3142,11 @@ def layout_descendants(
                         allow_ellipsis=False,
                     )
                     if not fitted:
+                        continue
+                    # A header whose physical lane collapses below a legible
+                    # width would be squashed to unreadable glyphs by the
+                    # renderer's width enforcement; omit it instead.
+                    if width_limit < 4.0:
                         continue
                     label_angle = (
                         union_allocation.start_angle

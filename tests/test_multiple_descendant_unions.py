@@ -16,6 +16,7 @@ from TwoWayFanChart.layout import (
 from TwoWayFanChart.model import (
     DescendantBranch,
     PersonNode,
+    SceneCircle,
     ScenePathText,
     SceneSector,
     SceneText,
@@ -431,6 +432,223 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         ]
         self.assertEqual(labels.count("i0893"), 2)
         self.assertFalse(any(" / " in label for label in labels))
+
+    def test_union_cell_and_child_sector_keep_same_fill_with_empty_unions(self):
+        first_child = DescendantBranch(
+            "first-child",
+            PersonNode("first-child", "I1001"),
+            2,
+            (),
+            (),
+        )
+        last_child = DescendantBranch(
+            "last-child",
+            PersonNode("last-child", "I1002"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "person",
+            1,
+            spouse_handles=("spouse-0", "spouse-1", "spouse-2", "spouse-3"),
+            children=(first_child, last_child),
+            children_by_union=((first_child,), (), (), (last_child,)),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+        scene = layout_descendants(
+            canvas,
+            (person,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        first_ring = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+            and math.isclose(
+                node.inner_radius,
+                canvas.descendant_outer_radius_mm * (202 / 600),
+            )
+            and math.isclose(
+                node.outer_radius,
+                canvas.descendant_outer_radius_mm * (350 / 600),
+            )
+        ]
+        child_ring = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+            and math.isclose(
+                node.inner_radius,
+                canvas.descendant_outer_radius_mm * (355 / 600),
+            )
+            and math.isclose(
+                node.outer_radius,
+                canvas.descendant_outer_radius_mm * (598 / 600),
+            )
+        ]
+
+        self.assertEqual(len(first_ring), 4)
+        self.assertEqual(len(child_ring), 2)
+        self.assertEqual(child_ring[0].fill, first_ring[0].fill)
+        self.assertEqual(child_ring[1].fill, first_ring[3].fill)
+
+    def test_split_cells_keep_the_collapsed_private_couple_label(self):
+        first_child = DescendantBranch(
+            "private-child-0",
+            PersonNode("private-child-0", "I1001"),
+            2,
+            (),
+            (),
+        )
+        second_child = DescendantBranch(
+            "private-child-1",
+            PersonNode("private-child-1", "I1002"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "private-person",
+            1,
+            spouse_handles=("private-spouse-0", "private-spouse-1"),
+            children=(first_child, second_child),
+            children_by_union=((first_child,), (second_child,)),
+        )
+        scene = layout_descendants(
+            calculate_canvas(
+                PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=2,
+            ),
+            (person,),
+            name_lookup=lambda _handle: "Personne privée",
+            dates_lookup=lambda _handle: "",
+        )
+        labels = [
+            node.content
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+        ]
+
+        self.assertEqual(labels.count("Personnes privées"), 2)
+        self.assertFalse(any("× Personne privée" in label for label in labels))
+
+    def test_union_fill_is_inherited_by_all_descendant_generations(self):
+        first_grandchild = DescendantBranch(
+            "first-grandchild",
+            PersonNode("first-grandchild", "I2001"),
+            3,
+            (),
+            (),
+        )
+        second_grandchild = DescendantBranch(
+            "second-grandchild",
+            PersonNode("second-grandchild", "I2002"),
+            3,
+            (),
+            (),
+        )
+        first_child = DescendantBranch(
+            "first-child-deep",
+            PersonNode("first-child-deep", "I1001"),
+            2,
+            (),
+            (first_grandchild,),
+        )
+        second_child = DescendantBranch(
+            "second-child-deep",
+            PersonNode("second-child-deep", "I1002"),
+            2,
+            (),
+            (second_grandchild,),
+        )
+        person = branch(
+            "person-deep",
+            1,
+            spouse_handles=("spouse-0", "spouse-1"),
+            children=(first_child, second_child),
+            children_by_union=((first_child,), (second_child,)),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=3,
+        )
+        scene = layout_descendants(
+            canvas,
+            (person,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        sectors = [
+            node for node in scene.children if isinstance(node, SceneSector)
+        ]
+        union_cells = sectors[:2]
+
+        self.assertEqual(len(sectors), 6)
+        for sector in sectors[2:]:
+            parent_cell = next(
+                cell
+                for cell in union_cells
+                if math.isclose(cell.start_angle, sector.start_angle)
+            )
+            self.assertEqual(sector.fill, parent_cell.fill)
+
+    def test_two_ring_union_portraits_stay_inside_their_outer_ring(self):
+        first_child = DescendantBranch(
+            "portrait-child-0",
+            PersonNode("portrait-child-0", "I1001"),
+            2,
+            (),
+            (),
+        )
+        second_child = DescendantBranch(
+            "portrait-child-1",
+            PersonNode("portrait-child-1", "I1002"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "portrait-person",
+            1,
+            spouse_handles=("portrait-spouse-0", "portrait-spouse-1"),
+            children=(first_child, second_child),
+            children_by_union=((first_child,), (second_child,)),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+        scene = layout_descendants(
+            canvas,
+            (person,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+            portrait_lookup=lambda _handle: "data:image/png;base64,portrait",
+        )
+        circles = [
+            node for node in scene.children if isinstance(node, SceneCircle)
+        ]
+        first_ring_outer = canvas.descendant_outer_radius_mm * (350 / 600)
+
+        self.assertEqual(len(circles), 4)
+        for circle in circles:
+            center_distance = math.hypot(
+                circle.cx - canvas.center_cx_mm,
+                circle.cy - canvas.center_cy_mm,
+            )
+            self.assertLessEqual(
+                center_distance + circle.r,
+                first_ring_outer - 0.8 + 1e-6,
+            )
 
     def test_union_cells_and_child_blocks_share_the_same_angular_intervals(self):
         dense_children = tuple(

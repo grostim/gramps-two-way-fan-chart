@@ -1858,7 +1858,12 @@ def layout_descendants(
 
     all_children: list = []
     measure_only = True
-    union_fill_order = 0
+    # Assign colors once per semantic union and reuse the assignment for the
+    # union cell and every descendant sector placed below that union. The
+    # render pass repeats the traversal, so keeping this map across both passes
+    # prevents empty groups and nested branches from shifting the palette.
+    union_fill_indices: dict[tuple[str, int], int] = {}
+    next_union_fill_index = 0
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
     name_cache: dict[str, str] = {}
@@ -1923,6 +1928,36 @@ def layout_descendants(
             return bool(highlight_lookup(handle))
         except Exception:
             return False
+
+    def _stable_union_fill_index(
+        branch: DescendantBranch,
+        union_index: int,
+    ) -> int:
+        """Return one deterministic palette index for a recorded union."""
+        nonlocal next_union_fill_index
+        key = (branch.position_id, union_index)
+        if key not in union_fill_indices:
+            groups = _children_grouped_by_union(branch)
+            has_children = (
+                0 <= union_index < len(groups)
+                and bool(groups[union_index])
+            )
+            union_fill_indices[key] = next_union_fill_index
+            if has_children:
+                next_union_fill_index += 1
+        return union_fill_indices[key]
+
+    def _branch_fill_index(
+        branch: DescendantBranch,
+        branch_index: int,
+        inherited_union_fill_index: int | None,
+    ) -> int:
+        """Resolve the fill inherited by a non-split descendant branch."""
+        if inherited_union_fill_index is not None:
+            return inherited_union_fill_index
+        if len(branch.unions) == 1:
+            return _stable_union_fill_index(branch, 0)
+        return branch_index
 
     def _fit_generation_name(
         content: str,
@@ -2058,7 +2093,6 @@ def layout_descendants(
         union_fill_index: int | None = None,
     ) -> None:
         """Recursively place a branch and its children."""
-        nonlocal union_fill_order
         mid_angle = alloc_start + alloc_sweep / 2.0
         union_cells = (
             _allocate_descendant_union_cells(
@@ -2069,6 +2103,18 @@ def layout_descendants(
             if len(branch.unions) > 1
             else ()
         )
+        inherited_fill_index = _branch_fill_index(
+            branch,
+            branch_index,
+            union_fill_index,
+        )
+        union_cell_fill_indices = {
+            cell.union_index: _stable_union_fill_index(
+                branch,
+                cell.union_index,
+            )
+            for cell in union_cells
+        }
 
         if max_gen >= 3:
             gen_inner, gen_outer = _descendant_ring_bounds(
@@ -2089,25 +2135,22 @@ def layout_descendants(
         # Emit sector for this branch
         if not measure_only:
             if union_cells:
-                for cell_index, cell in enumerate(union_cells):
+                for cell in union_cells:
                     all_children.append(SceneSector(
                         inner_radius=gen_inner,
                         outer_radius=gen_outer,
                         start_angle=cell.start_angle,
                         sweep_angle=cell.sweep_angle,
-                        fill=descendant_fill(branch_index + cell_index),
+                        fill=descendant_fill(
+                            union_cell_fill_indices[cell.union_index]
+                        ),
                         stroke=SECTOR_STROKE,
                         stroke_width=SECTOR_STROKE_WIDTH,
                         cx=cx,
                         cy=cy,
                     ))
             else:
-                fill = descendant_fill(branch_index)
-                if depth == 2 and union_fill_index is not None:
-                    # Adjacent union blocks need a visible distinction in addition
-                    # to the family header; otherwise their child sectors look
-                    # merged when the generic palette repeats a fill.
-                    fill = descendant_fill(union_fill_index)
+                fill = descendant_fill(inherited_fill_index)
                 all_children.append(SceneSector(
                     inner_radius=gen_inner,
                     outer_radius=gen_outer,
@@ -2145,6 +2188,13 @@ def layout_descendants(
         spouse_display_name = " / ".join(
             entry[2] for entry in spouse_entries if entry[2]
         )
+        collapsed_private_couple = (
+            raw_label == "Personne privée"
+            and spouse_medallion_label == "Personne privée"
+        )
+        if collapsed_private_couple:
+            child_label = "Personnes privées"
+            spouse_display_name = ""
 
         def _spouse_entry_for_union(
             union_index: int,
@@ -2157,11 +2207,47 @@ def layout_descendants(
             raw = _spouse_label(union, _name_label)
             if not raw:
                 return None
+            if collapsed_private_couple and raw == "Personne privée":
+                return None
             return (
                 union.spouse_handle,
                 raw,
                 _short(raw, depth),
             )
+
+        def _emit_highlight_markers(
+            marker_start: float,
+            marker_sweep: float,
+            marker_spouse_handle: str | None,
+        ) -> None:
+            """Render highlight markers in one branch or union cell."""
+            if measure_only:
+                return
+            marker_radius = min(2.0, max(1.1, ring_width * 0.08))
+            marker_distance = max(
+                gen_inner + marker_radius + 1.0,
+                gen_outer - marker_radius - 1.0,
+            )
+            marker_mid_angle = marker_start + marker_sweep / 2.0
+            highlighted_angles = []
+            if _highlight(branch.person.handle if branch.person else None):
+                highlighted_angles.append(marker_mid_angle)
+            if _highlight(marker_spouse_handle):
+                highlighted_angles.append(
+                    marker_mid_angle + min(2.0, marker_sweep * 0.12)
+                )
+            for marker_angle in highlighted_angles:
+                marker_x, marker_y = _polar(
+                    cx,
+                    cy,
+                    marker_distance,
+                    marker_angle,
+                )
+                all_children.append(SceneMarker(
+                    cx=marker_x,
+                    cy=marker_y,
+                    radius=marker_radius,
+                ))
 
         def _emit_dense_first_generation_lines(
             start_angle: float,
@@ -2278,10 +2364,6 @@ def layout_descendants(
                     fill=fill_color,
                     max_width=width_limit,
                 ))
-
-        if raw_label == "Personne privée" and spouse_medallion_label == "Personne privée":
-            child_label = "Personnes privées"
-            spouse_display_name = ""
 
         # Place one portrait medallion or a tangent couple pair when the local
         # sector can sustain a readable circle. A narrow sector falls back to
@@ -2422,30 +2504,11 @@ def layout_descendants(
                     child_portrait_data,
                     _highlight(branch.person.handle),
                 )
-        else:
+        elif not union_cells:
             # Later-generation people are text-only by design. When highlight
             # markers are enabled, keep their citation signal visible with a
             # small diamond in the same sector instead of dropping it.
-            marker_radius = min(2.0, max(1.1, ring_width * 0.08))
-            marker_distance = max(
-                gen_inner + marker_radius + 1.0,
-                gen_outer - marker_radius - 1.0,
-            )
-            highlighted_handles = []
-            if _highlight(branch.person.handle if branch.person else None):
-                highlighted_handles.append(mid_angle)
-            if _highlight(spouse_handle):
-                highlighted_handles.append(mid_angle + min(2.0, alloc_sweep * 0.12))
-            for marker_angle in highlighted_handles:
-                marker_x, marker_y = _polar(
-                    cx, cy, marker_distance, marker_angle
-                )
-                if not measure_only:
-                    all_children.append(SceneMarker(
-                        cx=marker_x,
-                        cy=marker_y,
-                        radius=marker_radius,
-                    ))
+            _emit_highlight_markers(alloc_start, alloc_sweep, spouse_handle)
 
         if union_cells and depth == 1:
             union_text_inners: list[float] = []
@@ -2528,10 +2591,17 @@ def layout_descendants(
                     else:
                         cell_text_inner = gen_outer
                         cell_med_r_pos = gen_outer
-                union_text_inners.append(cell_text_inner)
-                if cell_border_r <= 0.5 or measure_only:
-                    continue
                 cell_mid_angle = cell.start_angle + cell.sweep_angle / 2.0
+                union_text_inners.append(cell_text_inner)
+                if cell_border_r <= 0.5:
+                    _emit_highlight_markers(
+                        cell.start_angle,
+                        cell.sweep_angle,
+                        cell_spouse_handle,
+                    )
+                    continue
+                if measure_only:
+                    continue
                 cell_mx, cell_my = _polar(
                     cx,
                     cy,
@@ -2548,12 +2618,12 @@ def layout_descendants(
                     cell_spouse_portrait = _portrait(cell_spouse_handle)
                     cell_child_radius = (
                         cell_border_r / 1.1
-                        if adaptive_dense and cell_child_portrait
+                        if cell_child_portrait
                         else cell_border_r
                     )
                     cell_spouse_radius = (
                         cell_border_r / 1.1
-                        if adaptive_dense and cell_spouse_portrait
+                        if cell_spouse_portrait
                         else cell_border_r
                     )
                     _emit_medallion(
@@ -2575,7 +2645,7 @@ def layout_descendants(
                 else:
                     cell_child_radius = (
                         cell_border_r / 1.1
-                        if adaptive_dense and cell_child_portrait
+                        if cell_child_portrait
                         else cell_border_r
                     )
                     _emit_medallion(
@@ -2588,6 +2658,18 @@ def layout_descendants(
                     )
             if union_text_inners:
                 med_text_inner = min(union_text_inners)
+
+        if union_cells and depth > 1:
+            # Multi-union cells at deeper generations are intentionally
+            # text-only, so preserve one highlight marker pair per cell rather
+            # than falling back to a marker at the shared branch midpoint.
+            for cell in union_cells:
+                entry = _spouse_entry_for_union(cell.union_index)
+                _emit_highlight_markers(
+                    cell.start_angle,
+                    cell.sweep_angle,
+                    entry[0] if entry else None,
+                )
 
         # Labels use ring-local capacity in dense reports. The standard two-ring
         # publication geometry remains byte-for-byte compatible below.
@@ -3076,10 +3158,13 @@ def layout_descendants(
                 include_empty=True,
             )
             for union_allocation in union_allocations:
-                union_fill_index = None
-                if union_allocation.children:
-                    union_fill_index = union_fill_order
-                    union_fill_order += 1
+                if len(branch.unions) > 1:
+                    child_fill_index = _stable_union_fill_index(
+                        branch,
+                        union_allocation.union_index,
+                    )
+                else:
+                    child_fill_index = inherited_fill_index
                 child_allocs = _allocate_descendant_branches_by_demand(
                     union_allocation.children,
                     start_angle=union_allocation.start_angle,
@@ -3095,7 +3180,7 @@ def layout_descendants(
                         child_alloc.sweep_angle,
                         depth + 1,
                         branch_index,
-                        union_fill_index,
+                        child_fill_index,
                     )
 
             if len(union_allocations) > 1 and depth < max_gen:
@@ -3225,7 +3310,6 @@ def layout_descendants(
     }
     measure_only = False
     all_children = []
-    union_fill_order = 0
     for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
         _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
 

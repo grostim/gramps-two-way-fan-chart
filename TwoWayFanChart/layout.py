@@ -1858,12 +1858,14 @@ def layout_descendants(
 
     all_children: list = []
     measure_only = True
-    # Assign colors once per semantic union and reuse the assignment for the
-    # union cell and every descendant sector placed below that union. The
-    # render pass repeats the traversal, so keeping this map across both passes
-    # prevents empty groups and nested branches from shifting the palette.
+    # Assign colors once per semantic union, including unions without visible
+    # children, and reuse the assignment for the union cell and every
+    # descendant sector placed below that union. The render pass repeats the
+    # traversal, so keeping this map across both passes prevents nested
+    # branches from shifting the palette.
     union_fill_indices: dict[tuple[str, int], int] = {}
     next_union_fill_index = 0
+    last_populated_union_fill: str | None = None
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
     name_cache: dict[str, str] = {}
@@ -1933,8 +1935,14 @@ def layout_descendants(
         branch: DescendantBranch,
         union_index: int,
     ) -> int:
-        """Return one deterministic palette index for a recorded union."""
-        nonlocal next_union_fill_index
+        """Return one deterministic palette index for a recorded union.
+
+        Every recorded union consumes a slot, including unions without visible
+        children, so a later union cannot inherit the empty union's color. If
+        the cycling palette would repeat the previous populated union, skip to
+        the next palette slot so adjacent populated groups remain distinct.
+        """
+        nonlocal last_populated_union_fill, next_union_fill_index
         key = (branch.position_id, union_index)
         if key not in union_fill_indices:
             groups = _children_grouped_by_union(branch)
@@ -1942,9 +1950,15 @@ def layout_descendants(
                 0 <= union_index < len(groups)
                 and bool(groups[union_index])
             )
-            union_fill_indices[key] = next_union_fill_index
+            fill_index = next_union_fill_index
+            next_union_fill_index += 1
+            if has_children and last_populated_union_fill is not None:
+                while descendant_fill(fill_index) == last_populated_union_fill:
+                    fill_index += 1
+                    next_union_fill_index = fill_index + 1
+            union_fill_indices[key] = fill_index
             if has_children:
-                next_union_fill_index += 1
+                last_populated_union_fill = descendant_fill(fill_index)
         return union_fill_indices[key]
 
     def _branch_fill_index(
@@ -2207,13 +2221,24 @@ def layout_descendants(
             raw = _spouse_label(union, _name_label)
             if not raw:
                 return None
-            if collapsed_private_couple and raw == "Personne privée":
-                return None
             return (
                 union.spouse_handle,
                 raw,
                 _short(raw, depth),
             )
+
+        def _union_cell_content(
+            union_index: int,
+        ) -> tuple[str, tuple[str, str, str] | None]:
+            """Return the privacy-safe child/spouse content for one union cell."""
+            entry = _spouse_entry_for_union(union_index)
+            if (
+                raw_label == "Personne privée"
+                and entry is not None
+                and entry[1] == "Personne privée"
+            ):
+                return "Personnes privées", None
+            return _short(raw_label, depth), entry
 
         def _emit_highlight_markers(
             marker_start: float,
@@ -2513,7 +2538,7 @@ def layout_descendants(
         if union_cells and depth == 1:
             union_text_inners: list[float] = []
             for cell in union_cells:
-                entry = _spouse_entry_for_union(cell.union_index)
+                cell_child_label, entry = _union_cell_content(cell.union_index)
                 cell_spouse_handle = entry[0] if entry else None
                 cell_spouse_label = entry[2] if entry else ""
                 cell_has_spouse = bool(cell_spouse_handle and cell_spouse_label)
@@ -2630,7 +2655,7 @@ def layout_descendants(
                         cell_mx - tangent_x * cell_pair_offset,
                         cell_my - tangent_y * cell_pair_offset,
                         cell_child_radius,
-                        child_label or raw_label,
+                        cell_child_label or raw_label,
                         cell_child_portrait,
                         _highlight(branch.person.handle),
                     )
@@ -2652,7 +2677,7 @@ def layout_descendants(
                         cell_mx,
                         cell_my,
                         cell_child_radius,
-                        child_label or raw_label,
+                        cell_child_label or raw_label,
                         cell_child_portrait,
                         _highlight(branch.person.handle),
                     )
@@ -2682,9 +2707,9 @@ def layout_descendants(
             if union_cells:
                 cell_specs = []
                 for cell in union_cells:
-                    entry = _spouse_entry_for_union(cell.union_index)
+                    cell_child_label, entry = _union_cell_content(cell.union_index)
                     lines = [
-                        (child_label, True, TEXT_DARK),
+                        (cell_child_label, True, TEXT_DARK),
                         (child_dates, False, TEXT_GREY),
                     ]
                     if entry:
@@ -2731,9 +2756,9 @@ def layout_descendants(
                 if union_cells:
                     cell_specs = []
                     for cell in union_cells:
-                        entry = _spouse_entry_for_union(cell.union_index)
+                        cell_child_label, entry = _union_cell_content(cell.union_index)
                         lines = [
-                            (child_label, True, TEXT_DARK),
+                            (cell_child_label, True, TEXT_DARK),
                             (child_dates, False, TEXT_GREY),
                         ]
                         if entry:
@@ -2819,6 +2844,7 @@ def layout_descendants(
                 def _render_intermediate_block(
                     block_mid_angle: float,
                     block_sweep: float,
+                    block_child_label: str,
                     block_spouse: str,
                 ) -> None:
                     """Render one intermediate-generation block or union cell."""
@@ -2837,7 +2863,7 @@ def layout_descendants(
                         parallel_capacity = name_target * 2.35
                         if angular_capacity >= parallel_capacity:
                             child_fit, child_size, child_width = _fit_generation_name(
-                                child_label,
+                                block_child_label,
                                 depth,
                                 target_size=name_target,
                                 minimum_size=name_minimum,
@@ -2891,7 +2917,7 @@ def layout_descendants(
                                 stack_floor = name_minimum * 0.75
                                 if stack_size >= stack_floor and text_width >= stack_size * 2.1:
                                     for content, offset in (
-                                        (child_label, -stack_size * 0.62),
+                                        (block_child_label, -stack_size * 0.62),
                                         (f"\u00d7 {block_spouse}", stack_size * 0.62),
                                     ):
                                         if not content:
@@ -2912,7 +2938,7 @@ def layout_descendants(
                                             ))
                                 else:
                                     couple_fit, couple_size, couple_width = _fit_couple_to_width(
-                                        child_label,
+                                        block_child_label,
                                         block_spouse,
                                         target_size=name_target,
                                         minimum_size=name_minimum,
@@ -2932,7 +2958,7 @@ def layout_descendants(
                                             ))
                             else:
                                 couple_fit, couple_size, couple_width = _fit_couple_to_width(
-                                    child_label,
+                                    block_child_label,
                                     block_spouse,
                                     target_size=name_target,
                                     minimum_size=name_minimum,
@@ -2952,7 +2978,7 @@ def layout_descendants(
                                         ))
                     else:
                         fitted_name, name_size, name_width = _fit_generation_name(
-                            child_label,
+                            block_child_label,
                             depth,
                             target_size=name_target,
                             minimum_size=name_minimum,
@@ -3004,16 +3030,18 @@ def layout_descendants(
 
                 if union_cells:
                     for cell in union_cells:
-                        entry = _spouse_entry_for_union(cell.union_index)
+                        cell_child_label, entry = _union_cell_content(cell.union_index)
                         _render_intermediate_block(
                             cell.start_angle + cell.sweep_angle / 2.0,
                             cell.sweep_angle,
+                            cell_child_label,
                             entry[2] if entry else "",
                         )
                 else:
                     _render_intermediate_block(
                         mid_angle,
                         alloc_sweep,
+                        child_label,
                         spouse_display_name,
                     )
         elif child_label:
@@ -3028,16 +3056,21 @@ def layout_descendants(
                 if union_cells:
                     cell_specs = []
                     for cell in union_cells:
-                        entry = _spouse_entry_for_union(cell.union_index)
+                        cell_child_label, entry = _union_cell_content(cell.union_index)
                         cell_specs.append((
                             cell.start_angle,
                             cell.sweep_angle,
                             entry,
+                            cell_child_label,
                         ))
                 else:
-                    cell_specs = [(alloc_start, alloc_sweep, None)]
-                for cell_start, cell_sweep, cell_entry in cell_specs:
-                    cell_spouse = cell_entry[2] if cell_entry else spouse_display_name
+                    cell_specs = [(alloc_start, alloc_sweep, None, child_label)]
+                for cell_start, cell_sweep, cell_entry, cell_child_label in cell_specs:
+                    cell_spouse = (
+                        cell_entry[2]
+                        if cell_entry
+                        else ("" if union_cells else spouse_display_name)
+                    )
                     if not measure_only:
                         all_children.append(ScenePathText(
                             path=_arc_text_path(
@@ -3045,7 +3078,7 @@ def layout_descendants(
                                 cell_start, cell_start + cell_sweep,
                                 lower=True,
                             ),
-                            content=child_label,
+                            content=cell_child_label,
                             font_size=font_size,
                             fill=TEXT_DARK,
                         ))
@@ -3077,7 +3110,7 @@ def layout_descendants(
                             if cell_entry:
                                 date_label = _date_label(cell_entry[0])
                                 spouse_dates = date_label
-                            else:
+                            elif not union_cells:
                                 spouse_date_parts = [
                                     _date_label(handle)
                                     for handle, _raw, _short_name in spouse_entries
@@ -3099,6 +3132,7 @@ def layout_descendants(
             else:
                 def _render_plain_block(
                     block_mid_angle: float,
+                    block_child_label: str,
                     block_spouse: str = "",
                 ) -> None:
                     """Render one plain intermediate block or union cell."""
@@ -3107,7 +3141,7 @@ def layout_descendants(
                     if not measure_only:
                         all_children.append(SceneText(
                             x=tx, y=ty,
-                            content=child_label,
+                            content=block_child_label,
                             font_size=outer_r * (10.5 / 600),
                             fill=TEXT_DARK,
                             anchor="middle",
@@ -3140,13 +3174,14 @@ def layout_descendants(
 
                 if union_cells:
                     for cell in union_cells:
-                        entry = _spouse_entry_for_union(cell.union_index)
+                        cell_child_label, entry = _union_cell_content(cell.union_index)
                         _render_plain_block(
                             cell.start_angle + cell.sweep_angle / 2.0,
+                            cell_child_label,
                             entry[2] if entry else "",
                         )
                 else:
-                    _render_plain_block(mid_angle, spouse_display_name)
+                    _render_plain_block(mid_angle, child_label, spouse_display_name)
 
         # Place children within the allocated sweep. Reuse the same deep-demand
         # allocator as the capacity pass so geometry and rendering stay aligned.

@@ -498,6 +498,64 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(child_ring[0].fill, first_ring[0].fill)
         self.assertEqual(child_ring[1].fill, first_ring[3].fill)
 
+    def test_empty_union_consumes_fill_index_before_following_union(self):
+        child = DescendantBranch(
+            "child-after-empty-union",
+            PersonNode("child-after-empty-union", "I1001"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "empty-first-union",
+            1,
+            spouse_handles=("empty-spouse", "child-spouse"),
+            children=(child,),
+            children_by_union=((), (child,)),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+        scene = layout_descendants(
+            canvas,
+            (person,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        first_ring = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+            and math.isclose(
+                node.inner_radius,
+                canvas.descendant_outer_radius_mm * (202 / 600),
+            )
+            and math.isclose(
+                node.outer_radius,
+                canvas.descendant_outer_radius_mm * (350 / 600),
+            )
+        ]
+        child_ring = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+            and math.isclose(
+                node.inner_radius,
+                canvas.descendant_outer_radius_mm * (355 / 600),
+            )
+            and math.isclose(
+                node.outer_radius,
+                canvas.descendant_outer_radius_mm * (598 / 600),
+            )
+        ]
+
+        self.assertEqual(len(first_ring), 2)
+        self.assertEqual(len(child_ring), 1)
+        self.assertNotEqual(first_ring[0].fill, first_ring[1].fill)
+        self.assertEqual(child_ring[0].fill, first_ring[1].fill)
+
     def test_split_cells_keep_the_collapsed_private_couple_label(self):
         first_child = DescendantBranch(
             "private-child-0",
@@ -538,6 +596,54 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(labels.count("Personnes privées"), 2)
         self.assertFalse(any("× Personne privée" in label for label in labels))
+
+    def test_split_cells_collapse_each_private_union_independently(self):
+        first_child = DescendantBranch(
+            "mixed-private-child-0",
+            PersonNode("mixed-private-child-0", "I1001"),
+            2,
+            (),
+            (),
+        )
+        second_child = DescendantBranch(
+            "mixed-private-child-1",
+            PersonNode("mixed-private-child-1", "I1002"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "mixed-private-person",
+            1,
+            spouse_handles=("public-spouse", "private-spouse"),
+            children=(first_child, second_child),
+            children_by_union=((first_child,), (second_child,)),
+        )
+        names = {
+            "mixed-private-person": "Personne privée",
+            "public-spouse": "Conjoint public",
+            "private-spouse": "Personne privée",
+        }
+        scene = layout_descendants(
+            calculate_canvas(
+                PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=2,
+            ),
+            (person,),
+            name_lookup=lambda handle: names.get(handle, handle),
+            dates_lookup=lambda _handle: "",
+        )
+        labels = [
+            node.content
+            for node in scene.children
+            if isinstance(node, ScenePathText)
+        ]
+
+        self.assertEqual(
+            labels,
+            ["Personne privée", "× Conjoint public", "Personnes privées"],
+        )
 
     def test_union_fill_is_inherited_by_all_descendant_generations(self):
         first_grandchild = DescendantBranch(

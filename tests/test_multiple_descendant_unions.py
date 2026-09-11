@@ -10,6 +10,8 @@ from TwoWayFanChart.layout import (
     _allocate_descendant_branches_by_demand,
     _allocate_descendant_union_cells,
     _allocate_descendant_union_groups,
+    _descendant_angle_demand,
+    _descendant_group_angle_demand,
     _upright_tangent_rotation,
     calculate_canvas,
     layout_descendants,
@@ -434,7 +436,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(labels.count("i0893"), 2)
         self.assertFalse(any(" / " in label for label in labels))
 
-    def test_multi_union_branch_demand_includes_union_cell_demands(self):
+    def test_multi_union_branch_demand_takes_max_of_ring_and_cell_demands(self):
         first_child = DescendantBranch(
             "demand-child-0",
             PersonNode("demand-child-0", "I1001"),
@@ -464,8 +466,10 @@ class MultipleDescendantUnionTests(unittest.TestCase):
                 (),
                 (),
             )
-            for index in range(11)
+            for index in range(10)
         )
+
+        self.assertAlmostEqual(_descendant_angle_demand(multi_union), 28.0)
 
         allocation = _allocate_descendant_branches_by_demand(
             (multi_union,) + siblings,
@@ -479,9 +483,83 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         )
 
         self.assertEqual(len(cells), 2)
+        self.assertAlmostEqual(allocation.sweep_angle, 28.0)
         self.assertGreaterEqual(
             min(cell.sweep_angle for cell in cells),
             14.0 - 1e-6,
+        )
+
+    def test_nested_multi_union_demand_propagates_to_parent_union_group(self):
+        nested_child_a = DescendantBranch(
+            "nested-child-a",
+            PersonNode("nested-child-a", "I5001"),
+            5,
+            (),
+            (),
+        )
+        nested_child_b = DescendantBranch(
+            "nested-child-b",
+            PersonNode("nested-child-b", "I5002"),
+            5,
+            (),
+            (),
+        )
+        nested = branch(
+            "nested",
+            4,
+            spouse_handles=("nested-spouse-a", "nested-spouse-b"),
+            children=(nested_child_a, nested_child_b),
+            children_by_union=((nested_child_a,), (nested_child_b,)),
+        )
+        sparse_children = tuple(
+            DescendantBranch(
+                f"sparse-parent-group-child-{index}",
+                PersonNode(
+                    f"sparse-parent-group-child-{index}",
+                    f"I50{index:02d}",
+                ),
+                4,
+                (),
+                (),
+            )
+            for index in range(97)
+        )
+        parent_groups = ((nested,),) + tuple(
+            (child,)
+            for child in sparse_children
+        )
+        parent = branch(
+            "parent-with-nested-union",
+            3,
+            spouse_handles=tuple(
+                f"parent-spouse-{index}"
+                for index in range(len(parent_groups))
+            ),
+            children=(nested,) + sparse_children,
+            children_by_union=parent_groups,
+        )
+
+        self.assertAlmostEqual(
+            _descendant_group_angle_demand((nested,)),
+            2.0,
+        )
+        parent_groups = _allocate_descendant_union_groups(
+            parent,
+            start_angle=96.0,
+            total_sweep=168.0,
+            include_empty=True,
+        )
+        nested_cells = _allocate_descendant_union_cells(
+            nested,
+            start_angle=parent_groups[0].start_angle,
+            total_sweep=parent_groups[0].sweep_angle,
+        )
+
+        self.assertEqual(len(nested_cells), 2)
+        self.assertGreaterEqual(parent_groups[0].sweep_angle, 2.0)
+        self.assertGreaterEqual(
+            min(cell.sweep_angle for cell in nested_cells),
+            1.0,
         )
 
     def test_unmarried_branch_reserves_palette_slot_before_union_branch(self):

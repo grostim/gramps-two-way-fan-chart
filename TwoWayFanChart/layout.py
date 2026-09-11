@@ -1545,23 +1545,26 @@ def _descendant_generation_counts(branch: DescendantBranch) -> dict[int, int]:
 
 
 def _descendant_angle_demand(branch: DescendantBranch) -> float:
-    """Return the branch sweep needed by its densest visible generation."""
+    """Return the branch sweep needed by its visible generations and cells."""
     demand = 0.0
     for generation, count in _descendant_generation_counts(branch).items():
         slot = _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 0.8)
         demand = max(demand, count * slot)
     # A multi-union branch is split into one contiguous cell per union after
-    # the branch-level sweep is allocated. Reserve the sum of those visible
-    # cell floors here as well, otherwise the outer allocator can give the
-    # branch one person's width and split every union cell below its floor.
+    # the branch-level sweep is allocated. The ring and cell demands are
+    # competing lower bounds, not additive widths: reserve whichever is
+    # larger, otherwise the outer allocator over-weights this branch.
     if len(branch.unions) > 1:
         groups = list(_children_grouped_by_union(branch))
         if len(groups) < len(branch.unions):
             groups.extend(() for _ in range(len(branch.unions) - len(groups)))
         cell_floor = _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8)
-        demand += sum(
-            max(_descendant_group_angle_demand(group), cell_floor)
-            for group in groups[: len(branch.unions)]
+        demand = max(
+            demand,
+            sum(
+                max(_descendant_group_angle_demand(group), cell_floor)
+                for group in groups[: len(branch.unions)]
+            ),
         )
     return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8))
 
@@ -1613,18 +1616,20 @@ def _children_grouped_by_union(
 def _descendant_group_angle_demand(
     children: tuple[DescendantBranch, ...],
 ) -> float:
-    """Return the deepest-generation demand for one union's children."""
+    """Return one union's demand, including nested split-cell demands."""
     counts: dict[int, int] = {}
     for child in children:
         for generation, count in _descendant_generation_counts(child).items():
             counts[generation] = counts.get(generation, 0) + count
-    return max(
+    generation_demand = max(
         (
             count * _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 0.8)
             for generation, count in counts.items()
         ),
         default=0.8,
     )
+    nested_demand = sum(_descendant_angle_demand(child) for child in children)
+    return max(generation_demand, nested_demand)
 
 
 def _allocate_descendant_union_groups(

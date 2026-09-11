@@ -386,28 +386,10 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, (SceneText, ScenePathText))
         ]
 
-        self.assertEqual(sum("F0335" in label for label in labels), 1)
-        self.assertEqual(sum("F0340" in label for label in labels), 1)
+        self.assertFalse(any(label.startswith("F0335") for label in labels))
+        self.assertFalse(any(label.startswith("F0340") for label in labels))
+        self.assertTrue(any("spouse 0335" in label for label in labels))
         self.assertTrue(any("spouse 0340" in label for label in labels))
-        marker_nodes = {
-            node.content.split(" · ", 1)[0]: node
-            for node in scene.children
-            if isinstance(node, SceneText)
-            and node.content.split(" · ", 1)[0] in {"F0335", "F0340"}
-        }
-        self.assertEqual(set(marker_nodes), {"F0335", "F0340"})
-        for marker in marker_nodes.values():
-            radial_angle = math.degrees(
-                math.atan2(
-                    marker.x - canvas.center_cx_mm,
-                    -(marker.y - canvas.center_cy_mm),
-                )
-            ) % 360.0
-            tangent_rotation = _upright_tangent_rotation(radial_angle)
-            rotation_delta = (
-                (marker.rotation - tangent_rotation + 180.0) % 360.0
-            ) - 180.0
-            self.assertAlmostEqual(rotation_delta, 0.0, delta=1e-6)
 
         sectors = [
             node for node in scene.children if isinstance(node, SceneSector)
@@ -417,23 +399,10 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(child_sectors[0].fill, child_sectors[1].fill)
         self.assertNotEqual(child_sectors[1].fill, child_sectors[2].fill)
 
-        def angle(node):
-            return math.atan2(
-                node.x - canvas.center_cx_mm,
-                -(node.y - canvas.center_cy_mm),
-            )
-
-        def mean_angle(nodes):
-            return math.atan2(
-                sum(math.sin(angle(node)) for node in nodes),
-                sum(math.cos(angle(node)) for node in nodes),
-            )
-
-        for family_id, child_labels in (
-            ("F0335", {"child f0335", "child f0335 b"}),
-            ("F0340", {"child f0340"}),
+        for child_labels in (
+            {"child f0335", "child f0335 b"},
+            {"child f0340"},
         ):
-            header = marker_nodes[family_id]
             children = [
                 node
                 for node in scene.children
@@ -441,12 +410,6 @@ class MultipleDescendantUnionTests(unittest.TestCase):
                 and node.content in child_labels
             ]
             self.assertEqual(len(children), len(child_labels))
-            delta = (
-                angle(header) - mean_angle(children) + math.pi
-            ) % (2.0 * math.pi) - math.pi
-            self.assertLess(abs(delta), math.radians(1.0))
-            self.assertGreaterEqual(header.font_size, 3.0)
-        self.assertGreaterEqual(marker_nodes["F0340"].font_size, 3.6)
 
     def test_dense_layout_splits_multiple_union_cells(self):
         grandchild = DescendantBranch(
@@ -911,8 +874,8 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, (SceneText, ScenePathText))
         ]
 
-        self.assertTrue(any("FHEADER1" in label for label in labels))
-        self.assertTrue(any("FHEADER2" in label for label in labels))
+        self.assertFalse(any("FHEADER1" in label for label in labels))
+        self.assertFalse(any("FHEADER2" in label for label in labels))
         self.assertFalse(any("FHEADER_EMPTY" in label for label in labels))
 
     def test_two_ring_multi_union_generation_two_cells_fit_spouses(self):

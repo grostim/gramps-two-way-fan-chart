@@ -111,9 +111,10 @@ class MultiDepthUnionCellTests(unittest.TestCase):
         self.assertFalse(any(" / " in l for l in labels))
         # No truncated-merged couple label of the old defect.
         self.assertFalse(any("…" in l and ("Kerhos" in l or "Pouchard" in l) for l in labels))
-        # Family headers present when a following ring exists.
-        self.assertIn("F0335 · Aude de Kerhos", labels)
-        self.assertIn("F0340 · Blandine Pouchard", labels)
+        # Couple labels remain inside their cells; the family ID/spouse
+        # repetition in the child-ring header is intentionally omitted.
+        self.assertFalse(any(label.startswith("F0335") for label in labels))
+        self.assertFalse(any(label.startswith("F0340") for label in labels))
         # Two distinct sectors at Grégoire's own ring: find sectors whose
         # angular span matches one of the two cells (they are distinct SceneSectors).
         self.assertGreaterEqual(len(sectors), 2)

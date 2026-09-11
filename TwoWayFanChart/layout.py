@@ -72,9 +72,10 @@ _RING_GAP_MM = 0.3  # white space between generation rings
 _ANCESTOR_TITLE_GAP_MM = 4.0
 _DESCENDANT_TITLE_GAP_MM = 8.0
 _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
-_DESCENDANT_COMPACT_RING_THRESHOLD_MM = (
-    _DESCENDANT_FIRST_GEN_LINE_GAP_MM * 4
-)
+# When the target grandchild ring is widened, keep enough radial room in later
+# rings for their identity labels before asking the direct-child ring to donate
+# any remaining space. The value scales down on smaller paper sizes.
+_DESCENDANT_LATER_RING_MIN_WIDTH_MM = 30.0
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
 # and its regression probes share one geometric contract.
@@ -2009,12 +2010,12 @@ def _descendant_ring_bounds(
     if generation_count == 1:
         widths = [total_depth]
     elif generation_count == 2:
-        # Keep the direct-descendant (visual generation 2) cadran wide enough
-        # for one-line couple labels.  Its former 202/600–350/600 radial
-        # interval is doubled; the outer child ring keeps the same final
-        # boundary so the descendant fan remains page-contained.
-        exact_inner = (202 / 600, 503 / 600)
-        exact_outer = (498 / 600, 598 / 600)
+        # ``depth=1`` is the direct child of the central couple and
+        # ``depth=2`` is the grandchild. Keep the direct-child lane compact,
+        # and give the grandchild lane the requested 2x radial depth while
+        # preserving the fixed outer boundary of the descendant fan.
+        exact_inner = (202 / 600, 302 / 600)
+        exact_outer = (297 / 600, 598 / 600)
         return (
             outer_radius * exact_inner[depth - 1],
             outer_radius * exact_outer[depth - 1],
@@ -2024,13 +2025,43 @@ def _descendant_ring_bounds(
         total_weight = sum(weights)
         widths = [total_depth * weight / total_weight for weight in weights]
 
-        # ``depth=1`` is the visual second descendant generation: the root
-        # couple occupies the first generation, so its children form G2.
-        # Double that ring's usable radial lane even when deeper generations
-        # are configured. Add the required depth outside the compact baseline
-        # instead of shrinking later generations and losing their labels.
-        first_visible_width = max(widths[0] - _RING_GAP_MM, 0.0)
-        widths[0] += first_visible_width
+        # The extracted root branch is already a child of the central couple:
+        # ``depth=1`` is therefore the direct-child ring and ``depth=2`` is
+        # the grandchild ring. Transfer the extra depth needed to double the
+        # grandchild lane from later rings so the full descendant composition
+        # remains contained within the original outer radius.
+        grandchild_visible_width = max(widths[1] - _RING_GAP_MM, 0.0)
+        remaining_transfer = grandchild_visible_width
+        minimum_later_visible_width = min(
+            _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
+            max(8.0, total_depth * 0.30),
+        )
+        # Preserve the generations immediately following the target whenever
+        # possible: the outermost rings are the least identity-dense and can
+        # donate their excess width without collapsing intermediate unions.
+        for offset in range(len(widths) - 1, 1, -1):
+            reducible = max(
+                widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
+                0.0,
+            )
+            transfer = min(remaining_transfer, reducible)
+            widths[offset] -= transfer
+            widths[1] += transfer
+            remaining_transfer -= transfer
+            if remaining_transfer <= 0.0:
+                break
+        if remaining_transfer > 0.0:
+            # A three-generation layout has only one later ring. Preserve a
+            # small direct-child lane as well, but use it as the final donor so
+            # the grandchild target remains exact whenever the page can hold it.
+            minimum_direct_visible_width = max(8.0, total_depth * 0.05)
+            reducible = max(
+                widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
+                0.0,
+            )
+            transfer = min(remaining_transfer, reducible)
+            widths[0] -= transfer
+            widths[1] += transfer
     ring_inner = inner_radius + sum(widths[: depth - 1])
     return ring_inner, ring_inner + widths[depth - 1] - _RING_GAP_MM
 
@@ -3138,13 +3169,7 @@ def layout_descendants(
                 _emit_single_generation_lines(cell_start, cell_sweep, lines)
         elif child_label and (
             depth > 1
-            or (
-                adaptive_dense
-                and not (
-                    depth == 1
-                    and ring_width < _DESCENDANT_COMPACT_RING_THRESHOLD_MM
-                )
-            )
+            or adaptive_dense
         ):
             child_dates = (
                 _date_label(branch.person.handle)
@@ -3238,7 +3263,7 @@ def layout_descendants(
                 text_end = med_text_inner - 2.0
                 text_width = max(0.0, text_end - text_start)
                 name_target = {2: 4.2, 3: 3.6, 4: 3.2, 5: 3.0}.get(depth, 3.0)
-                name_minimum = 3.2 if depth == 2 else 2.8
+                name_minimum = 3.2 if depth == 2 else (1.8 if depth >= 3 else 2.8)
 
                 def _render_intermediate_block(
                     block_mid_angle: float,

@@ -49,7 +49,7 @@ def canvas(descendant_generations: int):
 
 
 class SecondGenerationLayoutTests(unittest.TestCase):
-    def test_visual_generation_two_ring_is_doubled_in_a_four_generation_chart(self):
+    def test_grandchild_ring_is_doubled_without_widening_direct_children(self):
         fourth = branch("fourth", 4)
         third = branch("third", 3, children=(fourth,))
         second = branch("second", 2, children=(third,))
@@ -62,7 +62,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
             name_lookup=lambda handle: handle,
             dates_lookup=lambda _handle: "",
         )
-        first_ring = next(
+        direct_child_ring = next(
             sector
             for sector in scene.children
             if isinstance(sector, SceneSector)
@@ -76,18 +76,87 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                 )[0],
             )
         )
+        grandchild_ring = next(
+            sector
+            for sector in scene.children
+            if isinstance(sector, SceneSector)
+            and math.isclose(
+                sector.inner_radius,
+                _descendant_ring_bounds(
+                    chart.descendant_inner_radius_mm,
+                    chart.descendant_outer_radius_mm,
+                    4,
+                    2,
+                )[0],
+            )
+        )
         total_depth = (
             chart.descendant_outer_radius_mm - chart.descendant_inner_radius_mm
         )
         total_weight = sum(_BASE_WEIGHTS_FOR_FOUR_GENERATIONS)
-        previous_visible_depth = (
+        baseline_direct_depth = (
             total_depth * _BASE_WEIGHTS_FOR_FOUR_GENERATIONS[0] / total_weight
+            - _RING_GAP_MM
+        )
+        baseline_grandchild_depth = (
+            total_depth * _BASE_WEIGHTS_FOR_FOUR_GENERATIONS[1] / total_weight
             - _RING_GAP_MM
         )
 
         self.assertAlmostEqual(
-            first_ring.outer_radius - first_ring.inner_radius,
-            previous_visible_depth * 2,
+            direct_child_ring.outer_radius - direct_child_ring.inner_radius,
+            baseline_direct_depth,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            grandchild_ring.outer_radius - grandchild_ring.inner_radius,
+            baseline_grandchild_depth * 2,
+            places=6,
+        )
+        for depth in (1, 2, 3, 4):
+            _inner, ring_outer = _descendant_ring_bounds(
+                chart.descendant_inner_radius_mm,
+                chart.descendant_outer_radius_mm,
+                4,
+                depth,
+            )
+            self.assertLessEqual(ring_outer, chart.descendant_outer_radius_mm)
+
+    def test_two_generation_chart_doubles_the_grandchild_ring(self):
+        grandchild = branch("grandchild", 2)
+        direct_child = branch("child", 1, children=(grandchild,))
+        chart = canvas(2)
+        scene = layout_descendants(
+            chart,
+            (direct_child,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        rings = []
+        for depth in (1, 2):
+            inner, _outer = _descendant_ring_bounds(
+                chart.descendant_inner_radius_mm,
+                chart.descendant_outer_radius_mm,
+                2,
+                depth,
+            )
+            rings.append(
+                next(
+                    sector
+                    for sector in scene.children
+                    if isinstance(sector, SceneSector)
+                    and math.isclose(sector.inner_radius, inner)
+                )
+            )
+
+        self.assertAlmostEqual(
+            rings[0].outer_radius - rings[0].inner_radius,
+            chart.descendant_outer_radius_mm * (95 / 600),
+            places=6,
+        )
+        self.assertAlmostEqual(
+            rings[1].outer_radius - rings[1].inner_radius,
+            chart.descendant_outer_radius_mm * (296 / 600),
             places=6,
         )
 

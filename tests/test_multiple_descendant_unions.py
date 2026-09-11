@@ -685,6 +685,130 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(len(first_ring), 2)
         self.assertNotEqual(first_ring[0].fill, first_ring[1].fill)
 
+    def test_nested_union_cells_keep_adjacent_sibling_fills_distinct(self):
+        nested_children = tuple(
+            DescendantBranch(
+                f"nested-child-{index}",
+                PersonNode(f"nested-child-{index}", f"I30{index}"),
+                3,
+                (),
+                (),
+            )
+            for index in range(3)
+        )
+        nested = branch(
+            "nested-three-unions",
+            2,
+            spouse_handles=(
+                "nested-spouse-a",
+                "nested-spouse-b",
+                "nested-spouse-c",
+            ),
+            children=nested_children,
+            children_by_union=tuple((child,) for child in nested_children),
+        )
+        first = branch(
+            "first-with-nested-split",
+            1,
+            spouse_handles=("first-spouse",),
+            children=(nested,),
+            children_by_union=((nested,),),
+        )
+        sibling_child = DescendantBranch(
+            "sibling-child-after-nested-split",
+            PersonNode("sibling-child-after-nested-split", "I4001"),
+            2,
+            (),
+            (),
+        )
+        sibling = branch(
+            "sibling-after-nested-split",
+            1,
+            spouse_handles=("sibling-spouse",),
+            children=(sibling_child,),
+            children_by_union=((sibling_child,),),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=3,
+        )
+
+        scene = layout_descendants(
+            canvas,
+            (first, sibling),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        second_ring_inner, second_ring_outer = _descendant_ring_bounds(
+            canvas.descendant_inner_radius_mm,
+            canvas.descendant_outer_radius_mm,
+            3,
+            2,
+        )
+        second_ring = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+            and math.isclose(node.inner_radius, second_ring_inner)
+            and math.isclose(node.outer_radius, second_ring_outer)
+        ]
+
+        self.assertEqual(len(second_ring), 4)
+        for previous, current in zip(second_ring, second_ring[1:]):
+            self.assertNotEqual(previous.fill, current.fill)
+
+    def test_childless_union_does_not_emit_a_descendant_header(self):
+        first_child = DescendantBranch(
+            "header-first-child",
+            PersonNode("header-first-child", "I1001"),
+            2,
+            (),
+            (),
+        )
+        last_child = DescendantBranch(
+            "header-last-child",
+            PersonNode("header-last-child", "I1002"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "header-person",
+            1,
+            spouse_handles=(
+                "header-spouse-first",
+                "header-spouse-empty",
+                "header-spouse-last",
+            ),
+            children=(first_child, last_child),
+            children_by_union=(
+                (first_child,),
+                (),
+                (last_child,),
+            ),
+            family_gramps_ids=("FHEADER1", "FHEADER_EMPTY", "FHEADER2"),
+        )
+        scene = layout_descendants(
+            calculate_canvas(
+                PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=2,
+            ),
+            (person,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        labels = [
+            node.content
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+        ]
+
+        self.assertTrue(any("FHEADER1" in label for label in labels))
+        self.assertTrue(any("FHEADER2" in label for label in labels))
+        self.assertFalse(any("FHEADER_EMPTY" in label for label in labels))
+
     def test_compact_multi_union_couples_share_generation_font_size(self):
         first_child = DescendantBranch(
             "compact-child-0",

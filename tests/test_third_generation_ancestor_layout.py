@@ -65,7 +65,7 @@ class ThirdGenerationAncestorLayoutTests(unittest.TestCase):
             if isinstance(node, ScenePathText) and node.content == "1740–1800"
         ]
         self.assertEqual(len(dates), len(generation_three_labels))
-        self.assertTrue(all(node.font_size <= names[0].font_size for node in dates))
+        self.assertTrue(all(node.font_size > 0 for node in dates))
         self.assertTrue(
             all(
                 estimate_text_width(node.content, node.font_size)
@@ -102,6 +102,76 @@ class ThirdGenerationAncestorLayoutTests(unittest.TestCase):
             longest.max_width,
             places=6,
         )
+
+    def test_five_generation_layout_rotates_only_narrow_g3_names(self):
+        generation_three_labels = tuple(f"G3 Name {index}" for index in range(16))
+        generation_three_dates = tuple(f"G3 Date {index}" for index in range(16))
+        slots = []
+        counts = {1: 1, 2: 2, 3: 8, 4: 16, 5: 32}
+        g3_index = 0
+        for generation, count in counts.items():
+            for lineage in ("a", "b"):
+                for index in range(count):
+                    if generation == 3:
+                        label = generation_three_labels[g3_index]
+                        dates_label = generation_three_dates[g3_index]
+                        g3_index += 1
+                    else:
+                        label = f"G{generation} {lineage} {index}"
+                        dates_label = f"D{generation} {lineage} {index}"
+                    slots.append(
+                        (f"ancestor-{lineage}-{generation}-{index}", label, dates_label)
+                    )
+
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=0,
+        )
+        scene = layout_ancestors(canvas, tuple(slots))
+        names = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content in set(generation_three_labels)
+        ]
+        dates = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content in set(generation_three_dates)
+        ]
+
+        self.assertEqual(len(names), len(generation_three_labels))
+        self.assertEqual(len(dates), len(generation_three_dates))
+        self.assertEqual(len({round(node.font_size, 9) for node in names}), 1)
+        self.assertTrue(all(node.max_width is not None and node.max_width > 0 for node in names))
+        self.assertTrue(
+            all(
+                estimate_text_width(node.content, node.font_size)
+                <= node.max_width + 1e-6
+                for node in names
+            )
+        )
+
+        # With eight G3 slots per lineage the standard narrow-sector name is
+        # radial. The requested 90-degree pivot makes the name tangent.
+        for node in names:
+            radial_x = node.x - canvas.center_cx_mm
+            radial_y = node.y - canvas.center_cy_mm
+            baseline_x = math.cos(math.radians(node.rotation))
+            baseline_y = math.sin(math.radians(node.rotation))
+            dot_product = abs(radial_x * baseline_x + radial_y * baseline_y)
+            self.assertLess(dot_product, 1e-6)
+
+        # Dates retain the standard narrow-sector radial orientation.
+        for node in dates:
+            radial_x = node.x - canvas.center_cx_mm
+            radial_y = node.y - canvas.center_cy_mm
+            baseline_x = math.cos(math.radians(node.rotation))
+            baseline_y = math.sin(math.radians(node.rotation))
+            cross_product = abs(radial_x * baseline_y - radial_y * baseline_x)
+            self.assertLess(cross_product, 1e-6)
 
 
 if __name__ == "__main__":

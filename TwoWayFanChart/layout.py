@@ -302,6 +302,18 @@ def _ancestor_radial_name_lane(
     return text_start + width / 2.0, width
 
 
+def _ancestor_tangent_name_lane(
+    *,
+    name_radius: float,
+    sweep_angle: float,
+) -> tuple[float, float]:
+    """Return the center and chord width of a tangent name lane."""
+    half_chord = name_radius * math.sin(
+        math.radians(max(sweep_angle, 0.0) / 2.0)
+    )
+    return name_radius, max(0.0, 2.0 * half_chord - 2.0)
+
+
 def _fit_text_to_width(
     content: str,
     *,
@@ -719,7 +731,7 @@ def layout_ancestors(
                         continue
                     (
                         candidate_med_position,
-                        _candidate_name_r,
+                        candidate_name_r,
                         _candidate_life_r,
                         candidate_image_r,
                         candidate_font_size,
@@ -738,11 +750,25 @@ def layout_ancestors(
                         if candidate_portrait
                         else candidate_image_r
                     )
-                    _candidate_text_r, candidate_width = _ancestor_radial_name_lane(
-                        medallion_position=candidate_med_position,
-                        medallion_radius=candidate_medallion_r,
-                        outer_radius=gen_outer,
-                    )
+                    if candidate_sweep < 15.0:
+                        # The standard narrow-sector name is radial; rotating
+                        # it by 90 degrees makes the G3 name tangent.
+                        _candidate_text_r, candidate_width = (
+                            _ancestor_tangent_name_lane(
+                                name_radius=candidate_name_r,
+                                sweep_angle=candidate_sweep,
+                            )
+                        )
+                    else:
+                        # The standard broad-sector name follows the ring;
+                        # rotating it by 90 degrees makes the G3 name radial.
+                        _candidate_text_r, candidate_width = (
+                            _ancestor_radial_name_lane(
+                                medallion_position=candidate_med_position,
+                                medallion_radius=candidate_medallion_r,
+                                outer_radius=gen_outer,
+                            )
+                        )
                     natural_at_one = estimate_text_width(candidate_label, 1.0)
                     if candidate_width > 0.0 and natural_at_one > 0.0:
                         candidates.append(
@@ -840,69 +866,65 @@ def _emit_ancestor_sector(
         portrait_image_r = image_r
 
     if show_text and gen == 3:
-        # G3 is the outer reference generation: turn its name by 90° from the
-        # ring tangent and fit one common size to the narrowest radial cell.
-        radial_name_r, radial_name_width = _ancestor_radial_name_lane(
-            medallion_position=med_r_pos,
-            medallion_radius=med_r,
-            outer_radius=outer_r,
-        )
-        radial_name_x, radial_name_y = _polar(
-            cx,
-            cy,
-            radial_name_r,
-            mid_angle,
-        )
+        # Rotate only the G3 name by 90 degrees from the standard orientation
+        # for this sector.  Dates deliberately keep their standard rail below.
         effective_name_size = (
             name_font_size if name_font_size is not None else font_size
         )
-        effective_date_size = min(life_font, effective_name_size)
-        name_tangent_offset = 0.0
-        if dates_label:
-            # The date remains on its established tangential rail. Move the
-            # radial name just far enough to avoid crossing that rail while
-            # keeping the label inside the angular cell.
-            date_width = estimate_text_width(dates_label, effective_date_size)
-            tangent_capacity = max(
-                0.0,
-                radial_name_r * math.sin(math.radians(max(sweep, 0.0) / 2.0))
-                - 2.0,
+        standard_name_is_radial = use_radial
+        target_name_is_radial = not standard_name_is_radial
+        if target_name_is_radial:
+            name_lane_r, name_lane_width = _ancestor_radial_name_lane(
+                medallion_position=med_r_pos,
+                medallion_radius=med_r,
+                outer_radius=outer_r,
             )
-            name_tangent_offset = -min(
-                tangent_capacity,
-                date_width / 2.0 + effective_name_size,
+            name_rotation = _outward_radial_rotation(mid_angle)
+        else:
+            name_lane_r, name_lane_width = _ancestor_tangent_name_lane(
+                name_radius=name_r,
+                sweep_angle=sweep,
             )
-        radial_name_x, radial_name_y = _tangent_offset(
-            radial_name_x,
-            radial_name_y,
-            mid_angle,
-            name_tangent_offset,
-        )
+            name_rotation = _upright_tangent_rotation(mid_angle)
+        name_x, name_y = _polar(cx, cy, name_lane_r, mid_angle)
         children.append(SceneText(
-            x=radial_name_x,
-            y=radial_name_y,
+            x=name_x,
+            y=name_y,
             content=label,
             font_size=effective_name_size,
             fill=TEXT_DARK,
             anchor="middle",
-            rotation=_outward_radial_rotation(mid_angle),
-            max_width=radial_name_width,
+            rotation=name_rotation,
+            max_width=name_lane_width,
         ))
         if dates_label:
-            life_path = _arc_text_path(
-                cx,
-                cy,
-                life_r,
-                start_angle,
-                end_angle,
-                lower=False,
-            )
-            children.append(ScenePathText(
-                path=life_path,
-                content=dates_label,
-                font_size=effective_date_size,
-                fill=TEXT_GREY,
-            ))
+            date_font_size = min(life_font, font_size)
+            if standard_name_is_radial:
+                date_x, date_y = _polar(cx, cy, life_r, mid_angle)
+                children.append(SceneText(
+                    x=date_x,
+                    y=date_y,
+                    content=dates_label,
+                    font_size=date_font_size,
+                    fill=TEXT_GREY,
+                    anchor="middle",
+                    rotation=_outward_radial_rotation(mid_angle),
+                ))
+            else:
+                life_path = _arc_text_path(
+                    cx,
+                    cy,
+                    life_r,
+                    start_angle,
+                    end_angle,
+                    lower=False,
+                )
+                children.append(ScenePathText(
+                    path=life_path,
+                    content=dates_label,
+                    font_size=date_font_size,
+                    fill=TEXT_GREY,
+                ))
     elif show_text and adaptive_tracks:
         text_start = med_r_pos + med_r + 2.0
         text_end = outer_r - 1.5

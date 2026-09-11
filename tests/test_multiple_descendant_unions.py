@@ -490,6 +490,53 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             14.0 - 1e-6,
         )
 
+    def test_unsplit_ancestor_propagates_nested_multi_union_demand(self):
+        nested = branch(
+            "nested-ten-unions",
+            2,
+            spouse_handles=tuple(
+                f"nested-spouse-{index}"
+                for index in range(10)
+            ),
+            children=(),
+            children_by_union=tuple(() for _ in range(10)),
+        )
+        parent = branch(
+            "unsplit-parent",
+            1,
+            spouse_handles=("parent-spouse",),
+            children=(nested,),
+            children_by_union=((nested,),),
+        )
+        siblings = tuple(
+            DescendantBranch(
+                f"unsplit-sibling-{index}",
+                PersonNode(f"unsplit-sibling-{index}", f"I20{index}"),
+                1,
+                (),
+                (),
+            )
+            for index in range(9)
+        )
+
+        self.assertAlmostEqual(_descendant_angle_demand(parent), 35.0)
+        allocation = _allocate_descendant_branches_by_demand(
+            (parent,) + siblings,
+            start_angle=96.0,
+            total_sweep=168.0,
+        )[0]
+        cells = _allocate_descendant_union_cells(
+            nested,
+            start_angle=allocation.start_angle,
+            total_sweep=allocation.sweep_angle,
+        )
+
+        self.assertEqual(len(cells), 10)
+        self.assertGreaterEqual(
+            min(cell.sweep_angle for cell in cells),
+            3.5 - 1e-6,
+        )
+
     def test_nested_multi_union_demand_propagates_to_parent_union_group(self):
         nested_child_a = DescendantBranch(
             "nested-child-a",

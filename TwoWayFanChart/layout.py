@@ -1550,14 +1550,17 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
     for generation, count in _descendant_generation_counts(branch).items():
         slot = _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 0.8)
         demand = max(demand, count * slot)
-    # A multi-union branch is split into one contiguous cell per union after
-    # the branch-level sweep is allocated. The ring and cell demands are
-    # competing lower bounds, not additive widths: reserve whichever is
-    # larger, otherwise the outer allocator over-weights this branch.
+    # Propagate the deepest group demand through unsplit ancestors as well.
+    # Without this, a zero/one-union branch can receive enough room for its
+    # own ring while starving a multi-union descendant in the next ring.
+    groups = list(_children_grouped_by_union(branch))
+    if branch.unions and len(groups) < len(branch.unions):
+        groups.extend(() for _ in range(len(branch.unions) - len(groups)))
     if len(branch.unions) > 1:
-        groups = list(_children_grouped_by_union(branch))
-        if len(groups) < len(branch.unions):
-            groups.extend(() for _ in range(len(branch.unions) - len(groups)))
+        # A multi-union branch is split into one contiguous cell per union
+        # after the branch-level sweep is allocated. The ring and cell demands
+        # are competing lower bounds, not additive widths: reserve whichever
+        # is larger, otherwise the outer allocator over-weights this branch.
         cell_floor = _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8)
         demand = max(
             demand,
@@ -1566,6 +1569,9 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
                 for group in groups[: len(branch.unions)]
             ),
         )
+    elif branch.children:
+        child_group = groups[0] if groups else branch.children
+        demand = max(demand, _descendant_group_angle_demand(child_group))
     return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8))
 
 

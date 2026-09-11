@@ -136,6 +136,99 @@ class HighlightContractTests(unittest.TestCase):
         markers = [node for node in scene.children if isinstance(node, SceneMarker)]
         self.assertGreaterEqual(len(markers), 3)
 
+    def test_split_descendant_cells_do_not_duplicate_branch_markers(self):
+        child_a = branch("child-a", 2)
+        child_b = branch("child-b", 2)
+        root = DescendantBranch(
+            "descendant-root",
+            person("root"),
+            1,
+            (
+                UnionBranch(
+                    "family-a",
+                    "spouse-a",
+                    ("child-a",),
+                    ("birth",),
+                ),
+                UnionBranch(
+                    "family-b",
+                    "spouse-b",
+                    ("child-b",),
+                    ("birth",),
+                ),
+            ),
+            (child_a, child_b),
+            children_by_union=((child_a,), (child_b,)),
+        )
+        scene = layout_descendants(
+            calculate_canvas(
+                PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+                ancestor_generations=0,
+                descendant_generations=2,
+            ),
+            (root,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+            highlight_lookup=lambda handle: handle in {
+                "root",
+                "spouse-a",
+                "spouse-b",
+            },
+            show_highlight_markers=True,
+        )
+        markers = [node for node in scene.children if isinstance(node, SceneMarker)]
+
+        self.assertEqual(len(markers), 4)
+        self.assertTrue(all(marker.radius > 2.0 for marker in markers))
+
+    def test_deep_split_descendant_cells_keep_their_markers(self):
+        child = DescendantBranch(
+            "split-child",
+            person("split-child"),
+            2,
+            (
+                UnionBranch(
+                    "family-a",
+                    "split-spouse-a",
+                    (),
+                    (),
+                ),
+                UnionBranch(
+                    "family-b",
+                    "split-spouse-b",
+                    (),
+                    (),
+                ),
+            ),
+            (),
+            children_by_union=((), ()),
+        )
+        root = branch(
+            "root",
+            1,
+            spouse="root-spouse",
+            children=(child,),
+        )
+        scene = layout_descendants(
+            calculate_canvas(
+                PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+                ancestor_generations=0,
+                descendant_generations=2,
+            ),
+            (root,),
+            name_lookup=lambda handle: handle,
+            highlight_lookup=lambda handle: handle in {
+                "split-child",
+                "split-spouse-a",
+                "split-spouse-b",
+            },
+            show_highlight_markers=True,
+        )
+        markers = [node for node in scene.children if isinstance(node, SceneMarker)]
+
+        self.assertEqual(len(markers), 4)
+        self.assertTrue(all(marker.radius > 0 for marker in markers))
+
     def test_svg_serializes_highlight_marker_as_shape_plus_color(self):
         svg = render_svg(
             ScenePage(100, 100),

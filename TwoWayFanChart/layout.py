@@ -2951,13 +2951,13 @@ def layout_descendants(
                 cell_specs = [(alloc_start, alloc_sweep, lines)]
             for cell_start, cell_sweep, lines in cell_specs:
                 _emit_single_generation_lines(cell_start, cell_sweep, lines)
-        elif child_label and adaptive_dense:
+        elif child_label and (adaptive_dense or depth > 1):
             child_dates = (
                 _date_label(branch.person.handle)
                 if dates_lookup is not None and branch.person
                 else ""
             )
-            if depth == 1:
+            if depth == 1 and adaptive_dense:
                 if union_cells:
                     cell_specs = []
                     for cell in union_cells:
@@ -3334,59 +3334,6 @@ def layout_descendants(
                                 font_size=outer_r * (9.5 / 600),
                                 fill=TEXT_GREY,
                             ))
-            else:
-                def _render_plain_block(
-                    block_mid_angle: float,
-                    block_child_label: str,
-                    block_spouse: str = "",
-                ) -> None:
-                    """Render one plain intermediate block or union cell."""
-                    tx, ty = _polar(cx, cy, outer_r * (482 / 600), block_mid_angle)
-                    rot = _outward_radial_rotation(block_mid_angle)
-                    if not measure_only:
-                        all_children.append(SceneText(
-                            x=tx, y=ty,
-                            content=block_child_label,
-                            font_size=outer_r * (10.5 / 600),
-                            fill=TEXT_DARK,
-                            anchor="middle",
-                            rotation=rot,
-                        ))
-                    if block_spouse:
-                        sx, sy = _polar(cx, cy, outer_r * (518 / 600), block_mid_angle)
-                        if not measure_only:
-                            all_children.append(SceneText(
-                                x=sx, y=sy,
-                                content=f"\u00d7 {block_spouse}",
-                                font_size=outer_r * (9.5 / 600),
-                                fill=TEXT_DARK,
-                                anchor="middle",
-                                rotation=rot,
-                            ))
-                    if dates_lookup is not None and branch.person:
-                        dates_label = _date_label(branch.person.handle)
-                        if dates_label:
-                            dx, dy = _polar(cx, cy, outer_r * (554 / 600), block_mid_angle)
-                            if not measure_only:
-                                all_children.append(SceneText(
-                                    x=dx, y=dy,
-                                    content=dates_label,
-                                    font_size=outer_r * (8.5 / 600),
-                                    fill=TEXT_GREY,
-                                    anchor="middle",
-                                    rotation=rot,
-                                ))
-
-                if union_cells:
-                    for cell in union_cells:
-                        cell_child_label, entry = _union_cell_content(cell.union_index)
-                        _render_plain_block(
-                            cell.start_angle + cell.sweep_angle / 2.0,
-                            cell_child_label,
-                            entry[2] if entry else "",
-                        )
-                else:
-                    _render_plain_block(mid_angle, child_label, spouse_display_name)
 
         # Place children within the allocated sweep. Reuse the same deep-demand
         # allocator as the capacity pass so geometry and rendering stay aligned.

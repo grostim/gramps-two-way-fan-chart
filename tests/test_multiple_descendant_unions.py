@@ -915,6 +915,39 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertTrue(any("FHEADER2" in label for label in labels))
         self.assertFalse(any("FHEADER_EMPTY" in label for label in labels))
 
+    def test_two_ring_multi_union_generation_two_cells_fit_spouses(self):
+        grandchild = branch(
+            "grandchild-multi-union",
+            2,
+            spouse_handles=("Very Long Spouse Name Alpha", "Very Long Spouse Name Beta"),
+            children=(),
+            children_by_union=((), ()),
+        )
+        parent_branch = DescendantBranch(
+            "parent-branch",
+            PersonNode("parent-branch", "I1000"),
+            1,
+            unions=(UnionBranch("f1", "child-spouse", ("grandchild-multi-union",), ("birth",)),),
+            children=(grandchild,),
+            children_by_union=((grandchild,),),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+        scene = layout_descendants(
+            canvas,
+            (parent_branch,),
+            name_lookup=lambda handle: handle.replace("-", " "),
+            dates_lookup=lambda _handle: "1900–1950",
+        )
+        texts = [
+            node for node in scene.children if isinstance(node, SceneText)
+        ]
+        self.assertTrue(any("Very Long Spouse Name Alpha" in node.content for node in texts))
+        self.assertTrue(any("Very Long Spouse Name Beta" in node.content for node in texts))
+
     def test_compact_multi_union_couples_share_generation_font_size(self):
         first_child = DescendantBranch(
             "compact-child-0",

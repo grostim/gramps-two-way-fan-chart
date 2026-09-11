@@ -2741,7 +2741,7 @@ def layout_descendants(
                     outer_radius=gen_outer,
                     sweep_angle=cell.sweep_angle,
                     occupants=2 if cell_has_spouse else 1,
-                    edge="outer",
+                    edge="inner" if max_gen == 2 else "outer",
                     margin=0.8,
                 )
                 if adaptive_single_generation:
@@ -2792,21 +2792,32 @@ def layout_descendants(
                         cell_border_r * 1.075 if cell_has_spouse else 0.0
                     )
                     if cell_border_r > 0:
-                        cell_center_radius = gen_outer - 0.8 - cell_border_r
-                        cell_text_inner = max(
-                            gen_inner,
-                            cell_center_radius - cell_border_r - 1.0,
-                        )
-                        cell_med_r_pos = (
-                            math.sqrt(
-                                max(
-                                    0.0,
-                                    cell_center_radius**2 - cell_pair_offset**2,
-                                )
+                        if max_gen == 2:
+                            # The fixed two-ring label rails occupy the outer
+                            # lane (317/600 and 337/600). Keep union-cell
+                            # medallions in the original inner lane instead of
+                            # placing them through those labels.
+                            cell_med_r_pos = outer_r * (245 / 600)
+                            cell_text_inner = min(
+                                gen_outer,
+                                cell_med_r_pos + cell_border_r + 1.0,
                             )
-                            if cell_has_spouse
-                            else cell_center_radius
-                        )
+                        else:
+                            cell_center_radius = gen_outer - 0.8 - cell_border_r
+                            cell_text_inner = max(
+                                gen_inner,
+                                cell_center_radius - cell_border_r - 1.0,
+                            )
+                            cell_med_r_pos = (
+                                math.sqrt(
+                                    max(
+                                        0.0,
+                                        cell_center_radius**2 - cell_pair_offset**2,
+                                    )
+                                )
+                                if cell_has_spouse
+                                else cell_center_radius
+                            )
                     else:
                         cell_text_inner = gen_outer
                         cell_med_r_pos = gen_outer

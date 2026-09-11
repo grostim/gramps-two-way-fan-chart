@@ -269,6 +269,65 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         ]
         self.assertEqual(len(first_generation_sectors), 2)
 
+    def test_two_ring_union_medallions_stay_inside_fixed_label_lanes(self):
+        child_a = DescendantBranch(
+            "inner-lane-child-a",
+            PersonNode("inner-lane-child-a", "I1001"),
+            2,
+            (),
+            (),
+        )
+        child_b = DescendantBranch(
+            "inner-lane-child-b",
+            PersonNode("inner-lane-child-b", "I1002"),
+            2,
+            (),
+            (),
+        )
+        person = branch(
+            "inner-lane-person",
+            1,
+            spouse_handles=("inner-lane-spouse-a", "inner-lane-spouse-b"),
+            children=(child_a, child_b),
+            children_by_union=((child_a,), (child_b,)),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+
+        scene = layout_descendants(
+            canvas,
+            (person,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "1900–1950",
+        )
+        circles = [
+            node for node in scene.children if isinstance(node, SceneCircle)
+        ]
+        self.assertEqual(len(circles), 4)
+        first_ring_inner = canvas.descendant_outer_radius_mm * (202 / 600)
+        first_ring_outer = canvas.descendant_outer_radius_mm * (350 / 600)
+        spouse_label_radius = canvas.descendant_outer_radius_mm * (317 / 600)
+        for circle in circles:
+            radial_distance = math.hypot(
+                circle.cx - canvas.center_cx_mm,
+                circle.cy - canvas.center_cy_mm,
+            )
+            self.assertGreaterEqual(
+                radial_distance - circle.r,
+                first_ring_inner - 1e-6,
+            )
+            self.assertLessEqual(
+                radial_distance + circle.r,
+                first_ring_outer + 1e-6,
+            )
+            self.assertLess(
+                radial_distance + circle.r,
+                spouse_label_radius,
+            )
+
     def test_layout_labels_each_nonempty_union_block(self):
         child_f0335 = DescendantBranch(
             "child-f0335",

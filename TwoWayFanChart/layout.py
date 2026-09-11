@@ -72,6 +72,9 @@ _RING_GAP_MM = 0.3  # white space between generation rings
 _ANCESTOR_TITLE_GAP_MM = 4.0
 _DESCENDANT_TITLE_GAP_MM = 8.0
 _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
+_DESCENDANT_COMPACT_RING_THRESHOLD_MM = (
+    _DESCENDANT_FIRST_GEN_LINE_GAP_MM * 4
+)
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
 # and its regression probes share one geometric contract.
@@ -2020,6 +2023,14 @@ def _descendant_ring_bounds(
         weights = [1.0 + 0.35 * index for index in range(generation_count)]
         total_weight = sum(weights)
         widths = [total_depth * weight / total_weight for weight in weights]
+
+        # ``depth=1`` is the visual second descendant generation: the root
+        # couple occupies the first generation, so its children form G2.
+        # Double that ring's usable radial lane even when deeper generations
+        # are configured. Add the required depth outside the compact baseline
+        # instead of shrinking later generations and losing their labels.
+        first_visible_width = max(widths[0] - _RING_GAP_MM, 0.0)
+        widths[0] += first_visible_width
     ring_inner = inner_radius + sum(widths[: depth - 1])
     return ring_inner, ring_inner + widths[depth - 1] - _RING_GAP_MM
 
@@ -3125,7 +3136,16 @@ def layout_descendants(
                 cell_specs = [(alloc_start, alloc_sweep, lines)]
             for cell_start, cell_sweep, lines in cell_specs:
                 _emit_single_generation_lines(cell_start, cell_sweep, lines)
-        elif child_label and (adaptive_dense or depth > 1):
+        elif child_label and (
+            depth > 1
+            or (
+                adaptive_dense
+                and not (
+                    depth == 1
+                    and ring_width < _DESCENDANT_COMPACT_RING_THRESHOLD_MM
+                )
+            )
+        ):
             child_dates = (
                 _date_label(branch.person.handle)
                 if dates_lookup is not None and branch.person

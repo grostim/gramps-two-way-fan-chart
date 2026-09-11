@@ -13,6 +13,34 @@ class CenterLayoutTests(unittest.TestCase):
             descendant_generations=3,
         )
 
+    def test_page_layout_centers_visible_composition_bounds(self):
+        paper = PaperRegion(PaperSize.A0, Orientation.LANDSCAPE)
+        canvas = calculate_canvas(
+            paper,
+            ancestor_generations=5,
+            descendant_generations=4,
+        )
+
+        top_extent = canvas.ancestor_outer_radius_mm + 4.0
+        bottom_extent = canvas.descendant_outer_radius_mm + 8.0
+        top_clearance = (
+            canvas.center_cy_mm
+            - top_extent
+            - paper.effective_margin_top_mm
+        )
+        bottom_clearance = (
+            paper.height_mm
+            - paper.effective_margin_bottom_mm
+            - canvas.center_cy_mm
+            - bottom_extent
+        )
+
+        self.assertAlmostEqual(top_clearance, bottom_clearance, places=6)
+        self.assertGreater(
+            canvas.center_cy_mm,
+            paper.effective_margin_top_mm + paper.content_height_mm / 2,
+        )
+
     def _name_node(self, **kwargs):
         scene = layout_center(**kwargs)
         return next(

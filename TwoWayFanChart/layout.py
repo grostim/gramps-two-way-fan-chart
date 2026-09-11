@@ -2004,6 +2004,15 @@ def layout_descendants(
             return branch_fill_indices[branch.position_id]
         return branch_index
 
+    def _reserve_top_level_fill_indices() -> None:
+        """Reserve first-ring colors before descending into child branches."""
+        for branch_index, branch in enumerate(branches):
+            if len(branch.unions) > 1:
+                for union_index in range(len(branch.unions)):
+                    _stable_union_fill_index(branch, union_index)
+            else:
+                _branch_fill_index(branch, branch_index, None)
+
     def _fit_generation_name(
         content: str,
         depth: int,
@@ -2071,6 +2080,33 @@ def layout_descendants(
                 name_size_candidates.setdefault(depth, []).append(fitted_size)
             return fitted, fitted_size, width_limit
         return fitted, fitted_size, width_limit
+
+    def _fit_generation_stacked_couple(
+        depth: int,
+        text_radius: float,
+        sweep_angle: float,
+        *,
+        target_size: float,
+        minimum_size: float,
+        max_width: float,
+    ) -> float | None:
+        """Fit stacked couple lanes against the common generation size."""
+        half_arc = (
+            text_radius
+            * math.radians(max(sweep_angle, 0.0))
+            / 2.0
+        )
+        local_size = min(
+            target_size,
+            (half_arc - 0.3) / 1.12,
+        )
+        stack_floor = minimum_size * 0.75
+        if local_size < stack_floor or max_width < local_size * 2.1:
+            return None
+        if measure_only:
+            name_size_candidates.setdefault(depth, []).append(local_size)
+            return local_size
+        return generation_name_sizes.get(depth, local_size)
 
     def _target_medallion_radius(depth: int, ring_depth: float) -> float:
         """Return a readable target; individual narrow sectors may omit it."""
@@ -2936,17 +2972,15 @@ def layout_descendants(
                             # size is derived from the cell's own tangential arc so
                             # neither rail can cross the union boundary.
                             if union_cells:
-                                half_arc = (
-                                    text_r
-                                    * math.radians(max(block_sweep, 0.0))
-                                    / 2.0
+                                stack_size = _fit_generation_stacked_couple(
+                                    depth,
+                                    text_r,
+                                    block_sweep,
+                                    target_size=name_target,
+                                    minimum_size=name_minimum,
+                                    max_width=text_width,
                                 )
-                                stack_size = min(
-                                    name_target,
-                                    (half_arc - 0.3) / 1.12,
-                                )
-                                stack_floor = name_minimum * 0.75
-                                if stack_size >= stack_floor and text_width >= stack_size * 2.1:
+                                if stack_size is not None:
                                     for content, offset in (
                                         (block_child_label, -stack_size * 0.62),
                                         (f"\u00d7 {block_spouse}", stack_size * 0.62),
@@ -3369,6 +3403,7 @@ def layout_descendants(
     # generation-wide contract. The second pass then renders all names in that
     # generation with the same font size; the renderer may still apply the
     # physical width constraint without changing the hierarchy.
+    _reserve_top_level_fill_indices()
     for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
         _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
     generation_name_sizes = {

@@ -12,6 +12,7 @@ from TwoWayFanChart.layout import (
     _allocate_descendant_union_groups,
     _descendant_angle_demand,
     _descendant_group_angle_demand,
+    _descendant_ring_bounds,
     _upright_tangent_rotation,
     calculate_canvas,
     layout_descendants,
@@ -613,6 +614,77 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(len(first_ring), 2)
         self.assertNotEqual(first_ring[0].fill, first_ring[1].fill)
 
+    def test_top_level_sibling_fill_is_reserved_before_nested_union_cells(self):
+        nested_children = tuple(
+            DescendantBranch(
+                f"nested-child-{index}",
+                PersonNode(f"nested-child-{index}", f"I30{index}"),
+                3,
+                (),
+                (),
+            )
+            for index in range(2)
+        )
+        nested = branch(
+            "nested",
+            2,
+            spouse_handles=("nested-spouse-a", "nested-spouse-b"),
+            children=nested_children,
+            children_by_union=(
+                (nested_children[0],),
+                (nested_children[1],),
+            ),
+        )
+        first = branch(
+            "first",
+            1,
+            spouse_handles=("first-spouse",),
+            children=(nested,),
+            children_by_union=((nested,),),
+        )
+        sibling_child = DescendantBranch(
+            "sibling-child",
+            PersonNode("sibling-child", "I4001"),
+            2,
+            (),
+            (),
+        )
+        sibling = branch(
+            "sibling",
+            1,
+            spouse_handles=("sibling-spouse",),
+            children=(sibling_child,),
+            children_by_union=((sibling_child,),),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=3,
+        )
+
+        scene = layout_descendants(
+            canvas,
+            (first, sibling),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        first_ring_inner, first_ring_outer = _descendant_ring_bounds(
+            canvas.descendant_inner_radius_mm,
+            canvas.descendant_outer_radius_mm,
+            3,
+            1,
+        )
+        first_ring = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneSector)
+            and math.isclose(node.inner_radius, first_ring_inner)
+            and math.isclose(node.outer_radius, first_ring_outer)
+        ]
+
+        self.assertEqual(len(first_ring), 2)
+        self.assertNotEqual(first_ring[0].fill, first_ring[1].fill)
+
     def test_compact_multi_union_couples_share_generation_font_size(self):
         first_child = DescendantBranch(
             "compact-child-0",
@@ -681,6 +753,85 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(len(compact_couples), 2)
         self.assertEqual(
             len({round(node.font_size, 9) for node in compact_couples}),
+            1,
+        )
+
+    def test_stacked_multi_union_couples_share_generation_font_size(self):
+        first_children = tuple(
+            DescendantBranch(
+                f"stacked-child-{index}",
+                PersonNode(f"stacked-child-{index}", f"I10{index}"),
+                3,
+                (),
+                (),
+            )
+            for index in range(3)
+        )
+        second_child = DescendantBranch(
+            "stacked-child-last",
+            PersonNode("stacked-child-last", "I103"),
+            3,
+            (),
+            (),
+        )
+        target = branch(
+            "stacked-target",
+            2,
+            spouse_handles=("stacked-spouse-a", "stacked-spouse-b"),
+            children=first_children + (second_child,),
+            children_by_union=(
+                first_children,
+                (second_child,),
+            ),
+        )
+        siblings = tuple(
+            DescendantBranch(
+                f"stacked-sibling-{index}",
+                PersonNode(f"stacked-sibling-{index}", f"I20{index}"),
+                2,
+                (),
+                (),
+            )
+            for index in range(75)
+        )
+        root = DescendantBranch(
+            "stacked-root",
+            PersonNode("stacked-root", "I0001"),
+            1,
+            (),
+            (target,) + siblings,
+        )
+        labels = {
+            "stacked-target": "Stacked Target",
+            "stacked-spouse-a": "Stacked Spouse A",
+            "stacked-spouse-b": "Stacked Spouse B",
+        }
+
+        scene = layout_descendants(
+            calculate_canvas(
+                PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=3,
+            ),
+            (root,),
+            name_lookup=lambda handle: labels.get(handle, handle),
+            dates_lookup=lambda _handle: "",
+        )
+        stacked_couples = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content
+            in {
+                "Stacked Target",
+                "× Stacked Spouse A",
+                "× Stacked Spouse B",
+            }
+        ]
+
+        self.assertEqual(len(stacked_couples), 4)
+        self.assertEqual(
+            len({round(node.font_size, 9) for node in stacked_couples}),
             1,
         )
 

@@ -856,6 +856,28 @@ def _emit_ancestor_sector(
         effective_name_size = (
             name_font_size if name_font_size is not None else font_size
         )
+        effective_date_size = min(life_font, effective_name_size)
+        name_tangent_offset = 0.0
+        if dates_label:
+            # The date remains on its established tangential rail. Move the
+            # radial name just far enough to avoid crossing that rail while
+            # keeping the label inside the angular cell.
+            date_width = estimate_text_width(dates_label, effective_date_size)
+            tangent_capacity = max(
+                0.0,
+                radial_name_r * math.sin(math.radians(max(sweep, 0.0) / 2.0))
+                - 2.0,
+            )
+            name_tangent_offset = -min(
+                tangent_capacity,
+                date_width / 2.0 + effective_name_size,
+            )
+        radial_name_x, radial_name_y = _tangent_offset(
+            radial_name_x,
+            radial_name_y,
+            mid_angle,
+            name_tangent_offset,
+        )
         children.append(SceneText(
             x=radial_name_x,
             y=radial_name_y,
@@ -878,7 +900,7 @@ def _emit_ancestor_sector(
             children.append(ScenePathText(
                 path=life_path,
                 content=dates_label,
-                font_size=min(life_font, effective_name_size),
+                font_size=effective_date_size,
                 fill=TEXT_GREY,
             ))
     elif show_text and adaptive_tracks:

@@ -210,6 +210,194 @@ class GenerationFontSizeTests(unittest.TestCase):
         self.assertEqual(set(date_calls), set(labels))
         self.assertEqual(len(date_calls), len(set(date_calls)))
 
+    def test_ancestor_generation_sizes_are_shared_and_dates_are_smaller(self):
+        from TwoWayFanChart.layout import layout_ancestors
+
+        slots = (
+            (
+                "ancestor-a-1-0",
+                "A Very Long First Generation Ancestor Name",
+                "1800–1870",
+            ),
+            ("ancestor-b-1-0", "Short Parent", "1810–1880"),
+            ("ancestor-b-1-1", "Medium Parent", "1820–1890"),
+            ("ancestor-b-1-2", "Another Parent", "1830–1900"),
+            (
+                "ancestor-a-2-0",
+                "A Very Long Second Generation Ancestor Name",
+                "1760–1830",
+            ),
+            ("ancestor-b-2-0", "Short Grandparent", "1770–1840"),
+            ("ancestor-b-2-1", "Medium Grandparent", "1780–1850"),
+        )
+        scene = layout_ancestors(canvas(), slots)
+        names = {
+            node.content: node
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+            and node.content in {slot[1] for slot in slots}
+        }
+        dates = {
+            node.content: node
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+            and "–" in node.content
+        }
+
+        self.assertEqual(len(names), 7)
+        self.assertEqual(len(dates), 7)
+        self.assertEqual(
+            len({round(names[label].font_size, 9) for label in names if "First" in label or "Parent" in label}),
+            1,
+        )
+        self.assertEqual(
+            len({round(names[label].font_size, 9) for label in names if "Second" in label or "Grandparent" in label}),
+            1,
+        )
+        self.assertEqual(
+            len({round(dates[label].font_size, 9) for label in dates if int(label[:4]) >= 1800}),
+            1,
+        )
+        self.assertEqual(
+            len({round(dates[label].font_size, 9) for label in dates if int(label[:4]) < 1800}),
+            1,
+        )
+        self.assertAlmostEqual(
+            next(dates[label].font_size for label in dates if label.startswith("1800")),
+            next(names[label].font_size for label in names if "First" in label) - 1.0,
+            places=9,
+        )
+        self.assertAlmostEqual(
+            next(dates[label].font_size for label in dates if label.startswith("1760")),
+            next(names[label].font_size for label in names if "Second" in label) - 1.0,
+            places=9,
+        )
+        self.assertTrue(all("…" not in node.content for node in names.values()))
+
+    def test_descendant_generation_names_and_dates_keep_full_content(self):
+        roots = (
+            branch(
+                "root-long",
+                1,
+                children=(branch("child-long", 2),),
+                spouse="root-long-spouse",
+            ),
+            branch(
+                "root-short",
+                1,
+                children=(
+                    branch("child-short-a", 2),
+                    branch("child-short-b", 2),
+                    branch("child-short-c", 2),
+                ),
+                spouse="root-short-spouse",
+            ),
+        )
+        labels = {
+            "root-long": "A Very Long First Descendant Name",
+            "root-long-spouse": "A Very Long First Descendant Spouse",
+            "root-short": "Short First Descendant",
+            "root-short-spouse": "Short First Descendant Spouse",
+            "child-long": "A Very Long Second Descendant Name",
+            "child-short-a": "Short Second A",
+            "child-short-b": "Short Second B",
+            "child-short-c": "Short Second C",
+        }
+        dates = {
+            handle: (
+                "1900–1970" if handle.startswith("root") else "1870–1940"
+            )
+            for handle in labels
+        }
+        scene = layout_descendants(
+            canvas(),
+            roots,
+            name_lookup=labels.__getitem__,
+            dates_lookup=dates.__getitem__,
+        )
+        name_tokens = set(labels.values())
+        name_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+            and any(token in node.content for token in name_tokens)
+        ]
+        date_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+            and node.content in {"1900–1970", "1870–1940"}
+        ]
+
+        self.assertTrue(name_nodes)
+        self.assertTrue(date_nodes)
+        self.assertTrue(all("…" not in node.content for node in name_nodes))
+        first_names = [node for node in name_nodes if "First" in node.content]
+        second_names = [node for node in name_nodes if "Second" in node.content]
+        first_dates = [node for node in date_nodes if node.content == "1900–1970"]
+        second_dates = [node for node in date_nodes if node.content == "1870–1940"]
+        self.assertTrue(first_names)
+        self.assertTrue(second_names)
+        self.assertTrue(first_dates)
+        self.assertTrue(second_dates)
+        self.assertEqual(len({round(node.font_size, 9) for node in first_names}), 1)
+        self.assertEqual(len({round(node.font_size, 9) for node in second_names}), 1)
+        self.assertEqual(len({round(node.font_size, 9) for node in first_dates}), 1)
+        self.assertEqual(len({round(node.font_size, 9) for node in second_dates}), 1)
+        self.assertAlmostEqual(
+            first_dates[0].font_size,
+            first_names[0].font_size - 1.0,
+            places=9,
+        )
+        self.assertAlmostEqual(
+            second_dates[0].font_size,
+            second_names[0].font_size - 1.0,
+            places=9,
+        )
+
+    def test_dense_first_generation_dates_are_one_step_below_names(self):
+        root = branch(
+            "root",
+            1,
+            children=(
+                branch(
+                    "child",
+                    2,
+                    children=(branch("grandchild", 3, children=(branch("leaf", 4),)),),
+                ),
+            ),
+        )
+        labels = {
+            "root": "A Very Long First Generation Name",
+            "child": "Second Generation Name",
+            "grandchild": "Third Generation Name",
+            "leaf": "Fourth Generation Name",
+        }
+        dates = {handle: "1900–1970" for handle in labels}
+        scene = layout_descendants(
+            canvas(),
+            (root,),
+            name_lookup=labels.__getitem__,
+            dates_lookup=dates.__getitem__,
+        )
+
+        name = next(
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText)
+            and node.content == labels["root"]
+        )
+        date = next(
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText)
+            and node.content == dates["root"]
+        )
+
+        self.assertAlmostEqual(date.font_size, name.font_size - 1.0, places=9)
+        self.assertNotIn("…", name.content)
+        self.assertNotIn("…", date.content)
+
 
 if __name__ == "__main__":
     unittest.main()

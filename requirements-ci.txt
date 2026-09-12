@@ -1,5 +1,5 @@
 # Runtime dependencies required to import and exercise the Gramps add-on.
 gramps==6.0.8
 Pillow>=10,<13
-PyGObject
+PyGObject<3.51
 pycairo

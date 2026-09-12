@@ -88,6 +88,9 @@ _DESCENDANT_MEDALLION_TARGET_RATIO = 28 / 600
 _MEDALLION_EDGE_CLEARANCE_MM = 1.6
 _MEDALLION_TEXT_RESERVE_RATIO = 0.58
 _DIRECT_LABEL_MIN_FONT_SIZE_MM = 2.0
+_DATE_FONT_STEP_MM = 1.0
+_MIN_DATE_FONT_SIZE_MM = 0.25
+_MIN_NAME_FONT_SIZE_MM = _MIN_DATE_FONT_SIZE_MM + _DATE_FONT_STEP_MM
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,13 +341,52 @@ def _ancestor_tangent_name_lane(
     return name_radius, max(0.0, 2.0 * half_chord - 2.0)
 
 
+def _ancestor_arc_text_capacity(
+    *,
+    text_radius: float,
+    sweep_angle: float,
+) -> float:
+    """Return the usable arc length for one curved ancestor label."""
+    margin = min(2.0, max(0.3, max(sweep_angle, 0.0) * 0.06))
+    usable_sweep = max(0.0, sweep_angle - 2.0 * margin)
+    return max(0.0, text_radius * math.radians(usable_sweep))
+
+
+def _date_font_size(name_font_size: float) -> float:
+    """Return the date size, exactly one scene unit below the name size."""
+    if name_font_size < _MIN_NAME_FONT_SIZE_MM:
+        # A date below the minimum readable date size is omitted by the
+        # callers rather than forcing the generation's complete name below
+        # its measured capacity or violating the one-step relationship.
+        return 0.0
+    return name_font_size - _DATE_FONT_STEP_MM
+
+
+def _font_size_for_width(
+    content: str,
+    *,
+    target_size: float,
+    max_width: float,
+) -> float:
+    """Return the largest size that keeps complete content in its lane."""
+    if not content or max_width <= 0.0:
+        return max(_MIN_DATE_FONT_SIZE_MM, target_size)
+    natural_at_one = estimate_text_width(content, 1.0)
+    if natural_at_one <= 0.0:
+        return max(_MIN_DATE_FONT_SIZE_MM, target_size)
+    return max(
+        _MIN_DATE_FONT_SIZE_MM,
+        min(target_size, max_width / natural_at_one),
+    )
+
+
 def _fit_text_to_width(
     content: str,
     *,
     target_size: float,
     minimum_size: float,
     max_width: float,
-    allow_ellipsis: bool = True,
+    allow_ellipsis: bool = False,
 ) -> tuple[str, float, float]:
     """Fit text to a physical lane while retaining both identity ends."""
     available = max(max_width, 0.5 if not allow_ellipsis else 0.0)
@@ -734,74 +776,93 @@ def layout_ancestors(
         sweep_a = _ANCESTOR_HALF_SPAN_DEG / max(len(slots_a), 1) if slots_a else 0
         sweep_b = _ANCESTOR_HALF_SPAN_DEG / max(len(slots_b), 1) if slots_b else 0
 
-        # G3 names use the radial lane, so choose one common size from the
-        # narrowest available cell before emitting any of that generation.
-        generation_three_name_size: float | None = None
-        if gen == 3:
-            candidates: list[float] = []
-            for candidate_slots, candidate_sweep in (
-                (slots_a, sweep_a),
-                (slots_b, sweep_b),
-            ):
-                for (
-                    _pid,
-                    _lineage,
-                    candidate_label,
-                    _dates,
-                    candidate_portrait,
-                    _highlighted,
-                ) in candidate_slots:
-                    if not candidate_label:
-                        continue
-                    (
-                        candidate_med_position,
-                        candidate_name_r,
-                        _candidate_life_r,
-                        candidate_image_r,
-                        candidate_font_size,
-                        _candidate_life_font,
-                        _candidate_show_text,
-                        _candidate_show_medallion,
-                    ) = _ancestor_content_geometry(
-                        generation=gen,
-                        inner_radius=gen_inner,
-                        outer_radius=gen_outer,
-                        fan_outer_radius=outer_r,
-                        sweep_angle=candidate_sweep,
-                    )
-                    candidate_medallion_r = (
-                        candidate_image_r * (26 / 24)
-                        if candidate_portrait
-                        else candidate_image_r
-                    )
-                    if candidate_sweep < 15.0:
-                        # The standard narrow-sector name is radial; rotating
-                        # it by 90 degrees makes the G3 name tangent.
+        # One name size is shared by every visible label in a generation.
+        # Measure the complete label against its own cell first, then use the
+        # most constrained result for the whole generation. This makes the
+        # longest label (rather than a local fallback) determine readability.
+        generation_name_sizes: dict[int, float] = {}
+        generation_date_sizes: dict[int, float] = {}
+        generation_candidates: list[float] = []
+        for candidate_slots, candidate_sweep in (
+            (slots_a, sweep_a),
+            (slots_b, sweep_b),
+        ):
+            for (
+                _pid,
+                _lineage,
+                candidate_label,
+                _dates,
+                candidate_portrait,
+                _highlighted,
+            ) in candidate_slots:
+                if not candidate_label:
+                    continue
+                (
+                    candidate_med_position,
+                    candidate_name_r,
+                    _candidate_life_r,
+                    candidate_image_r,
+                    candidate_font_size,
+                    _candidate_life_font,
+                    candidate_show_text,
+                    _candidate_show_medallion,
+                ) = _ancestor_content_geometry(
+                    generation=gen,
+                    inner_radius=gen_inner,
+                    outer_radius=gen_outer,
+                    fan_outer_radius=outer_r,
+                    sweep_angle=candidate_sweep,
+                )
+                if not candidate_show_text:
+                    continue
+                candidate_medallion_r = (
+                    candidate_image_r * (26 / 24)
+                    if candidate_portrait and gen < 4
+                    else candidate_image_r
+                )
+                if candidate_sweep < 15.0:
+                    if gen == 3:
+                        # G3 is tangent in narrow sectors after the accepted
+                        # orientation change; other narrow rings stay radial.
                         _candidate_text_r, candidate_width = (
                             _ancestor_tangent_name_lane(
                                 name_radius=candidate_name_r,
                                 sweep_angle=candidate_sweep,
                             )
-                        )
-                    else:
-                        # The standard broad-sector name follows the ring;
-                        # rotating it by 90 degrees makes the G3 name radial.
-                        _candidate_text_r, candidate_width = (
-                            _ancestor_radial_name_lane(
+                            if gen == 3
+                            else _ancestor_radial_name_lane(
                                 medallion_position=candidate_med_position,
                                 medallion_radius=candidate_medallion_r,
                                 outer_radius=gen_outer,
                             )
                         )
-                    natural_at_one = estimate_text_width(candidate_label, 1.0)
-                    if candidate_width > 0.0 and natural_at_one > 0.0:
-                        candidates.append(
-                            min(candidate_font_size, candidate_width / natural_at_one)
-                        )
                     else:
-                        candidates.append(candidate_font_size)
-            if candidates:
-                generation_three_name_size = min(candidates)
+                        _candidate_text_r, candidate_width = _ancestor_radial_name_lane(
+                            medallion_position=candidate_med_position,
+                            medallion_radius=candidate_medallion_r,
+                            outer_radius=gen_outer,
+                        )
+                elif gen == 3:
+                    _candidate_text_r, candidate_width = _ancestor_radial_name_lane(
+                        medallion_position=candidate_med_position,
+                        medallion_radius=candidate_medallion_r,
+                        outer_radius=gen_outer,
+                    )
+                else:
+                    candidate_width = _ancestor_arc_text_capacity(
+                        text_radius=candidate_name_r,
+                        sweep_angle=candidate_sweep,
+                    )
+                generation_candidates.append(
+                    _font_size_for_width(
+                        candidate_label,
+                        target_size=candidate_font_size,
+                        max_width=candidate_width,
+                    )
+                )
+        if generation_candidates:
+            generation_name_sizes[gen] = min(generation_candidates)
+            generation_date_sizes[gen] = _date_font_size(generation_name_sizes[gen])
 
         # Place lineage a (paternal, left side: -90° to 0°)
         for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_a):
@@ -810,7 +871,8 @@ def layout_ancestors(
                 children, cx, cy, gen_inner, gen_outer,
                 start_angle, sweep_a, outer_r,
                 gen, "a", label, dates_label, portrait, highlighted,
-                name_font_size=generation_three_name_size,
+                name_font_size=generation_name_sizes.get(gen),
+                date_font_size=generation_date_sizes.get(gen),
             )
 
         # Place lineage b (maternal, right side: 0° to 90°)
@@ -820,7 +882,8 @@ def layout_ancestors(
                 children, cx, cy, gen_inner, gen_outer,
                 start_angle, sweep_b, outer_r,
                 gen, "b", label, dates_label, portrait, highlighted,
-                name_font_size=generation_three_name_size,
+                name_font_size=generation_name_sizes.get(gen),
+                date_font_size=generation_date_sizes.get(gen),
             )
 
     return SceneNode(children=tuple(children))
@@ -838,6 +901,7 @@ def _emit_ancestor_sector(
     portrait: str | None = None,
     highlighted: bool = False,
     name_font_size: float | None = None,
+    date_font_size: float | None = None,
 ) -> None:
     """Emit one ancestor sector with fill, curved label, dates, and medallion."""
     end_angle = start_angle + sweep
@@ -889,6 +953,15 @@ def _emit_ancestor_sector(
         med_r = image_r * (26 / 24) if portrait else image_r
         portrait_image_r = image_r
 
+    effective_name_size = (
+        name_font_size if name_font_size is not None else font_size
+    )
+    effective_date_size = (
+        date_font_size
+        if date_font_size is not None
+        else _date_font_size(effective_name_size)
+    )
+
     if show_text and gen == 3:
         # Rotate only the G3 name by 90 degrees from the standard orientation
         # for this sector. Dates keep their established tangent rail below.
@@ -921,8 +994,7 @@ def _emit_ancestor_sector(
             rotation=name_rotation,
             max_width=name_lane_width,
         ))
-        if dates_label:
-            date_font_size = min(life_font, font_size)
+        if dates_label and effective_date_size > 0.0:
             life_path = _arc_text_path(
                 cx,
                 cy,
@@ -934,8 +1006,12 @@ def _emit_ancestor_sector(
             children.append(ScenePathText(
                 path=life_path,
                 content=dates_label,
-                font_size=date_font_size,
+                font_size=effective_date_size,
                 fill=TEXT_GREY,
+                max_width=_ancestor_arc_text_capacity(
+                    text_radius=life_r,
+                    sweep_angle=sweep,
+                ),
             ))
     elif show_text and adaptive_tracks:
         text_start = med_r_pos + med_r + 2.0
@@ -944,7 +1020,7 @@ def _emit_ancestor_sector(
         text_r = (text_start + text_end) / 2.0
         base_x, base_y = _polar(cx, cy, text_r, mid_angle)
         rot = _outward_radial_rotation(mid_angle)
-        lane_offset = max(font_size, life_font) * 0.58
+        lane_offset = max(effective_name_size, effective_date_size) * 0.58
 
         # --- Name fitting -------------------------------------------------
         # Fit the full label on one line first.  If the result is badly
@@ -955,8 +1031,8 @@ def _emit_ancestor_sector(
         # text width) render larger than G3.
         fitted_name, fitted_name_size, name_width = _fit_text_to_width(
             label,
-            target_size=font_size,
-            minimum_size=2.8,
+            target_size=effective_name_size,
+            minimum_size=effective_name_size,
             max_width=text_width,
             allow_ellipsis=False,
         )
@@ -970,15 +1046,15 @@ def _emit_ancestor_sector(
             surname_part, given_part = label.split(", ", 1)
             fitted_given, given_size, given_width = _fit_text_to_width(
                 given_part,
-                target_size=font_size,
-                minimum_size=2.8,
+                target_size=effective_name_size,
+                minimum_size=effective_name_size,
                 max_width=text_width,
                 allow_ellipsis=False,
             )
             fitted_surname, surname_size, surname_width = _fit_text_to_width(
                 surname_part,
-                target_size=font_size,
-                minimum_size=2.8,
+                target_size=effective_name_size,
+                minimum_size=effective_name_size,
                 max_width=text_width,
                 allow_ellipsis=False,
             )
@@ -987,8 +1063,12 @@ def _emit_ancestor_sector(
                 use_two_lines = True
 
         effective_name_size = (
-            two_line_size if use_two_lines else fitted_name_size
+            name_font_size
+            if name_font_size is not None
+            else (two_line_size if use_two_lines else fitted_name_size)
         )
+        if use_two_lines:
+            two_line_size = effective_name_size
 
         if use_two_lines:
             line_h = two_line_size * 1.3
@@ -1031,8 +1111,8 @@ def _emit_ancestor_sector(
 
         # --- Dates --------------------------------------------------------
         # Date font must never exceed the name font.
-        if dates_label:
-            date_target = min(life_font, effective_name_size)
+        if dates_label and effective_date_size > 0.0:
+            date_target = effective_date_size
             if use_two_lines:
                 dx, dy = _tangent_offset(
                     base_x, base_y, mid_angle, line_h,
@@ -1044,40 +1124,47 @@ def _emit_ancestor_sector(
             fitted_dates, fitted_date_size, date_width = _fit_text_to_width(
                 dates_label,
                 target_size=date_target,
-                minimum_size=2.5,
+                minimum_size=effective_date_size,
                 max_width=text_width,
+                allow_ellipsis=False,
             )
-            fitted_date_size = min(fitted_date_size, effective_name_size)
             if fitted_dates:
                 children.append(SceneText(
                     x=dx,
                     y=dy,
                     content=fitted_dates,
-                    font_size=fitted_date_size,
+                    font_size=effective_date_size,
                     fill=TEXT_GREY,
                     anchor="middle",
                     rotation=rot,
                     max_width=date_width,
                 ))
     elif show_text and use_radial:
+        _radial_text_r, radial_width = _ancestor_radial_name_lane(
+            medallion_position=med_r_pos,
+            medallion_radius=med_r,
+            outer_radius=outer_r,
+        )
         tx, ty = _polar(cx, cy, name_r, mid_angle)
         rot = _outward_radial_rotation(mid_angle)
         children.append(SceneText(
             x=tx, y=ty,
             content=label,
-            font_size=font_size,
+            font_size=effective_name_size,
             fill=TEXT_DARK,
             anchor="middle",
             rotation=rot,
+            max_width=radial_width,
         ))
-        if dates_label:
+        if dates_label and effective_date_size > 0.0:
             ltx, lty = _polar(cx, cy, life_r, mid_angle)
             children.append(SceneText(
                 x=ltx, y=lty,
                 content=dates_label,
-                font_size=min(life_font, font_size),
+                font_size=effective_date_size,
                 fill=TEXT_GREY,
                 anchor="middle",
+                max_width=radial_width,
                 rotation=rot,
             ))
     elif show_text:
@@ -1085,16 +1172,24 @@ def _emit_ancestor_sector(
         children.append(ScenePathText(
             path=path,
             content=label,
-            font_size=font_size,
+            font_size=effective_name_size,
             fill=TEXT_DARK,
+            max_width=_ancestor_arc_text_capacity(
+                text_radius=name_r,
+                sweep_angle=sweep,
+            ),
         ))
-        if dates_label:
+        if dates_label and effective_date_size > 0.0:
             life_path = _arc_text_path(cx, cy, life_r, start_angle, end_angle, lower=False)
             children.append(ScenePathText(
                 path=life_path,
                 content=dates_label,
-                font_size=min(life_font, font_size),
+                font_size=effective_date_size,
                 fill=TEXT_GREY,
+                max_width=_ancestor_arc_text_capacity(
+                    text_radius=life_r,
+                    sweep_angle=sweep,
+                ),
             ))
 
     # Portrait/fallback medallion sized for this ring and angular lane.
@@ -2160,6 +2255,7 @@ def layout_descendants(
     last_populated_union_fill: str | None = None
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
+    generation_date_sizes: dict[int, float] = {}
     name_cache: dict[str, str] = {}
     date_cache: dict[str, str] = {}
     inner_r = canvas.descendant_inner_radius_mm
@@ -2414,7 +2510,7 @@ def layout_descendants(
         target_size: float,
         minimum_size: float,
         max_width: float,
-        allow_ellipsis: bool = True,
+        allow_ellipsis: bool = False,
     ) -> tuple[str, float, float]:
         """Fit a name while keeping one measured size for its generation."""
         common_size = generation_name_sizes.get(depth)
@@ -2437,7 +2533,13 @@ def layout_descendants(
         )
         if measure_only:
             if content:
-                name_size_candidates.setdefault(depth, []).append(fitted_size)
+                measured_size = _font_size_for_width(
+                    content,
+                    target_size=target_size,
+                    max_width=max_width,
+                )
+                name_size_candidates.setdefault(depth, []).append(measured_size)
+                return content, measured_size, width_limit
             return fitted, fitted_size, width_limit
         return fitted, fitted_size, width_limit
 
@@ -2451,28 +2553,33 @@ def layout_descendants(
         max_width: float,
     ) -> tuple[str, float, float]:
         """Fit a compact couple label at the common generation size."""
+        combined = f"{child_label} × {spouse_label}"
         common_size = generation_name_sizes.get(depth)
         if not measure_only and common_size is not None:
-            fitted, _ignored_size, width_limit = _fit_couple_to_width(
-                child_label,
-                spouse_label,
+            fitted, _ignored_size, width_limit = _fit_text_to_width(
+                combined,
                 target_size=common_size,
                 minimum_size=common_size,
                 max_width=max_width,
+                allow_ellipsis=False,
             )
             return fitted, common_size, width_limit
 
-        fitted, fitted_size, width_limit = _fit_couple_to_width(
-            child_label,
-            spouse_label,
+        fitted, fitted_size, width_limit = _fit_text_to_width(
+            combined,
             target_size=target_size,
             minimum_size=minimum_size,
             max_width=max_width,
+            allow_ellipsis=False,
         )
         if measure_only:
-            if child_label or spouse_label:
-                name_size_candidates.setdefault(depth, []).append(fitted_size)
-            return fitted, fitted_size, width_limit
+            measured_size = _font_size_for_width(
+                combined,
+                target_size=target_size,
+                max_width=max_width,
+            )
+            name_size_candidates.setdefault(depth, []).append(measured_size)
+            return combined, measured_size, width_limit
         return fitted, fitted_size, width_limit
 
     def _fit_generation_stacked_couple(
@@ -2480,6 +2587,8 @@ def layout_descendants(
         text_radius: float,
         sweep_angle: float,
         *,
+        child_label: str,
+        spouse_label: str,
         target_size: float,
         minimum_size: float,
         max_width: float,
@@ -2494,6 +2603,19 @@ def layout_descendants(
             target_size,
             (half_arc - 0.3) / 1.12,
         )
+        local_size = min(
+            local_size,
+            _font_size_for_width(
+                child_label,
+                target_size=local_size,
+                max_width=max_width,
+            ),
+            _font_size_for_width(
+                f"× {spouse_label}",
+                target_size=local_size,
+                max_width=max_width,
+            ),
+        )
         stack_floor = minimum_size * 0.75
         if local_size < stack_floor or max_width < local_size * 2.1:
             return None
@@ -2501,6 +2623,14 @@ def layout_descendants(
             name_size_candidates.setdefault(depth, []).append(local_size)
             return local_size
         return generation_name_sizes.get(depth, local_size)
+
+    def _generation_date_size(depth: int, fallback_name_size: float) -> float:
+        """Return one shared date size, one step below its name generation."""
+        if depth in generation_date_sizes:
+            return generation_date_sizes[depth]
+        return _date_font_size(
+            generation_name_sizes.get(depth, fallback_name_size)
+        )
 
     def _target_medallion_radius(depth: int, ring_depth: float) -> float:
         """Return a readable target; individual narrow sectors may omit it."""
@@ -2636,21 +2766,20 @@ def layout_descendants(
         child_label = _short(raw_label, depth)
 
         spouse_entries: list[tuple[str, str, str]] = []
-        if depth == 1 or (depth < max_gen and max_gen > 1) or union_cells:
-            # ``union_cells`` extends the spouse contract to multi-union people at
-            # the final configured depth: each marriage cell names its own spouse
-            # even when no further descendant ring exists below it.
-            for union in branch.unions:
-                if union.spouse_handle:
-                    sp_raw = _spouse_label(union, _name_label)
-                    if sp_raw:
-                        spouse_entries.append(
-                            (
-                                union.spouse_handle,
-                                sp_raw,
-                                _short(sp_raw, depth),
-                            )
+        # Every displayed descendant generation keeps its couple label. This
+        # includes the final ring, where there is no child ring to associate
+        # with the union but the spouse remains part of the displayed couple.
+        for union in branch.unions:
+            if union.spouse_handle:
+                sp_raw = _spouse_label(union, _name_label)
+                if sp_raw:
+                    spouse_entries.append(
+                        (
+                            union.spouse_handle,
+                            sp_raw,
+                            _short(sp_raw, depth),
                         )
+                    )
 
         spouse_handle = spouse_entries[0][0] if spouse_entries else None
         spouse_medallion_label = spouse_entries[0][1] if spouse_entries else None
@@ -2769,11 +2898,15 @@ def layout_descendants(
                         max_width=angular_width,
                     )
                 else:
+                    date_size = _generation_date_size(depth, 3.4)
+                    if date_size <= 0.0:
+                        continue
                     fitted, fitted_size, width_limit = _fit_text_to_width(
                         content,
-                        target_size=3.4,
-                        minimum_size=2.5,
+                        target_size=date_size,
+                        minimum_size=date_size,
                         max_width=angular_width,
+                        allow_ellipsis=False,
                     )
                 if not fitted or measure_only:
                     continue
@@ -2822,11 +2955,15 @@ def layout_descendants(
                         max_width=angular_width,
                     )
                 else:
+                    date_size = _generation_date_size(depth, outer_r * (9.5 / 600))
+                    if date_size <= 0.0:
+                        continue
                     fitted, fitted_size, width_limit = _fit_text_to_width(
                         content,
-                        target_size=outer_r * (9.5 / 600),
-                        minimum_size=2.8,
+                        target_size=date_size,
+                        minimum_size=date_size,
                         max_width=angular_width,
+                        allow_ellipsis=False,
                     )
                 if not fitted or measure_only:
                     continue
@@ -3302,11 +3439,15 @@ def layout_descendants(
                                 max_width=angular_width,
                             )
                         else:
+                            date_size = _generation_date_size(depth, 4.5)
+                            if date_size <= 0.0:
+                                continue
                             fitted, fitted_size, width_limit = _fit_text_to_width(
                                 content,
-                                target_size=3.4,
-                                minimum_size=2.5,
+                                target_size=date_size,
+                                minimum_size=date_size,
                                 max_width=angular_width,
+                                allow_ellipsis=False,
                             )
                         if not fitted:
                             continue
@@ -3403,6 +3544,8 @@ def layout_descendants(
                                     depth,
                                     text_r,
                                     block_sweep,
+                                    child_label=block_child_label,
+                                    spouse_label=block_spouse,
                                     target_size=name_target,
                                     minimum_size=name_minimum,
                                     max_width=text_width,
@@ -3482,16 +3625,17 @@ def layout_descendants(
                             minimum_size=name_minimum,
                             max_width=text_width,
                         )
-                        date_target = min(3.0, name_size * 0.84)
-                        date_minimum = min(2.4, date_target)
+                        date_target = _generation_date_size(depth, name_size)
                         date_fit, date_size, date_width = _fit_text_to_width(
                             child_dates,
                             target_size=date_target,
-                            minimum_size=date_minimum,
+                            minimum_size=date_target,
                             max_width=text_width,
+                            allow_ellipsis=False,
                         )
                         show_date_lane = bool(
                             date_fit
+                            and date_target > 0.0
                             and angular_capacity >= (name_size + date_size) * 1.18
                         )
                         lane_offset = max(name_size, date_size) * 0.58 if show_date_lane else 0.0
@@ -3519,7 +3663,7 @@ def layout_descendants(
                                     x=date_x,
                                     y=date_y,
                                     content=date_fit,
-                                    font_size=min(date_size, name_size),
+                                    font_size=_generation_date_size(depth, name_size),
                                     fill=TEXT_GREY,
                                     anchor="middle",
                                     rotation=rotation,
@@ -3631,13 +3775,23 @@ def layout_descendants(
                         * math.radians(max(cell_sweep - 1.0, 0.0))
                         - 2.0,
                     )
-                    fitted_couple, fitted_size, fitted_width = _fit_text_to_width(
-                        couple_label,
-                        target_size=font_size,
-                        minimum_size=couple_minimum_size,
-                        max_width=couple_width,
-                        allow_ellipsis=False,
-                    )
+                    if cell_spouse:
+                        fitted_couple, fitted_size, fitted_width = _fit_generation_couple(
+                            cell_child_label,
+                            cell_spouse,
+                            depth,
+                            target_size=font_size,
+                            minimum_size=couple_minimum_size,
+                            max_width=couple_width,
+                        )
+                    else:
+                        fitted_couple, fitted_size, fitted_width = _fit_generation_name(
+                            cell_child_label,
+                            depth,
+                            target_size=font_size,
+                            minimum_size=couple_minimum_size,
+                            max_width=couple_width,
+                        )
                     if not measure_only:
                         all_children.append(ScenePathText(
                             path=_arc_text_path(
@@ -3650,18 +3804,28 @@ def layout_descendants(
                             fill=TEXT_DARK,
                             max_width=fitted_width,
                         ))
-                    if child_dates and not measure_only:
+                    generation_date_size = _generation_date_size(depth, fitted_size)
+                    if (
+                        child_dates
+                        and not measure_only
+                        and generation_date_size > 0.0
+                    ):
+                        date_radius = gen_inner + ring_width * 0.68
                         all_children.append(ScenePathText(
                             path=_arc_text_path(
                                 cx,
                                 cy,
-                                gen_inner + ring_width * 0.68,
+                                date_radius,
                                 cell_start, cell_start + cell_sweep,
                                 lower=True,
                             ),
                             content=child_dates,
-                            font_size=outer_r * (9.5 / 600),
+                            font_size=generation_date_size,
                             fill=TEXT_GREY,
+                            max_width=_ancestor_arc_text_capacity(
+                                text_radius=date_radius,
+                                sweep_angle=cell_sweep,
+                            ),
                         ))
                     if cell_spouse:
                         spouse_dates = ""
@@ -3677,18 +3841,27 @@ def layout_descendants(
                                 spouse_dates = " / ".join(
                                     date for date in spouse_date_parts if date
                                 )
-                        if spouse_dates and not measure_only:
+                        if (
+                            spouse_dates
+                            and not measure_only
+                            and generation_date_size > 0.0
+                        ):
+                            spouse_date_radius = gen_inner + ring_width * 0.84
                             all_children.append(ScenePathText(
                                 path=_arc_text_path(
                                     cx,
                                     cy,
-                                    gen_inner + ring_width * 0.84,
+                                    spouse_date_radius,
                                     cell_start, cell_start + cell_sweep,
                                     lower=True,
                                 ),
                                 content=spouse_dates,
-                                font_size=outer_r * (9.5 / 600),
+                                font_size=generation_date_size,
                                 fill=TEXT_GREY,
+                                max_width=_ancestor_arc_text_capacity(
+                                    text_radius=spouse_date_radius,
+                                    sweep_angle=cell_sweep,
+                                ),
                             ))
 
         # Place children within the allocated sweep. Reuse the same deep-demand
@@ -3741,6 +3914,10 @@ def layout_descendants(
         depth: min(sizes)
         for depth, sizes in name_size_candidates.items()
         if sizes
+    }
+    generation_date_sizes = {
+        depth: _date_font_size(name_size)
+        for depth, name_size in generation_name_sizes.items()
     }
     measure_only = False
     all_children = []

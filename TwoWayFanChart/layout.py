@@ -2252,11 +2252,16 @@ def layout_descendants(
     # Allocate every first-generation branch from the densest visible depth,
     # not merely its immediate child count. This prevents deep lineages from
     # collapsing into sub-degree outer sectors while sparse branches stay wide.
+    # The fan sweeps clockwise from the right waist to the left waist, so walk
+    # source-ordered children in reverse for display: oldest ends up left,
+    # youngest right. The source index is restored when assigning colors below.
+    display_branches = tuple(reversed(branches))
     allocations = _allocate_descendant_branches_by_demand(
-        branches,
+        display_branches,
         start_angle=_DESC_START_ANGLE,
         total_sweep=_DESC_TOTAL_SWEEP,
     )
+    source_allocations = tuple(reversed(allocations))
 
     all_children: list = []
     measure_only = True
@@ -3724,14 +3729,16 @@ def layout_descendants(
                 include_empty=True,
             )
             for union_allocation in union_allocations:
+                display_children = tuple(reversed(union_allocation.children))
                 child_allocs = _allocate_descendant_branches_by_demand(
-                    union_allocation.children,
+                    display_children,
                     start_angle=union_allocation.start_angle,
                     total_sweep=union_allocation.sweep_angle,
                 )
+                source_child_allocs = tuple(reversed(child_allocs))
                 for child, child_alloc in zip(
                     union_allocation.children,
-                    child_allocs,
+                    source_child_allocs,
                 ):
                     _place_branch(
                         child,
@@ -3778,8 +3785,16 @@ def layout_descendants(
     # physical width constraint without changing the hierarchy.
     # Direct-child order is the palette order; recursive unions must not reserve
     # additional colors before the next central child is visited.
-    for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
-        _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
+    for source_index, (branch, alloc) in enumerate(
+        zip(branches, source_allocations)
+    ):
+        _place_branch(
+            branch,
+            alloc.start_angle,
+            alloc.sweep_angle,
+            1,
+            source_index,
+        )
     generation_name_sizes = {
         depth: min(sizes)
         for depth, sizes in name_size_candidates.items()
@@ -3791,8 +3806,16 @@ def layout_descendants(
     }
     measure_only = False
     all_children = []
-    for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
-        _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
+    for source_index, (branch, alloc) in enumerate(
+        zip(branches, source_allocations)
+    ):
+        _place_branch(
+            branch,
+            alloc.start_angle,
+            alloc.sweep_angle,
+            1,
+            source_index,
+        )
 
     # The SVG backend renders circular arc labels as ordinary text at the arc
     # midpoint. Keep those labels above later-generation sectors: otherwise a

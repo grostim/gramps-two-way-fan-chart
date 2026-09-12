@@ -4,7 +4,13 @@ import unittest
 
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import calculate_canvas, layout_descendants
-from TwoWayFanChart.model import DescendantBranch, PersonNode, SceneText, UnionBranch
+from TwoWayFanChart.model import (
+    DescendantBranch,
+    PersonNode,
+    ScenePathText,
+    SceneText,
+    UnionBranch,
+)
 
 
 def branch(
@@ -37,6 +43,60 @@ def branch(
 
 
 class DescendantCoupleOrderTests(unittest.TestCase):
+    def test_oldest_source_child_is_rendered_left_of_youngest(self):
+        oldest = branch("oldest", 1)
+        youngest = branch("youngest", 1)
+        chart = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=1,
+        )
+
+        scene = layout_descendants(
+            chart,
+            (oldest, youngest),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        labels = {
+            node.content: node
+            for node in scene.children
+            if isinstance(node, ScenePathText)
+            and node.content in {"oldest", "youngest"}
+        }
+
+        def path_midpoint_x(node):
+            parts = node.path.split()
+            return (float(parts[1]) + float(parts[-2])) / 2.0
+
+        self.assertLess(path_midpoint_x(labels["oldest"]), chart.center_cx_mm)
+        self.assertGreater(path_midpoint_x(labels["youngest"]), chart.center_cx_mm)
+
+    def test_nested_source_children_keep_oldest_on_left(self):
+        oldest = branch("oldest-child", 2)
+        youngest = branch("youngest-child", 2)
+        root = branch("root", 1, children=(oldest, youngest))
+        chart = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+
+        scene = layout_descendants(
+            chart,
+            (root,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        labels = {
+            node.content: node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content in {"oldest-child", "youngest-child"}
+        }
+
+        self.assertLess(labels["oldest-child"].x, labels["youngest-child"].x)
+
     def test_left_side_stacked_multi_union_keeps_person_above_spouse(self):
         first_union_children = tuple(
             branch(f"first-child-{index}", 3)

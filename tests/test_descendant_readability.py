@@ -1,6 +1,7 @@
 import ast
 import math
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
@@ -81,6 +82,10 @@ def _path_radius(path: str, cx: float, cy: float) -> float:
 
 
 class DescendantReadabilityTests(unittest.TestCase):
+    def test_continuation_dots_use_dark_gray_fill(self):
+        self.assertEqual(CONTINUATION_DOT_FILL, TEXT_DARK)
+        self.assertEqual(CONTINUATION_DOT_FILL, "#4A4A4A")
+
     def test_descendant_quarter_is_compact_relative_to_ancestor_fan(self):
         canvas = a0_canvas(descendant_generations=1)
 
@@ -857,8 +862,15 @@ class DescendantReadabilityTests(unittest.TestCase):
             scene,
         )
 
-        self.assertEqual(svg.count(f'fill="{CONTINUATION_DOT_FILL}"'), 3)
-        self.assertEqual(svg.count('r="0.55"'), 3)
+        svg_root = ET.fromstring(svg)
+        dot_circles = [
+            element
+            for element in svg_root.iter()
+            if element.tag.rsplit("}", 1)[-1] == "circle"
+            and element.attrib.get("fill") == CONTINUATION_DOT_FILL
+        ]
+        self.assertEqual(len(dot_circles), 3)
+        self.assertEqual([dot.attrib.get("r") for dot in dot_circles], ["0.55"] * 3)
 
 
 if __name__ == "__main__":

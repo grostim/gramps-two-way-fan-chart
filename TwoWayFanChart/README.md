@@ -1,4 +1,4 @@
-# Two-Way Fan Chart 1.2.35
+# Two-Way Fan Chart 1.2.36
 
 Graphical report add-on for Gramps 6.0.x: ancestors above a central couple, descendants below, portrait medallions, and publication-safe privacy filtering.
 

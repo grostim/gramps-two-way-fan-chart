@@ -878,7 +878,7 @@ def _emit_ancestor_sector(
 
     if show_text and gen == 3:
         # Rotate only the G3 name by 90 degrees from the standard orientation
-        # for this sector.  Dates deliberately keep their standard rail below.
+        # for this sector. Dates keep their established tangent rail below.
         effective_name_size = (
             name_font_size if name_font_size is not None else font_size
         )
@@ -910,32 +910,20 @@ def _emit_ancestor_sector(
         ))
         if dates_label:
             date_font_size = min(life_font, font_size)
-            if standard_name_is_radial:
-                date_x, date_y = _polar(cx, cy, life_r, mid_angle)
-                children.append(SceneText(
-                    x=date_x,
-                    y=date_y,
-                    content=dates_label,
-                    font_size=date_font_size,
-                    fill=TEXT_GREY,
-                    anchor="middle",
-                    rotation=_outward_radial_rotation(mid_angle),
-                ))
-            else:
-                life_path = _arc_text_path(
-                    cx,
-                    cy,
-                    life_r,
-                    start_angle,
-                    end_angle,
-                    lower=False,
-                )
-                children.append(ScenePathText(
-                    path=life_path,
-                    content=dates_label,
-                    font_size=date_font_size,
-                    fill=TEXT_GREY,
-                ))
+            life_path = _arc_text_path(
+                cx,
+                cy,
+                life_r,
+                start_angle,
+                end_angle,
+                lower=False,
+            )
+            children.append(ScenePathText(
+                path=life_path,
+                content=dates_label,
+                font_size=date_font_size,
+                fill=TEXT_GREY,
+            ))
     elif show_text and adaptive_tracks:
         text_start = med_r_pos + med_r + 2.0
         text_end = outer_r - 1.5

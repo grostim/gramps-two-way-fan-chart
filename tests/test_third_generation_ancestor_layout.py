@@ -138,7 +138,7 @@ class ThirdGenerationAncestorLayoutTests(unittest.TestCase):
         dates = [
             node
             for node in scene.children
-            if isinstance(node, SceneText)
+            if isinstance(node, ScenePathText)
             and node.content in set(generation_three_dates)
         ]
 
@@ -164,14 +164,8 @@ class ThirdGenerationAncestorLayoutTests(unittest.TestCase):
             dot_product = abs(radial_x * baseline_x + radial_y * baseline_y)
             self.assertLess(dot_product, 1e-6)
 
-        # Dates retain the standard narrow-sector radial orientation.
-        for node in dates:
-            radial_x = node.x - canvas.center_cx_mm
-            radial_y = node.y - canvas.center_cy_mm
-            baseline_x = math.cos(math.radians(node.rotation))
-            baseline_y = math.sin(math.radians(node.rotation))
-            cross_product = abs(radial_x * baseline_y - radial_y * baseline_x)
-            self.assertLess(cross_product, 1e-6)
+        # Dates retain their established tangent rail on the ancestor ring.
+        self.assertTrue(all(" A " in node.path for node in dates))
 
 
 if __name__ == "__main__":

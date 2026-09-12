@@ -6,9 +6,14 @@ from pathlib import Path
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
     _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
+    _DESCENDANT_CONTINUATION_DOT_OFFSET_MM,
+    _DESCENDANT_CONTINUATION_DOT_RADIUS_MM,
+    _DESCENDANT_CONTINUATION_DOT_SPACING_MM,
     _DESCENDANT_MEDALLION_TARGET_RATIO,
     _DESCENDANT_OUTER_RADIUS_RATIO,
     _DESC_TOTAL_SWEEP,
+    _allocate_descendant_union_cells,
+    _descendant_ring_bounds,
     _MIN_INITIALS_MEDALLION_RADIUS_MM,
     _allocate_descendant_branches_by_demand,
     calculate_canvas,
@@ -21,12 +26,14 @@ from TwoWayFanChart.model import (
     PersonNode,
     SceneCircle,
     SceneImage,
+    ScenePage,
     SceneSector,
     ScenePathText,
     SceneText,
     UnionBranch,
 )
-from TwoWayFanChart.styles import TEXT_DARK, TEXT_GREY
+from TwoWayFanChart.styles import CONTINUATION_DOT_FILL, TEXT_DARK, TEXT_GREY
+from TwoWayFanChart.render_svg import render_svg
 
 
 def person(handle: str) -> PersonNode:
@@ -594,6 +601,184 @@ class DescendantReadabilityTests(unittest.TestCase):
 
         label = "Alexandre Théodore de la Rochefoucauld"
         self.assertEqual(namespace["_descendant_short_label"](label, 4), label)
+
+    def test_last_generation_continuation_emits_three_radial_dots(self):
+        root = DescendantBranch(
+            "last-visible",
+            person("last-visible"),
+            1,
+            (
+                UnionBranch(
+                    "family-last-visible",
+                    "last-visible-spouse",
+                    ("not-rendered-child",),
+                    ("birth",),
+                ),
+            ),
+            (),
+        )
+        canvas = a0_canvas(descendant_generations=1)
+
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: {
+                "last-visible": "Last Visible",
+                "last-visible-spouse": "Visible Spouse",
+            }[handle],
+            dates_lookup=lambda _handle: "",
+        )
+        dots = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneCircle)
+            and node.fill == CONTINUATION_DOT_FILL
+            and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
+        ]
+
+        self.assertEqual(len(dots), 3)
+        _ring_inner, ring_outer = _descendant_ring_bounds(
+            canvas.descendant_inner_radius_mm,
+            canvas.descendant_outer_radius_mm,
+            1,
+            1,
+        )
+        radii = sorted(
+            math.hypot(
+                dot.cx - canvas.center_cx_mm,
+                dot.cy - canvas.center_cy_mm,
+            )
+            for dot in dots
+        )
+        self.assertGreaterEqual(
+            radii[0] - _DESCENDANT_CONTINUATION_DOT_RADIUS_MM,
+            ring_outer
+            + _DESCENDANT_CONTINUATION_DOT_OFFSET_MM
+            - _DESCENDANT_CONTINUATION_DOT_RADIUS_MM
+            - 1e-6,
+        )
+        self.assertEqual(
+            [
+                round(radii[index + 1] - radii[index], 9)
+                for index in range(len(radii) - 1)
+            ],
+            [round(_DESCENDANT_CONTINUATION_DOT_SPACING_MM, 9)] * 2,
+        )
+
+        radial_cross_products = [
+            (
+                dot.cx - canvas.center_cx_mm,
+                dot.cy - canvas.center_cy_mm,
+            )
+            for dot in dots
+        ]
+        first_x, first_y = radial_cross_products[0]
+        for x, y in radial_cross_products[1:]:
+            self.assertAlmostEqual(first_x * y - first_y * x, 0.0, places=6)
+
+    def test_terminal_last_generation_does_not_emit_continuation_dots(self):
+        root = branch("terminal", 1, spouse="terminal-spouse")
+        scene = layout_descendants(
+            a0_canvas(descendant_generations=1),
+            (root,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+
+        self.assertFalse(
+            any(
+                isinstance(node, SceneCircle)
+                and node.fill == CONTINUATION_DOT_FILL
+                and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
+                for node in scene.children
+            )
+        )
+
+    def test_continuation_dots_follow_the_populated_last_generation_union(self):
+        root = DescendantBranch(
+            "multi-union-last-visible",
+            person("multi-union-last-visible"),
+            1,
+            (
+                UnionBranch(
+                    "family-with-continuation",
+                    "spouse-with-continuation",
+                    ("not-rendered-child",),
+                    ("birth",),
+                ),
+                UnionBranch(
+                    "terminal-family",
+                    "terminal-spouse",
+                    (),
+                    (),
+                ),
+            ),
+            (),
+            children_by_union=((), ()),
+        )
+        canvas = a0_canvas(descendant_generations=1)
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        dots = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneCircle)
+            and node.fill == CONTINUATION_DOT_FILL
+            and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
+        ]
+        self.assertEqual(len(dots), 3)
+
+        cells = _allocate_descendant_union_cells(
+            root,
+            start_angle=96.0,
+            total_sweep=_DESC_TOTAL_SWEEP,
+        )
+        continuation_cell = cells[0]
+        expected_angle = (
+            continuation_cell.start_angle + continuation_cell.sweep_angle / 2.0
+        )
+        for dot in dots:
+            dot_angle = math.degrees(
+                math.atan2(
+                    dot.cx - canvas.center_cx_mm,
+                    -(dot.cy - canvas.center_cy_mm),
+                )
+            ) % 360.0
+            self.assertAlmostEqual(dot_angle, expected_angle % 360.0, places=6)
+
+    def test_svg_serializes_continuation_dots_as_filled_circles(self):
+        root = DescendantBranch(
+            "svg-last-visible",
+            person("svg-last-visible"),
+            1,
+            (
+                UnionBranch(
+                    "svg-family",
+                    "svg-spouse",
+                    ("svg-child-not-shown",),
+                    ("birth",),
+                ),
+            ),
+            (),
+        )
+        canvas = a0_canvas(descendant_generations=1)
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        svg = render_svg(
+            ScenePage(canvas.page_width_mm, canvas.page_height_mm),
+            scene,
+        )
+
+        self.assertEqual(svg.count(f'fill="{CONTINUATION_DOT_FILL}"'), 3)
+        self.assertEqual(svg.count('r="0.55"'), 3)
 
 
 if __name__ == "__main__":

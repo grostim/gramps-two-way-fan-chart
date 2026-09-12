@@ -76,6 +76,10 @@ _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
 # rings for their identity labels before asking the direct-child ring to donate
 # any remaining space. The value scales down on smaller paper sizes.
 _DESCENDANT_LATER_RING_MIN_WIDTH_MM = 30.0
+# Absolute lower bound for a later-generation identity lane after the
+# grandchild transfer. The nominal floor above is allowed to scale down, but
+# never below this amount, or the radial text capacity becomes zero.
+_DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM = 8.0
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
 # and its regression probes share one geometric contract.
@@ -83,6 +87,7 @@ _DESCENDANT_OUTER_RADIUS_RATIO = 0.76
 _DESCENDANT_MEDALLION_TARGET_RATIO = 28 / 600
 _MEDALLION_EDGE_CLEARANCE_MM = 1.6
 _MEDALLION_TEXT_RESERVE_RATIO = 0.58
+_DIRECT_LABEL_MIN_FONT_SIZE_MM = 2.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -2068,7 +2073,7 @@ def _descendant_ring_bounds(
                 for width in widths[2:]
             )
             scaled_later_floor = max(
-                0.0,
+                _DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM,
                 (later_visible_budget - needed_later_transfer)
                 / later_ring_count,
             )
@@ -2921,6 +2926,28 @@ def layout_descendants(
             med_r_pos = outer_r * ((245 / 600) if depth == 1 else (397 / 600))
             pair_offset = outer_r * (20 / 600)
             med_text_inner = med_r_pos - med_border_r
+
+            # The direct-child couple label is rendered after these portraits.
+            # On compact two-ring pages, keep both primitives only when a
+            # readable label lane can clear the portrait envelope; otherwise
+            # prefer the complete identity label over a hidden or overpainted
+            # medallion.
+            if depth == 1 and med_border_r > 0.5:
+                medallion_radial_extent = (
+                    math.hypot(med_r_pos, pair_offset)
+                    + med_border_r * 1.1
+                )
+                label_font_capacity = (
+                    gen_outer
+                    - _RING_GAP_MM
+                    - _MEDALLION_EDGE_CLEARANCE_MM
+                    - medallion_radial_extent
+                )
+                if label_font_capacity < _DIRECT_LABEL_MIN_FONT_SIZE_MM:
+                    med_border_r = 0.0
+                    med_r_pos = gen_outer
+                    pair_offset = 0.0
+                    med_text_inner = gen_outer
         else:
             med_border_r = 0.0
             med_r_pos = gen_outer
@@ -3520,6 +3547,33 @@ def layout_descendants(
                     ),
                 )
                 font_size = outer_r * (12 / 600)
+                label_font_capacity = None
+                if med_border_r > 0.5:
+                    medallion_radial_extent = (
+                        math.hypot(med_r_pos, pair_offset)
+                        + med_border_r * 1.1
+                    )
+                    label_font_capacity = max(
+                        0.0,
+                        gen_outer
+                        - _RING_GAP_MM
+                        - _MEDALLION_EDGE_CLEARANCE_MM
+                        - medallion_radial_extent,
+                    )
+                    font_size = max(
+                        font_size,
+                        min(4.0, label_font_capacity),
+                    )
+                    label_r = max(
+                        label_r,
+                        medallion_radial_extent
+                        + _MEDALLION_EDGE_CLEARANCE_MM
+                        + font_size * 0.50,
+                    )
+                    label_r = min(
+                        label_r,
+                        gen_outer - _RING_GAP_MM - font_size * 0.50,
+                    )
                 radial_text_capacity = max(
                     0.0,
                     2.0
@@ -3530,6 +3584,11 @@ def layout_descendants(
                     - 2.0 * _RING_GAP_MM,
                 )
                 couple_minimum_size = min(4.0, radial_text_capacity)
+                if label_font_capacity is not None:
+                    couple_minimum_size = min(
+                        couple_minimum_size,
+                        label_font_capacity,
+                    )
                 child_dates = (
                     _date_label(branch.person.handle)
                     if dates_lookup is not None and branch.person

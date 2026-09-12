@@ -5,6 +5,7 @@ from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
     _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
     _DESCENDANT_TITLE_GAP_MM,
+    _MEDALLION_EDGE_CLEARANCE_MM,
     _MIN_INITIALS_MEDALLION_RADIUS_MM,
     _RING_GAP_MM,
     _descendant_ring_bounds,
@@ -17,6 +18,7 @@ from TwoWayFanChart.model import (
     PersonNode,
     SceneCircle,
     SceneImage,
+    SceneText,
     ScenePathText,
     SceneSector,
     UnionBranch,
@@ -248,6 +250,119 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                     baseline_grandchild_width * 2.0,
                     places=6,
                     msg=f"{paper_size.value} generation {generations}",
+                )
+
+    def test_compact_later_rings_keep_a_visible_generation_three_label(self):
+        for paper_size in (PaperSize.A3, PaperSize.A4, PaperSize.A5):
+            root = branch(
+                "g1",
+                1,
+                children=(
+                    branch(
+                        "g2",
+                        2,
+                        children=(branch("g3", 3),),
+                    ),
+                ),
+            )
+            chart = calculate_canvas(
+                PaperRegion(paper_size, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=3,
+            )
+            scene = layout_descendants(
+                chart,
+                (root,),
+                name_lookup={
+                    "g1": "Generation One",
+                    "g2": "Generation Two",
+                    "g3": "G3",
+                }.__getitem__,
+                dates_lookup=lambda _handle: "",
+            )
+            _later_inner, later_outer = _descendant_ring_bounds(
+                chart.descendant_inner_radius_mm,
+                chart.descendant_outer_radius_mm,
+                3,
+                3,
+            )
+            later_labels = [
+                node
+                for node in scene.children
+                if isinstance(node, SceneText) and node.content == "G3"
+            ]
+
+            self.assertGreaterEqual(
+                later_outer - _later_inner,
+                8.0 - 1e-3,
+                msg=f"{paper_size.value} generation-three ring lost its label lane",
+            )
+            self.assertEqual(
+                len(later_labels),
+                1,
+                msg=f"{paper_size.value} dropped the generation-three label",
+            )
+
+    def test_two_generation_direct_labels_clear_portrait_medallions(self):
+        for paper_size in (
+            PaperSize.A0,
+            PaperSize.A1,
+            PaperSize.A2,
+            PaperSize.A3,
+            PaperSize.A4,
+            PaperSize.A5,
+        ):
+            direct_child = branch(
+                "child",
+                1,
+                children=(branch("grandchild", 2),),
+                spouse="spouse",
+            )
+            chart = calculate_canvas(
+                PaperRegion(paper_size, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=2,
+            )
+            scene = layout_descendants(
+                chart,
+                (direct_child,),
+                name_lookup={
+                    "child": "Child",
+                    "spouse": "Spouse",
+                    "grandchild": "Grandchild",
+                }.__getitem__,
+                dates_lookup=lambda _handle: "",
+                portrait_lookup=lambda _handle: "data:image/png;base64,AA==",
+            )
+            couple_label = next(
+                node
+                for node in scene.children
+                if isinstance(node, ScenePathText)
+                and node.content == "Child × Spouse"
+            )
+            label_radius = path_radius(
+                couple_label.path,
+                chart.center_cx_mm,
+                chart.center_cy_mm,
+            )
+            medallions = [
+                node for node in scene.children if isinstance(node, SceneCircle)
+            ]
+            if medallions:
+                medallion_outer_radius = max(
+                    math.hypot(
+                        node.cx - chart.center_cx_mm,
+                        node.cy - chart.center_cy_mm,
+                    )
+                    + node.r
+                    for node in medallions
+                )
+                self.assertGreaterEqual(
+                    label_radius - couple_label.font_size * 0.50,
+                    medallion_outer_radius
+                    + _MEDALLION_EDGE_CLEARANCE_MM
+                    - 1e-3,
+                    msg=f"{paper_size.value} label crosses a direct-child portrait",
                 )
 
     def test_two_generation_chart_doubles_the_grandchild_ring(self):

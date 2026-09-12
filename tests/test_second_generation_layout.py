@@ -436,6 +436,44 @@ class SecondGenerationLayoutTests(unittest.TestCase):
         )
         self.assertEqual(len(couple_labels), 1)
 
+    def test_two_line_intermediate_couples_keep_person_first_on_both_halves(self):
+        def intermediate(prefix):
+            return branch(
+                f"{prefix}-child",
+                2,
+                children=(branch(f"{prefix}-grandchild", 3),),
+                spouse=f"{prefix}-spouse",
+            )
+
+        right_branch = branch(
+            "right-root",
+            1,
+            children=(intermediate("right"),),
+        )
+        left_branch = branch(
+            "left-root",
+            1,
+            children=(intermediate("left"),),
+        )
+        scene = layout_descendants(
+            canvas(3),
+            (right_branch, left_branch),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        labels = {
+            node.content: node
+            for node in scene.children
+            if isinstance(node, SceneText)
+        }
+
+        for prefix in ("right", "left"):
+            self.assertLess(
+                labels[f"{prefix}-child"].y,
+                labels[f"× {prefix}-spouse"].y,
+                msg=f"{prefix} half puts spouse above the individual",
+            )
+
     def test_two_generation_direct_child_label_clears_center_circle(self):
         direct_child = branch(
             "gregoire",

@@ -295,6 +295,19 @@ def _tangent_offset(
     return x + math.cos(angle) * offset, y + math.sin(angle) * offset
 
 
+def _couple_line_offsets(
+    angle_deg: float,
+    separation: float,
+) -> tuple[float, float]:
+    """Return tangent offsets with the individual on the upper visual line."""
+    # The SVG y component of the tangent changes sign on the lower fan's
+    # vertical axis. Reverse the offsets on the left half so the spouse line
+    # does not move above the individual there.
+    if math.sin(math.radians(angle_deg)) < 0.0:
+        return separation, -separation
+    return -separation, separation
+
+
 def _ancestor_radial_name_lane(
     *,
     medallion_position: float,
@@ -3354,10 +3367,13 @@ def layout_descendants(
                                 minimum_size=name_minimum,
                                 max_width=text_width,
                             )
-                            lane_offset = max(child_size, spouse_size) * 0.68
+                            child_offset, spouse_offset = _couple_line_offsets(
+                                block_mid_angle,
+                                max(child_size, spouse_size) * 0.68,
+                            )
                             for content, size, width, offset, color in (
-                                (child_fit, child_size, child_width, -lane_offset, TEXT_DARK),
-                                (spouse_fit, spouse_size, spouse_width, lane_offset, TEXT_DARK),
+                                (child_fit, child_size, child_width, child_offset, TEXT_DARK),
+                                (spouse_fit, spouse_size, spouse_width, spouse_offset, TEXT_DARK),
                             ):
                                 if not content:
                                     continue
@@ -3392,9 +3408,13 @@ def layout_descendants(
                                     max_width=text_width,
                                 )
                                 if stack_size is not None:
+                                    child_offset, spouse_offset = _couple_line_offsets(
+                                        block_mid_angle,
+                                        stack_size * 0.62,
+                                    )
                                     for content, offset in (
-                                        (block_child_label, -stack_size * 0.62),
-                                        (f"\u00d7 {block_spouse}", stack_size * 0.62),
+                                        (block_child_label, child_offset),
+                                        (f"\u00d7 {block_spouse}", spouse_offset),
                                     ):
                                         if not content:
                                             continue

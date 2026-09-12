@@ -2244,15 +2244,9 @@ def layout_descendants(
 
     all_children: list = []
     measure_only = True
-    # Assign colors once per semantic union, including unions without visible
-    # children, and reuse the assignment for the union cell and every
-    # descendant sector placed below that union. The render pass repeats the
-    # traversal, keeping this map across both passes prevents nested
-    # branches from shifting the palette.
-    union_fill_indices: dict[tuple[str, int], int] = {}
-    branch_fill_indices: dict[str, int] = {}
-    next_union_fill_index = 0
-    last_populated_union_fill: str | None = None
+    # The rendered fill is keyed by the direct-child position passed to
+    # ``_place_branch``. It is therefore stable across the measurement pass,
+    # the render pass, and every nested union below that direct child.
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
     generation_date_sizes: dict[int, float] = {}
@@ -2318,190 +2312,6 @@ def layout_descendants(
             return bool(highlight_lookup(handle))
         except Exception:
             return False
-
-    def _stable_union_fill_index(
-        branch: DescendantBranch,
-        union_index: int,
-    ) -> int:
-        """Return one deterministic palette index for a recorded union.
-
-        Every recorded union consumes a slot, including unions without visible
-        children, so a later union cannot inherit the empty union's color. If
-        the cycling palette would repeat the previous populated union, skip to
-        the next palette slot so adjacent populated groups remain distinct.
-        """
-        nonlocal last_populated_union_fill, next_union_fill_index
-        key = (branch.position_id, union_index)
-        if key not in union_fill_indices:
-            groups = _children_grouped_by_union(branch)
-            has_children = (
-                0 <= union_index < len(groups)
-                and bool(groups[union_index])
-            )
-            fill_index = next_union_fill_index
-            next_union_fill_index += 1
-            if has_children and last_populated_union_fill is not None:
-                while descendant_fill(fill_index) == last_populated_union_fill:
-                    fill_index += 1
-                    next_union_fill_index = fill_index + 1
-            union_fill_indices[key] = fill_index
-            if has_children:
-                last_populated_union_fill = descendant_fill(fill_index)
-        return union_fill_indices[key]
-
-    def _branch_fill_index(
-        branch: DescendantBranch,
-        branch_index: int,
-        inherited_union_fill_index: int | None,
-    ) -> int:
-        """Resolve the fill inherited by a non-split descendant branch."""
-        if inherited_union_fill_index is not None:
-            return inherited_union_fill_index
-        if len(branch.unions) == 1:
-            return _stable_union_fill_index(branch, 0)
-        if not branch.unions:
-            if branch.position_id not in branch_fill_indices:
-                nonlocal last_populated_union_fill, next_union_fill_index
-                fill_index = next_union_fill_index
-                next_union_fill_index += 1
-                if last_populated_union_fill is not None:
-                    while descendant_fill(fill_index) == last_populated_union_fill:
-                        fill_index += 1
-                        next_union_fill_index = fill_index + 1
-                branch_fill_indices[branch.position_id] = fill_index
-                last_populated_union_fill = descendant_fill(fill_index)
-            return branch_fill_indices[branch.position_id]
-        return branch_index
-
-    def _group_fill_index(
-        group_key: tuple[str, str, int],
-    ) -> int | None:
-        """Return the reserved palette index for one semantic group."""
-        if group_key[0] == "union":
-            return union_fill_indices.get((group_key[1], group_key[2]))
-        return branch_fill_indices.get(group_key[1])
-
-    def _reserve_fill_index(
-        group_key: tuple[str, str, int],
-        previous_group: tuple[str, str, int] | None,
-        next_group: tuple[str, str, int] | None,
-    ) -> None:
-        """Reserve one group slot while avoiding its ring neighbors."""
-        nonlocal next_union_fill_index
-        if _group_fill_index(group_key) is not None:
-            return
-        forbidden_fills: set[str] = set()
-        for neighbor_group in (previous_group, next_group):
-            if neighbor_group is None or neighbor_group == group_key:
-                continue
-            neighbor_index = _group_fill_index(neighbor_group)
-            if neighbor_index is not None:
-                forbidden_fills.add(descendant_fill(neighbor_index))
-        fill_index = next_union_fill_index
-        next_union_fill_index += 1
-        while descendant_fill(fill_index) in forbidden_fills:
-            fill_index += 1
-            next_union_fill_index = fill_index + 1
-        if group_key[0] == "union":
-            union_fill_indices[(group_key[1], group_key[2])] = fill_index
-        else:
-            branch_fill_indices[group_key[1]] = fill_index
-
-    def _current_fill_groups(
-        branch: DescendantBranch,
-        inherited_group: tuple[str, str, int] | None,
-    ) -> tuple[tuple[str, str, int], ...]:
-        """Return the semantic groups emitted by a branch at its ring."""
-        if len(branch.unions) > 1:
-            return tuple(
-                ("union", branch.position_id, union_index)
-                for union_index in range(len(branch.unions))
-            )
-        if inherited_group is not None:
-            return (inherited_group,)
-        if len(branch.unions) == 1:
-            return (("union", branch.position_id, 0),)
-        return (("branch", branch.position_id, -1),)
-
-    def _reserve_fill_indices_by_depth() -> None:
-        """Reserve colors in visual order independently for every ring."""
-        current = [
-            (branch, None)
-            for branch in branches
-        ]
-        while current:
-            level_entries: list[tuple[tuple[str, str, int], bool]] = []
-            next_level: list[
-                tuple[DescendantBranch, tuple[str, str, int] | None]
-            ] = []
-            for branch, inherited_group in current:
-                current_groups = _current_fill_groups(branch, inherited_group)
-                groups = list(_children_grouped_by_union(branch))
-                if branch.unions and len(groups) < len(branch.unions):
-                    groups.extend(
-                        () for _ in range(len(branch.unions) - len(groups))
-                    )
-                if len(branch.unions) > 1:
-                    group_activity = [
-                        bool(group)
-                        for group in groups[: len(branch.unions)]
-                    ]
-                elif inherited_group is not None:
-                    group_activity = [True]
-                elif branch.unions:
-                    group_activity = [bool(groups[0])]
-                else:
-                    group_activity = [True]
-                level_entries.extend(
-                    zip(current_groups, group_activity)
-                )
-                if not branch.children:
-                    continue
-                if branch.unions:
-                    for union_index, group in enumerate(
-                        groups[: len(branch.unions)]
-                    ):
-                        child_group = (
-                            current_groups[union_index]
-                            if len(branch.unions) > 1
-                            else current_groups[0]
-                        )
-                        next_level.extend(
-                            (child, child_group)
-                            for child in group
-                        )
-                else:
-                    next_level.extend(
-                        (child, current_groups[0])
-                        for child in branch.children
-                    )
-            active_indexes = [
-                index
-                for index, (_group_key, active) in enumerate(level_entries)
-                if active
-            ]
-            active_positions = {
-                index: position
-                for position, index in enumerate(active_indexes)
-            }
-            for index, (group_key, active) in enumerate(level_entries):
-                if active:
-                    position = active_positions[index]
-                    previous_group = (
-                        level_entries[active_indexes[position - 1]][0]
-                        if position > 0
-                        else None
-                    )
-                    next_group = (
-                        level_entries[active_indexes[position + 1]][0]
-                        if position + 1 < len(active_indexes)
-                        else None
-                    )
-                else:
-                    previous_group = None
-                    next_group = None
-                _reserve_fill_index(group_key, previous_group, next_group)
-            current = next_level
 
     def _fit_generation_name(
         content: str,
@@ -2695,7 +2505,6 @@ def layout_descendants(
         alloc_sweep: float,
         depth: int,
         branch_index: int,
-        union_fill_index: int | None = None,
     ) -> None:
         """Recursively place a branch and its children."""
         mid_angle = alloc_start + alloc_sweep / 2.0
@@ -2708,16 +2517,13 @@ def layout_descendants(
             if len(branch.unions) > 1
             else ()
         )
-        inherited_fill_index = _branch_fill_index(
-            branch,
-            branch_index,
-            union_fill_index,
-        )
+        # ``branch_index`` is the position of the direct child in the root
+        # branch tuple and is deliberately kept unchanged during recursion.
+        # The background therefore identifies the central child's complete
+        # dependency, not one of that child's unions or nested descendants.
+        inherited_fill_index = branch_index
         union_cell_fill_indices = {
-            cell.union_index: _stable_union_fill_index(
-                branch,
-                cell.union_index,
-            )
+            cell.union_index: inherited_fill_index
             for cell in union_cells
         }
 
@@ -3875,13 +3681,6 @@ def layout_descendants(
                 include_empty=True,
             )
             for union_allocation in union_allocations:
-                if len(branch.unions) > 1:
-                    child_fill_index = _stable_union_fill_index(
-                        branch,
-                        union_allocation.union_index,
-                    )
-                else:
-                    child_fill_index = inherited_fill_index
                 child_allocs = _allocate_descendant_branches_by_demand(
                     union_allocation.children,
                     start_angle=union_allocation.start_angle,
@@ -3897,7 +3696,6 @@ def layout_descendants(
                         child_alloc.sweep_angle,
                         depth + 1,
                         branch_index,
-                        child_fill_index,
                     )
 
             # Union boundaries and the couple labels already identify each
@@ -3908,7 +3706,8 @@ def layout_descendants(
     # generation-wide contract. The second pass then renders all names in that
     # generation with the same font size; the renderer may still apply the
     # physical width constraint without changing the hierarchy.
-    _reserve_fill_indices_by_depth()
+    # Direct-child order is the palette order; recursive unions must not reserve
+    # additional colors before the next central child is visited.
     for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
         _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
     generation_name_sizes = {

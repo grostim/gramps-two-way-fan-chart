@@ -3470,7 +3470,16 @@ def layout_descendants(
                     )
         elif child_label:
             if depth == 1:
-                label_r = gen_inner + ring_width * 0.50
+                # Keep direct-child labels outside the opaque center node;
+                # cap the clearance so compact paper sizes stay in the ring.
+                label_r = max(
+                    gen_inner + ring_width * 0.50,
+                    canvas.center_radius_mm
+                    + min(
+                        _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
+                        max(gen_outer - canvas.center_radius_mm, 0.0) * 0.50,
+                    ),
+                )
                 font_size = outer_r * (12 / 600)
                 child_dates = (
                     _date_label(branch.person.handle)

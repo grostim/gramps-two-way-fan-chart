@@ -3,10 +3,13 @@ import unittest
 
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
+    _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
+    _DESCENDANT_TITLE_GAP_MM,
     _RING_GAP_MM,
     _descendant_ring_bounds,
     calculate_canvas,
     layout_descendants,
+    layout_titles,
 )
 from TwoWayFanChart.model import DescendantBranch, PersonNode, ScenePathText, SceneSector, UnionBranch
 
@@ -46,6 +49,12 @@ def canvas(descendant_generations: int):
         ancestor_generations=5,
         descendant_generations=descendant_generations,
     )
+
+
+def path_radius(path: str, cx: float, cy: float) -> float:
+    """Recover the radius of the first point of a generated arc path."""
+    _move, x_text, y_text, *_rest = path.split()
+    return math.hypot(float(x_text) - cx, float(y_text) - cy)
 
 
 class SecondGenerationLayoutTests(unittest.TestCase):
@@ -122,6 +131,36 @@ class SecondGenerationLayoutTests(unittest.TestCase):
             )
             self.assertLessEqual(ring_outer, chart.descendant_outer_radius_mm)
 
+    def test_deeper_rings_leave_clearance_for_descendant_title(self):
+        chart = canvas(4)
+        ring_outers = [
+            _descendant_ring_bounds(
+                chart.descendant_inner_radius_mm,
+                chart.descendant_outer_radius_mm,
+                4,
+                depth,
+            )[1]
+            for depth in (1, 2, 3, 4)
+        ]
+        titles = layout_titles(
+            chart,
+            ancestor_generations=5,
+            descendant_generations=4,
+        )
+        descendant_title = next(
+            node
+            for node in titles.children
+            if node.content.startswith("DESCENDANTS")
+        )
+
+        self.assertLessEqual(max(ring_outers), chart.descendant_outer_radius_mm)
+        self.assertGreaterEqual(
+            descendant_title.y,
+            chart.center_cy_mm
+            + max(ring_outers)
+            + _DESCENDANT_TITLE_GAP_MM,
+        )
+
     def test_two_generation_chart_doubles_the_grandchild_ring(self):
         grandchild = branch("grandchild", 2)
         direct_child = branch("child", 1, children=(grandchild,))
@@ -192,6 +231,103 @@ class SecondGenerationLayoutTests(unittest.TestCase):
             ["Grégoire Mussat × Blandine Pouchard"],
         )
         self.assertEqual(len(couple_labels), 1)
+
+    def test_two_generation_direct_child_label_clears_center_circle(self):
+        direct_child = branch(
+            "gregoire",
+            1,
+            children=(branch("alexis", 2),),
+            spouse="blandine",
+        )
+        chart = canvas(2)
+        scene = layout_descendants(
+            chart,
+            (direct_child,),
+            name_lookup={
+                "gregoire": "Grégoire Mussat",
+                "blandine": "Blandine Pouchard",
+                "alexis": "Alexis Mussat",
+            }.__getitem__,
+            dates_lookup=lambda _handle: "",
+        )
+        couple_label = next(
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText)
+            and node.content == "Grégoire Mussat × Blandine Pouchard"
+        )
+
+        self.assertGreaterEqual(
+            path_radius(
+                couple_label.path,
+                chart.center_cx_mm,
+                chart.center_cy_mm,
+            ),
+            chart.center_radius_mm + _DESCENDANT_FIRST_GEN_LINE_GAP_MM - 1e-3,
+        )
+
+    def test_two_generation_direct_child_label_stays_inside_small_page_ring(self):
+        for name, region in (
+            ("A5", PaperRegion(PaperSize.A5, Orientation.LANDSCAPE)),
+            (
+                "custom",
+                PaperRegion(
+                    PaperSize.CUSTOM,
+                    Orientation.LANDSCAPE,
+                    custom_width_mm=160,
+                    custom_height_mm=160,
+                ),
+            ),
+        ):
+            direct_child = branch(
+                "child",
+                1,
+                children=(branch("grandchild", 2),),
+                spouse="spouse",
+            )
+            chart = calculate_canvas(
+                region,
+                ancestor_generations=5,
+                descendant_generations=2,
+            )
+            scene = layout_descendants(
+                chart,
+                (direct_child,),
+                name_lookup={
+                    "child": "Child",
+                    "spouse": "Spouse",
+                    "grandchild": "Grandchild",
+                }.__getitem__,
+                dates_lookup=lambda _handle: "",
+            )
+            couple_label = next(
+                node
+                for node in scene.children
+                if isinstance(node, ScenePathText)
+                and node.content == "Child × Spouse"
+            )
+            _inner, ring_outer = _descendant_ring_bounds(
+                chart.descendant_inner_radius_mm,
+                chart.descendant_outer_radius_mm,
+                2,
+                1,
+            )
+            radius = path_radius(
+                couple_label.path,
+                chart.center_cx_mm,
+                chart.center_cy_mm,
+            )
+
+            self.assertGreater(
+                radius,
+                chart.center_radius_mm,
+                msg=f"{name} label remains under the center circle",
+            )
+            self.assertLessEqual(
+                radius,
+                ring_outer + 1e-3,
+                msg=f"{name} label leaves its direct-child ring",
+            )
 
 
 if __name__ == "__main__":

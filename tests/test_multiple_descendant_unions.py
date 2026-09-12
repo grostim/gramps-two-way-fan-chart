@@ -466,8 +466,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         ]
         self.assertGreaterEqual(len(sectors), 4)
         child_sectors = sectors[-3:]
-        self.assertEqual(child_sectors[0].fill, child_sectors[1].fill)
-        self.assertNotEqual(child_sectors[1].fill, child_sectors[2].fill)
+        self.assertEqual(len({sector.fill for sector in child_sectors}), 1)
 
         for child_labels in (
             {"child f0335", "child f0335 b"},
@@ -894,8 +893,8 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         ]
 
         self.assertEqual(len(second_ring), 4)
-        for previous, current in zip(second_ring, second_ring[1:]):
-            self.assertNotEqual(previous.fill, current.fill)
+        self.assertEqual(len({sector.fill for sector in second_ring[:3]}), 1)
+        self.assertNotEqual(second_ring[0].fill, second_ring[3].fill)
 
     def test_childless_union_does_not_emit_a_descendant_header(self):
         first_child = DescendantBranch(
@@ -1195,10 +1194,12 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(len(first_ring), 4)
         self.assertEqual(len(child_ring), 2)
-        self.assertEqual(child_ring[0].fill, first_ring[0].fill)
-        self.assertEqual(child_ring[1].fill, first_ring[3].fill)
+        self.assertEqual(
+            len({sector.fill for sector in (*first_ring, *child_ring)}),
+            1,
+        )
 
-    def test_empty_union_consumes_fill_index_before_following_union(self):
+    def test_empty_union_keeps_the_direct_child_fill_for_following_children(self):
         child = DescendantBranch(
             "child-after-empty-union",
             PersonNode("child-after-empty-union", "I1001"),
@@ -1253,8 +1254,8 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(len(first_ring), 2)
         self.assertEqual(len(child_ring), 1)
-        self.assertNotEqual(first_ring[0].fill, first_ring[1].fill)
-        self.assertEqual(child_ring[0].fill, first_ring[1].fill)
+        self.assertEqual(first_ring[0].fill, first_ring[1].fill)
+        self.assertEqual(child_ring[0].fill, first_ring[0].fill)
 
     def test_split_cells_keep_the_collapsed_private_couple_label(self):
         first_child = DescendantBranch(
@@ -1931,8 +1932,8 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         ]
 
         self.assertEqual(len(second_ring), 4)
-        for previous, current in zip(second_ring, second_ring[1:]):
-            self.assertNotEqual(previous.fill, current.fill)
+        self.assertEqual(len({sector.fill for sector in second_ring[:3]}), 1)
+        self.assertNotEqual(second_ring[0].fill, second_ring[3].fill)
 
     def test_childless_union_does_not_emit_a_descendant_header(self):
         first_child = DescendantBranch(
@@ -2232,10 +2233,12 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(len(first_ring), 4)
         self.assertEqual(len(child_ring), 2)
-        self.assertEqual(child_ring[0].fill, first_ring[0].fill)
-        self.assertEqual(child_ring[1].fill, first_ring[3].fill)
+        self.assertEqual(
+            len({sector.fill for sector in (*first_ring, *child_ring)}),
+            1,
+        )
 
-    def test_empty_union_consumes_fill_index_before_following_union(self):
+    def test_empty_union_keeps_the_direct_child_fill_for_following_children(self):
         child = DescendantBranch(
             "child-after-empty-union",
             PersonNode("child-after-empty-union", "I1001"),
@@ -2290,8 +2293,8 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(len(first_ring), 2)
         self.assertEqual(len(child_ring), 1)
-        self.assertNotEqual(first_ring[0].fill, first_ring[1].fill)
-        self.assertEqual(child_ring[0].fill, first_ring[1].fill)
+        self.assertEqual(first_ring[0].fill, first_ring[1].fill)
+        self.assertEqual(child_ring[0].fill, first_ring[0].fill)
 
     def test_split_cells_keep_the_collapsed_private_couple_label(self):
         first_child = DescendantBranch(

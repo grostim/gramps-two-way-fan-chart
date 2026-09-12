@@ -131,11 +131,17 @@ ANCESTOR_FILLS: dict[tuple[int, str], str] = {
     (3, "b"): "#DCE5CF",
 }
 
-# Descendant sector fills (very light, alternating subtly).
+# Descendant sector fills. One color is assigned to each direct child of the
+# central couple and inherited by every descendant sector in that branch.
+# These softened blue, sage, amber, coral, violet and teal tones remain light
+# enough for the existing dark labels while making adjacent branches legible.
 DESCENDANT_FILLS: tuple[str, ...] = (
-    "#F3EEE5",
-    "#EEF1E8",
-    "#F7EBE6",
+    "#D7E8F7",
+    "#DDECCF",
+    "#F7E1B5",
+    "#F3D0D0",
+    "#E6D8F2",
+    "#CBE8E5",
 )
 
 # Additional visual constants from mockup.
@@ -170,5 +176,5 @@ def ancestor_fill(generation: int, lineage: str) -> str:
 
 
 def descendant_fill(index: int) -> str:
-    """Return a descendant sector fill, cycling through the palette."""
+    """Return the fill assigned to a direct-child branch index."""
     return DESCENDANT_FILLS[index % len(DESCENDANT_FILLS)]

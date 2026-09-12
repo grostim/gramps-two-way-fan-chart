@@ -9,15 +9,15 @@ Produces:
     gramps60/listings/addons-en.json
     gramps60/listings/addons-fr.json
 """
+import glob
+import gzip
 import json
 import os
-import sys
 import tarfile
-import glob
 
 ADDON = "TwoWayFanChart"
 GRAMPS_VERSION = "6.0"
-VERSION = "1.2.33"
+VERSION = "1.2.34"
 
 # ── Build .addon.tgz ──
 
@@ -50,13 +50,26 @@ download_dir = f"gramps60/download"
 os.makedirs(download_dir, exist_ok=True)
 
 def tar_filt(tinfo):
+    """Normalize tar metadata so identical sources produce identical bytes."""
+    tinfo.uid = 0
+    tinfo.gid = 0
     tinfo.uname = tinfo.gname = "gramps"
+    tinfo.mtime = 0
+    if tinfo.isfile():
+        tinfo.mode = 0o644
+    elif tinfo.isdir():
+        tinfo.mode = 0o755
+    tinfo.pax_headers = {}
     return tinfo
 
 tgz_path = f"{download_dir}/{ADDON}.addon.tgz"
-with tarfile.open(tgz_path, mode="w:gz", encoding="utf-8") as tar:
-    for f in sorted(unique_files):
-        tar.add(f, filter=tar_filt)
+with open(tgz_path, "wb") as raw_archive:
+    with gzip.GzipFile(fileobj=raw_archive, mode="wb", mtime=0) as compressed:
+        with tarfile.open(
+            fileobj=compressed, mode="w", format=tarfile.GNU_FORMAT
+        ) as tar:
+            for f in sorted(unique_files):
+                tar.add(f, filter=tar_filt)
 
 print(f"Built: {tgz_path} ({os.path.getsize(tgz_path)} bytes)")
 

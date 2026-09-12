@@ -9,7 +9,7 @@ register(
         "Generates a bidirectional fan chart with ancestors, descendants, "
         "and portraits around a center family."
     ),
-    version="1.2.33",
+    version="1.2.34",
     gramps_target_version="6.0",
     status=STABLE,
     fname="TwoWayFanChart.py",

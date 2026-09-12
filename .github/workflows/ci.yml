@@ -87,7 +87,7 @@ jobs:
           set -eu
           case "$GITHUB_EVENT_NAME" in
             pull_request)
-              git diff --check "$BASE_SHA" "$HEAD_SHA"
+              git diff --check "$BASE_SHA...$HEAD_SHA"
               ;;
             push)
               git diff --check "$BEFORE_SHA" "$GITHUB_SHA"

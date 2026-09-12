@@ -95,7 +95,7 @@ class DescendantReadabilityTests(unittest.TestCase):
             canvas.ancestor_outer_radius_mm,
         )
 
-    def test_descendant_title_follows_compact_outer_radius(self):
+    def test_section_titles_are_not_rendered(self):
         canvas = a0_canvas(descendant_generations=1)
         scene = layout_titles(
             canvas,
@@ -103,16 +103,7 @@ class DescendantReadabilityTests(unittest.TestCase):
             descendant_generations=1,
         )
 
-        descendant_title = next(
-            node for node in scene.children
-            if isinstance(node, SceneText) and node.content.startswith("DESCENDANTS")
-        )
-
-        self.assertAlmostEqual(
-            descendant_title.y,
-            canvas.center_cy_mm + canvas.descendant_outer_radius_mm + 8.0,
-            places=6,
-        )
+        self.assertEqual(scene.children, ())
 
     def test_ancestor_portrait_medallion_is_larger_than_v128_generation_two(self):
         canvas = calculate_canvas(
@@ -728,7 +719,7 @@ class DescendantReadabilityTests(unittest.TestCase):
             )
         )
 
-    def test_continuation_dots_clear_the_descendant_title(self):
+    def test_continuation_dots_do_not_create_section_titles(self):
         root = DescendantBranch(
             "title-clearance-last-visible",
             person("title-clearance-last-visible"),
@@ -762,16 +753,9 @@ class DescendantReadabilityTests(unittest.TestCase):
             and node.fill == CONTINUATION_DOT_FILL
             and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
         ]
-        title = next(
-            node
-            for node in title_scene.children
-            if isinstance(node, SceneText) and node.content.startswith("DESCENDANTS")
-        )
-
         self.assertEqual(len(dots), 3)
-        self.assertGreaterEqual(
-            title.y - max(dot.cy + dot.r for dot in dots),
-            2.0,
+        self.assertFalse(
+            any(isinstance(node, SceneText) for node in title_scene.children)
         )
 
     def test_continuation_dots_follow_the_populated_last_generation_union(self):

@@ -4,14 +4,12 @@ import unittest
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
     _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
-    _DESCENDANT_TITLE_GAP_MM,
     _MEDALLION_EDGE_CLEARANCE_MM,
     _MIN_INITIALS_MEDALLION_RADIUS_MM,
     _RING_GAP_MM,
     _descendant_ring_bounds,
     calculate_canvas,
     layout_descendants,
-    layout_titles,
 )
 from TwoWayFanChart.model import (
     DescendantBranch,
@@ -142,7 +140,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
             )
             self.assertLessEqual(ring_outer, chart.descendant_outer_radius_mm)
 
-    def test_deeper_rings_leave_clearance_for_descendant_title(self):
+    def test_deeper_rings_fit_inside_descendant_outer_radius(self):
         chart = canvas(4)
         ring_outers = [
             _descendant_ring_bounds(
@@ -153,24 +151,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
             )[1]
             for depth in (1, 2, 3, 4)
         ]
-        titles = layout_titles(
-            chart,
-            ancestor_generations=5,
-            descendant_generations=4,
-        )
-        descendant_title = next(
-            node
-            for node in titles.children
-            if node.content.startswith("DESCENDANTS")
-        )
-
         self.assertLessEqual(max(ring_outers), chart.descendant_outer_radius_mm)
-        self.assertGreaterEqual(
-            descendant_title.y,
-            chart.center_cy_mm
-            + max(ring_outers)
-            + _DESCENDANT_TITLE_GAP_MM,
-        )
 
     def test_a1_deep_layout_keeps_direct_child_portrait_medallions(self):
         for generations in (3, 4):

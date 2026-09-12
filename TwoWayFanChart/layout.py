@@ -72,11 +72,22 @@ _RING_GAP_MM = 0.3  # white space between generation rings
 _ANCESTOR_TITLE_GAP_MM = 4.0
 _DESCENDANT_TITLE_GAP_MM = 8.0
 _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
+# When the target grandchild ring is widened, keep enough radial room in later
+# rings for their identity labels before asking the direct-child ring to donate
+# any remaining space. The value scales down on smaller paper sizes.
+_DESCENDANT_LATER_RING_MIN_WIDTH_MM = 30.0
+# Absolute lower bound for a later-generation identity lane after the
+# grandchild transfer. The nominal floor above is allowed to scale down, but
+# never below this amount, or the radial text capacity becomes zero.
+_DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM = 8.0
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
 # and its regression probes share one geometric contract.
 _DESCENDANT_OUTER_RADIUS_RATIO = 0.76
 _DESCENDANT_MEDALLION_TARGET_RATIO = 28 / 600
+_MEDALLION_EDGE_CLEARANCE_MM = 1.6
+_MEDALLION_TEXT_RESERVE_RATIO = 0.58
+_DIRECT_LABEL_MIN_FONT_SIZE_MM = 2.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1699,6 +1710,12 @@ _DESC_MIN_SWEEP_BY_GENERATION = {
 # large-format output. Narrow sectors degrade to text-only instead of shrinking
 # every medallion in the generation to an unreadable common minimum.
 _MIN_INITIALS_MEDALLION_RADIUS_MM = 3.2
+# A direct-child ring narrower than this cannot satisfy the adaptive dense
+# medallion target while retaining its text lane. Keep it as a last-resort
+# donor floor when widening the grandchild ring.
+_DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM = (
+    2 * _MIN_INITIALS_MEDALLION_RADIUS_MM + _MEDALLION_EDGE_CLEARANCE_MM
+) / (1.0 - _MEDALLION_TEXT_RESERVE_RATIO)
 
 
 def _count_leaves(branch: DescendantBranch) -> int:
@@ -2006,12 +2023,12 @@ def _descendant_ring_bounds(
     if generation_count == 1:
         widths = [total_depth]
     elif generation_count == 2:
-        # Keep the direct-descendant (visual generation 2) cadran wide enough
-        # for one-line couple labels.  Its former 202/600–350/600 radial
-        # interval is doubled; the outer child ring keeps the same final
-        # boundary so the descendant fan remains page-contained.
-        exact_inner = (202 / 600, 503 / 600)
-        exact_outer = (498 / 600, 598 / 600)
+        # ``depth=1`` is the direct child of the central couple and
+        # ``depth=2`` is the grandchild. Keep the direct-child lane compact,
+        # and give the grandchild lane the requested 2x radial depth while
+        # preserving the fixed outer boundary of the descendant fan.
+        exact_inner = (202 / 600, 302 / 600)
+        exact_outer = (297 / 600, 598 / 600)
         return (
             outer_radius * exact_inner[depth - 1],
             outer_radius * exact_outer[depth - 1],
@@ -2020,6 +2037,75 @@ def _descendant_ring_bounds(
         weights = [1.0 + 0.35 * index for index in range(generation_count)]
         total_weight = sum(weights)
         widths = [total_depth * weight / total_weight for weight in weights]
+
+        # The extracted root branch is already a child of the central couple:
+        # ``depth=1`` is therefore the direct-child ring and ``depth=2`` is
+        # the grandchild ring. Transfer the extra depth needed to double the
+        # grandchild lane from later rings so the full descendant composition
+        # remains contained within the original outer radius.
+        grandchild_visible_width = max(widths[1] - _RING_GAP_MM, 0.0)
+        remaining_transfer = grandchild_visible_width
+        minimum_direct_visible_width = max(
+            8.0,
+            total_depth * 0.05,
+            _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
+        )
+        minimum_later_visible_width = min(
+            _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
+            max(8.0, total_depth * 0.30),
+        )
+        # On smaller pages, the normal later-ring floor can consume the space
+        # needed to complete the target doubling. Scale that floor before
+        # taking more from the direct-child ring; the latter must retain its
+        # medallion capacity whenever the total radial budget allows it.
+        direct_donor_capacity = max(
+            widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
+            0.0,
+        )
+        later_ring_count = len(widths) - 2
+        needed_later_transfer = max(
+            remaining_transfer - direct_donor_capacity,
+            0.0,
+        )
+        if later_ring_count and needed_later_transfer > 0.0:
+            later_visible_budget = sum(
+                max(width - _RING_GAP_MM, 0.0)
+                for width in widths[2:]
+            )
+            scaled_later_floor = max(
+                _DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM,
+                (later_visible_budget - needed_later_transfer)
+                / later_ring_count,
+            )
+            minimum_later_visible_width = min(
+                minimum_later_visible_width,
+                scaled_later_floor,
+            )
+        # Preserve the generations immediately following the target whenever
+        # possible: the outermost rings are the least identity-dense and can
+        # donate their excess width without collapsing intermediate unions.
+        for offset in range(len(widths) - 1, 1, -1):
+            reducible = max(
+                widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
+                0.0,
+            )
+            transfer = min(remaining_transfer, reducible)
+            widths[offset] -= transfer
+            widths[1] += transfer
+            remaining_transfer -= transfer
+            if remaining_transfer <= 0.0:
+                break
+        if remaining_transfer > 0.0:
+            # A three-generation layout has only one later ring. Preserve a
+            # small direct-child lane as well, but use it as the final donor so
+            # the grandchild target remains exact whenever the page can hold it.
+            reducible = max(
+                widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
+                0.0,
+            )
+            transfer = min(remaining_transfer, reducible)
+            widths[0] -= transfer
+            widths[1] += transfer
     ring_inner = inner_radius + sum(widths[: depth - 1])
     return ring_inner, ring_inner + widths[depth - 1] - _RING_GAP_MM
 
@@ -2419,13 +2505,13 @@ def layout_descendants(
         """Return a readable target; individual narrow sectors may omit it."""
         ideal = {1: 8.2, 2: 5.4, 3: 4.0, 4: 3.4, 5: 3.2}.get(depth, 3.2)
         reserved_text_depth = (
-            min(36.0, ring_depth * 0.58)
+            min(36.0, ring_depth * _MEDALLION_TEXT_RESERVE_RATIO)
             if depth == 1
             else min(max(28.0, ring_depth * 0.45), ring_depth * 0.58)
         )
         radial_cap = max(
             0.0,
-            (ring_depth - 1.6 - reserved_text_depth) / 2.0,
+            (ring_depth - _MEDALLION_EDGE_CLEARANCE_MM - reserved_text_depth) / 2.0,
         )
         return min(ideal, radial_cap)
 
@@ -2840,6 +2926,28 @@ def layout_descendants(
             med_r_pos = outer_r * ((245 / 600) if depth == 1 else (397 / 600))
             pair_offset = outer_r * (20 / 600)
             med_text_inner = med_r_pos - med_border_r
+
+            # The direct-child couple label is rendered after these portraits.
+            # On compact two-ring pages, keep both primitives only when a
+            # readable label lane can clear the portrait envelope; otherwise
+            # prefer the complete identity label over a hidden or overpainted
+            # medallion.
+            if depth == 1 and med_border_r > 0.5:
+                medallion_radial_extent = (
+                    math.hypot(med_r_pos, pair_offset)
+                    + med_border_r * 1.1
+                )
+                label_font_capacity = (
+                    gen_outer
+                    - _RING_GAP_MM
+                    - _MEDALLION_EDGE_CLEARANCE_MM
+                    - medallion_radial_extent
+                )
+                if label_font_capacity < _DIRECT_LABEL_MIN_FONT_SIZE_MM:
+                    med_border_r = 0.0
+                    med_r_pos = gen_outer
+                    pair_offset = 0.0
+                    med_text_inner = gen_outer
         else:
             med_border_r = 0.0
             med_r_pos = gen_outer
@@ -3125,7 +3233,10 @@ def layout_descendants(
                 cell_specs = [(alloc_start, alloc_sweep, lines)]
             for cell_start, cell_sweep, lines in cell_specs:
                 _emit_single_generation_lines(cell_start, cell_sweep, lines)
-        elif child_label and (adaptive_dense or depth > 1):
+        elif child_label and (
+            depth > 1
+            or adaptive_dense
+        ):
             child_dates = (
                 _date_label(branch.person.handle)
                 if dates_lookup is not None and branch.person
@@ -3218,7 +3329,7 @@ def layout_descendants(
                 text_end = med_text_inner - 2.0
                 text_width = max(0.0, text_end - text_start)
                 name_target = {2: 4.2, 3: 3.6, 4: 3.2, 5: 3.0}.get(depth, 3.0)
-                name_minimum = 3.2 if depth == 2 else 2.8
+                name_minimum = 3.2 if depth == 2 else (1.8 if depth >= 3 else 2.8)
 
                 def _render_intermediate_block(
                     block_mid_angle: float,
@@ -3425,8 +3536,59 @@ def layout_descendants(
                     )
         elif child_label:
             if depth == 1:
-                label_r = gen_inner + ring_width * 0.50
+                # Keep direct-child labels outside the opaque center node;
+                # cap the clearance so compact paper sizes stay in the ring.
+                label_r = max(
+                    gen_inner + ring_width * 0.50,
+                    canvas.center_radius_mm
+                    + min(
+                        _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
+                        max(gen_outer - canvas.center_radius_mm, 0.0) * 0.50,
+                    ),
+                )
                 font_size = outer_r * (12 / 600)
+                label_font_capacity = None
+                if med_border_r > 0.5:
+                    medallion_radial_extent = (
+                        math.hypot(med_r_pos, pair_offset)
+                        + med_border_r * 1.1
+                    )
+                    label_font_capacity = max(
+                        0.0,
+                        gen_outer
+                        - _RING_GAP_MM
+                        - _MEDALLION_EDGE_CLEARANCE_MM
+                        - medallion_radial_extent,
+                    )
+                    font_size = max(
+                        font_size,
+                        min(4.0, label_font_capacity),
+                    )
+                    label_r = max(
+                        label_r,
+                        medallion_radial_extent
+                        + _MEDALLION_EDGE_CLEARANCE_MM
+                        + font_size * 0.50,
+                    )
+                    label_r = min(
+                        label_r,
+                        gen_outer - _RING_GAP_MM - font_size * 0.50,
+                    )
+                radial_text_capacity = max(
+                    0.0,
+                    2.0
+                    * min(
+                        label_r - canvas.center_radius_mm,
+                        gen_outer - label_r,
+                    )
+                    - 2.0 * _RING_GAP_MM,
+                )
+                couple_minimum_size = min(4.0, radial_text_capacity)
+                if label_font_capacity is not None:
+                    couple_minimum_size = min(
+                        couple_minimum_size,
+                        label_font_capacity,
+                    )
                 child_dates = (
                     _date_label(branch.person.handle)
                     if dates_lookup is not None and branch.person
@@ -3464,7 +3626,7 @@ def layout_descendants(
                     fitted_couple, fitted_size, fitted_width = _fit_text_to_width(
                         couple_label,
                         target_size=font_size,
-                        minimum_size=4.0,
+                        minimum_size=couple_minimum_size,
                         max_width=couple_width,
                         allow_ellipsis=False,
                     )

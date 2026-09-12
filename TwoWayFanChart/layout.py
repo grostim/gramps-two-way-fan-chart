@@ -81,6 +81,8 @@ _DESCENDANT_LATER_RING_MIN_WIDTH_MM = 30.0
 # and its regression probes share one geometric contract.
 _DESCENDANT_OUTER_RADIUS_RATIO = 0.76
 _DESCENDANT_MEDALLION_TARGET_RATIO = 28 / 600
+_MEDALLION_EDGE_CLEARANCE_MM = 1.6
+_MEDALLION_TEXT_RESERVE_RATIO = 0.58
 
 
 @dataclass(frozen=True, slots=True)
@@ -1703,6 +1705,12 @@ _DESC_MIN_SWEEP_BY_GENERATION = {
 # large-format output. Narrow sectors degrade to text-only instead of shrinking
 # every medallion in the generation to an unreadable common minimum.
 _MIN_INITIALS_MEDALLION_RADIUS_MM = 3.2
+# A direct-child ring narrower than this cannot satisfy the adaptive dense
+# medallion target while retaining its text lane. Keep it as a last-resort
+# donor floor when widening the grandchild ring.
+_DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM = (
+    2 * _MIN_INITIALS_MEDALLION_RADIUS_MM + _MEDALLION_EDGE_CLEARANCE_MM
+) / (1.0 - _MEDALLION_TEXT_RESERVE_RATIO)
 
 
 def _count_leaves(branch: DescendantBranch) -> int:
@@ -2054,7 +2062,11 @@ def _descendant_ring_bounds(
             # A three-generation layout has only one later ring. Preserve a
             # small direct-child lane as well, but use it as the final donor so
             # the grandchild target remains exact whenever the page can hold it.
-            minimum_direct_visible_width = max(8.0, total_depth * 0.05)
+            minimum_direct_visible_width = max(
+                8.0,
+                total_depth * 0.05,
+                _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
+            )
             reducible = max(
                 widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
                 0.0,
@@ -2461,13 +2473,13 @@ def layout_descendants(
         """Return a readable target; individual narrow sectors may omit it."""
         ideal = {1: 8.2, 2: 5.4, 3: 4.0, 4: 3.4, 5: 3.2}.get(depth, 3.2)
         reserved_text_depth = (
-            min(36.0, ring_depth * 0.58)
+            min(36.0, ring_depth * _MEDALLION_TEXT_RESERVE_RATIO)
             if depth == 1
             else min(max(28.0, ring_depth * 0.45), ring_depth * 0.58)
         )
         radial_cap = max(
             0.0,
-            (ring_depth - 1.6 - reserved_text_depth) / 2.0,
+            (ring_depth - _MEDALLION_EDGE_CLEARANCE_MM - reserved_text_depth) / 2.0,
         )
         return min(ideal, radial_cap)
 

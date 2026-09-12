@@ -5,13 +5,22 @@ from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
     _DESCENDANT_FIRST_GEN_LINE_GAP_MM,
     _DESCENDANT_TITLE_GAP_MM,
+    _MIN_INITIALS_MEDALLION_RADIUS_MM,
     _RING_GAP_MM,
     _descendant_ring_bounds,
     calculate_canvas,
     layout_descendants,
     layout_titles,
 )
-from TwoWayFanChart.model import DescendantBranch, PersonNode, ScenePathText, SceneSector, UnionBranch
+from TwoWayFanChart.model import (
+    DescendantBranch,
+    PersonNode,
+    SceneCircle,
+    SceneImage,
+    ScenePathText,
+    SceneSector,
+    UnionBranch,
+)
 
 
 _BASE_WEIGHTS_FOR_FOUR_GENERATIONS = (1.0, 1.35, 1.7, 2.05)
@@ -160,6 +169,50 @@ class SecondGenerationLayoutTests(unittest.TestCase):
             + max(ring_outers)
             + _DESCENDANT_TITLE_GAP_MM,
         )
+
+    def test_a1_deep_layout_keeps_direct_child_portrait_medallions(self):
+        for generations in (3, 4):
+            branch_at_depth = branch(f"g{generations}", generations)
+            for depth in range(generations - 1, 0, -1):
+                branch_at_depth = branch(
+                    f"g{depth}",
+                    depth,
+                    children=(branch_at_depth,),
+                    spouse=f"s{depth}",
+                )
+            chart = calculate_canvas(
+                PaperRegion(PaperSize.A1, Orientation.LANDSCAPE),
+                ancestor_generations=5,
+                descendant_generations=generations,
+            )
+            scene = layout_descendants(
+                chart,
+                (branch_at_depth,),
+                name_lookup=lambda handle: handle,
+                dates_lookup=lambda _handle: "",
+                portrait_lookup=lambda handle: f"data:image/png;base64,{handle}",
+            )
+            circles = [
+                node for node in scene.children if isinstance(node, SceneCircle)
+            ]
+            images = [
+                node for node in scene.children if isinstance(node, SceneImage)
+            ]
+
+            self.assertGreaterEqual(
+                len(circles),
+                2,
+                msg=f"A1 generation {generations} lost direct-child medallions",
+            )
+            self.assertGreaterEqual(
+                len(images),
+                2,
+                msg=f"A1 generation {generations} lost direct-child portraits",
+            )
+            self.assertGreaterEqual(
+                min(circle.r for circle in circles),
+                _MIN_INITIALS_MEDALLION_RADIUS_MM,
+            )
 
     def test_two_generation_chart_doubles_the_grandchild_ring(self):
         grandchild = branch("grandchild", 2)

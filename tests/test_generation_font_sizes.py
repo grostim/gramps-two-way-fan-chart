@@ -11,6 +11,9 @@ from TwoWayFanChart.model import (
 )
 
 
+_ONE_TYPOGRAPHIC_POINT_MM = 25.4 / 72.0
+
+
 def branch(
     handle: str,
     generation: int,
@@ -346,16 +349,16 @@ class GenerationFontSizeTests(unittest.TestCase):
         self.assertEqual(len({round(node.font_size, 9) for node in second_dates}), 1)
         self.assertAlmostEqual(
             first_dates[0].font_size,
-            first_names[0].font_size - 1.0,
+            first_names[0].font_size - _ONE_TYPOGRAPHIC_POINT_MM,
             places=9,
         )
         self.assertAlmostEqual(
             second_dates[0].font_size,
-            second_names[0].font_size - 1.0,
+            second_names[0].font_size - _ONE_TYPOGRAPHIC_POINT_MM,
             places=9,
         )
 
-    def test_dense_first_generation_dates_are_one_step_below_names(self):
+    def test_dense_first_generation_dates_are_one_point_below_names(self):
         root = branch(
             "root",
             1,
@@ -394,7 +397,11 @@ class GenerationFontSizeTests(unittest.TestCase):
             and node.content == dates["root"]
         )
 
-        self.assertAlmostEqual(date.font_size, name.font_size - 1.0, places=9)
+        self.assertAlmostEqual(
+            date.font_size,
+            name.font_size - _ONE_TYPOGRAPHIC_POINT_MM,
+            places=9,
+        )
         self.assertNotIn("…", name.content)
         self.assertNotIn("…", date.content)
 

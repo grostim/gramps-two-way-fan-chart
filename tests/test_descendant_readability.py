@@ -695,6 +695,52 @@ class DescendantReadabilityTests(unittest.TestCase):
             )
         )
 
+    def test_continuation_dots_clear_the_descendant_title(self):
+        root = DescendantBranch(
+            "title-clearance-last-visible",
+            person("title-clearance-last-visible"),
+            1,
+            (
+                UnionBranch(
+                    "title-clearance-family",
+                    "title-clearance-spouse",
+                    ("not-rendered-child",),
+                    ("birth",),
+                ),
+            ),
+            (),
+        )
+        canvas = a0_canvas(descendant_generations=1)
+        descendant_scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        title_scene = layout_titles(
+            canvas,
+            ancestor_generations=0,
+            descendant_generations=1,
+        )
+        dots = [
+            node
+            for node in descendant_scene.children
+            if isinstance(node, SceneCircle)
+            and node.fill == CONTINUATION_DOT_FILL
+            and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
+        ]
+        title = next(
+            node
+            for node in title_scene.children
+            if isinstance(node, SceneText) and node.content.startswith("DESCENDANTS")
+        )
+
+        self.assertEqual(len(dots), 3)
+        self.assertGreaterEqual(
+            title.y - max(dot.cy + dot.r for dot in dots),
+            2.0,
+        )
+
     def test_continuation_dots_follow_the_populated_last_generation_union(self):
         root = DescendantBranch(
             "multi-union-last-visible",

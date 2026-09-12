@@ -1817,7 +1817,9 @@ _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM = (
 # Continuation marker: three small circles on the branch's outward ray.
 _DESCENDANT_CONTINUATION_DOT_RADIUS_MM = 0.55
 _DESCENDANT_CONTINUATION_DOT_OFFSET_MM = 2.0
-_DESCENDANT_CONTINUATION_DOT_SPACING_MM = 2.0
+# Keep the marker sequence within the title gap while retaining a visible
+# radial separation between the three dots.
+_DESCENDANT_CONTINUATION_DOT_SPACING_MM = 1.75
 
 
 def _count_leaves(branch: DescendantBranch) -> int:

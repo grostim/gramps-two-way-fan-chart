@@ -93,6 +93,13 @@ _DIRECT_LABEL_MIN_FONT_SIZE_MM = 2.0
 _DATE_FONT_STEP_MM = 1.0
 _MIN_DATE_FONT_SIZE_MM = 0.25
 _MIN_NAME_FONT_SIZE_MM = _MIN_DATE_FONT_SIZE_MM + _DATE_FONT_STEP_MM
+# Layout font sizes are expressed in millimetres; one typographic point is
+# 25.4 / 72 mm. Descendant dates use this smaller step without changing the
+# established ancestor date sizing above.
+_DESCENDANT_DATE_FONT_STEP_MM = 25.4 / 72.0
+_MIN_DESCENDANT_NAME_FONT_SIZE_MM = (
+    _MIN_DATE_FONT_SIZE_MM + _DESCENDANT_DATE_FONT_STEP_MM
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,6 +369,13 @@ def _date_font_size(name_font_size: float) -> float:
         # its measured capacity or violating the one-step relationship.
         return 0.0
     return name_font_size - _DATE_FONT_STEP_MM
+
+
+def _descendant_date_font_size(name_font_size: float) -> float:
+    """Return a descendant date size one typographic point below its name."""
+    if name_font_size < _MIN_DESCENDANT_NAME_FONT_SIZE_MM:
+        return 0.0
+    return name_font_size - _DESCENDANT_DATE_FONT_STEP_MM
 
 
 def _font_size_for_width(
@@ -2456,10 +2470,10 @@ def layout_descendants(
         return generation_name_sizes.get(depth, local_size)
 
     def _generation_date_size(depth: int, fallback_name_size: float) -> float:
-        """Return one shared date size, one step below its name generation."""
+        """Return one shared descendant date size below its name generation."""
         if depth in generation_date_sizes:
             return generation_date_sizes[depth]
-        return _date_font_size(
+        return _descendant_date_font_size(
             generation_name_sizes.get(depth, fallback_name_size)
         )
 
@@ -3786,7 +3800,7 @@ def layout_descendants(
         if sizes
     }
     generation_date_sizes = {
-        depth: _date_font_size(name_size)
+        depth: _descendant_date_font_size(name_size)
         for depth, name_size in generation_name_sizes.items()
     }
     measure_only = False

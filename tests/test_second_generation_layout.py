@@ -214,6 +214,42 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                 _MIN_INITIALS_MEDALLION_RADIUS_MM,
             )
 
+    def test_a1_and_a2_keep_the_doubled_grandchild_ring(self):
+        for paper_size in (PaperSize.A1, PaperSize.A2):
+            for generations in (3, 4):
+                chart = calculate_canvas(
+                    PaperRegion(paper_size, Orientation.LANDSCAPE),
+                    ancestor_generations=5,
+                    descendant_generations=generations,
+                )
+                _direct_inner, _direct_outer = _descendant_ring_bounds(
+                    chart.descendant_inner_radius_mm,
+                    chart.descendant_outer_radius_mm,
+                    generations,
+                    1,
+                )
+                grandchild_inner, grandchild_outer = _descendant_ring_bounds(
+                    chart.descendant_inner_radius_mm,
+                    chart.descendant_outer_radius_mm,
+                    generations,
+                    2,
+                )
+                total_depth = (
+                    chart.descendant_outer_radius_mm
+                    - chart.descendant_inner_radius_mm
+                )
+                weights = _BASE_WEIGHTS_FOR_FOUR_GENERATIONS[:generations]
+                baseline_grandchild_width = (
+                    total_depth * weights[1] / sum(weights) - _RING_GAP_MM
+                )
+
+                self.assertAlmostEqual(
+                    grandchild_outer - grandchild_inner,
+                    baseline_grandchild_width * 2.0,
+                    places=6,
+                    msg=f"{paper_size.value} generation {generations}",
+                )
+
     def test_two_generation_chart_doubles_the_grandchild_ring(self):
         grandchild = branch("grandchild", 2)
         direct_child = branch("child", 1, children=(grandchild,))

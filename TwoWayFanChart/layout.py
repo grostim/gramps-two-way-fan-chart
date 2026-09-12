@@ -2040,10 +2040,42 @@ def _descendant_ring_bounds(
         # remains contained within the original outer radius.
         grandchild_visible_width = max(widths[1] - _RING_GAP_MM, 0.0)
         remaining_transfer = grandchild_visible_width
+        minimum_direct_visible_width = max(
+            8.0,
+            total_depth * 0.05,
+            _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
+        )
         minimum_later_visible_width = min(
             _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
             max(8.0, total_depth * 0.30),
         )
+        # On smaller pages, the normal later-ring floor can consume the space
+        # needed to complete the target doubling. Scale that floor before
+        # taking more from the direct-child ring; the latter must retain its
+        # medallion capacity whenever the total radial budget allows it.
+        direct_donor_capacity = max(
+            widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
+            0.0,
+        )
+        later_ring_count = len(widths) - 2
+        needed_later_transfer = max(
+            remaining_transfer - direct_donor_capacity,
+            0.0,
+        )
+        if later_ring_count and needed_later_transfer > 0.0:
+            later_visible_budget = sum(
+                max(width - _RING_GAP_MM, 0.0)
+                for width in widths[2:]
+            )
+            scaled_later_floor = max(
+                0.0,
+                (later_visible_budget - needed_later_transfer)
+                / later_ring_count,
+            )
+            minimum_later_visible_width = min(
+                minimum_later_visible_width,
+                scaled_later_floor,
+            )
         # Preserve the generations immediately following the target whenever
         # possible: the outermost rings are the least identity-dense and can
         # donate their excess width without collapsing intermediate unions.
@@ -2062,11 +2094,6 @@ def _descendant_ring_bounds(
             # A three-generation layout has only one later ring. Preserve a
             # small direct-child lane as well, but use it as the final donor so
             # the grandchild target remains exact whenever the page can hold it.
-            minimum_direct_visible_width = max(
-                8.0,
-                total_depth * 0.05,
-                _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
-            )
             reducible = max(
                 widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
                 0.0,

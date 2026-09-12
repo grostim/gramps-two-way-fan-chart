@@ -2224,6 +2224,7 @@ def layout_descendants(
     portrait_lookup=None,
     highlight_lookup=None,
     show_highlight_markers: bool = False,
+    configured_generation_limit: int | None = None,
 ) -> SceneNode:
     """Place all descendant medallions in the lower half-circle.
 
@@ -2239,6 +2240,11 @@ def layout_descendants(
 
     Highlight markers are opt-in so publication views do not expose tag
     annotations unless explicitly requested.
+
+    ``configured_generation_limit`` is the report's requested descendant
+    depth. The production pipeline passes it explicitly; ``None`` preserves
+    compatibility for low-level callers that provide only a materialized
+    scene.
     """
     if not branches:
         return SceneNode(children=())
@@ -2271,6 +2277,11 @@ def layout_descendants(
     inner_r = canvas.descendant_inner_radius_mm
     outer_r = canvas.descendant_outer_radius_mm
     max_gen = max(_max_desc_depth(b) for b in branches) if branches else 1
+    displayed_generation_limit = (
+        max_gen
+        if configured_generation_limit is None
+        else configured_generation_limit
+    )
     total_depth = outer_r - inner_r
     if max_gen <= 1:
         ring_widths = [total_depth]
@@ -3941,7 +3952,7 @@ def layout_descendants(
         # Use that metadata to signal that the visible descendant continues.
         # Multi-union people get one marker per union cell, so a continuation
         # cannot be mistaken for a neighboring spouse's branch.
-        if depth == max_gen:
+        if depth == displayed_generation_limit:
             if union_cells:
                 for cell in union_cells:
                     if (

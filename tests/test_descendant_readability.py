@@ -628,6 +628,7 @@ class DescendantReadabilityTests(unittest.TestCase):
                 "last-visible-spouse": "Visible Spouse",
             }[handle],
             dates_lookup=lambda _handle: "",
+            configured_generation_limit=1,
         )
         dots = [
             node
@@ -684,6 +685,38 @@ class DescendantReadabilityTests(unittest.TestCase):
             (root,),
             name_lookup=lambda handle: handle,
             dates_lookup=lambda _handle: "",
+        )
+
+        self.assertFalse(
+            any(
+                isinstance(node, SceneCircle)
+                and node.fill == CONTINUATION_DOT_FILL
+                and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
+                for node in scene.children
+            )
+        )
+
+    def test_unresolved_child_before_configured_limit_does_not_emit_dots(self):
+        root = DescendantBranch(
+            "unresolved-before-limit",
+            person("unresolved-before-limit"),
+            1,
+            (
+                UnionBranch(
+                    "unresolved-family",
+                    "unresolved-spouse",
+                    ("missing-child",),
+                    ("birth",),
+                ),
+            ),
+            (),
+        )
+        scene = layout_descendants(
+            a0_canvas(descendant_generations=3),
+            (root,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+            configured_generation_limit=3,
         )
 
         self.assertFalse(

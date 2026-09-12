@@ -486,7 +486,7 @@ class DescendantReadabilityTests(unittest.TestCase):
             _MIN_INITIALS_MEDALLION_RADIUS_MM,
         )
 
-    def test_intermediate_couple_uses_radial_text_and_last_generation_has_no_spouse(self):
+    def test_intermediate_and_last_generation_couples_use_radial_text(self):
         last = branch("last", 3, spouse="last-spouse")
         middle = branch("middle", 2, children=(last,), spouse="middle-spouse")
         root = branch("root", 1, children=(middle,), spouse="root-spouse")
@@ -512,7 +512,8 @@ class DescendantReadabilityTests(unittest.TestCase):
 
         self.assertTrue(any("Middle Spouse" in content for content in straight))
         self.assertFalse(any("Middle Spouse" in content for content in curved))
-        self.assertFalse(any("Last Spouse" in content for content in straight + curved))
+        self.assertTrue(any("Last Spouse" in content for content in straight))
+        self.assertFalse(any("Last Spouse" in content for content in curved))
         spouse_nodes = [
             node
             for node in (*straight_nodes, *curved_nodes)

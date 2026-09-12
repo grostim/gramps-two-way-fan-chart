@@ -2766,21 +2766,20 @@ def layout_descendants(
         child_label = _short(raw_label, depth)
 
         spouse_entries: list[tuple[str, str, str]] = []
-        if depth == 1 or (depth < max_gen and max_gen > 1) or union_cells:
-            # ``union_cells`` extends the spouse contract to multi-union people at
-            # the final configured depth: each marriage cell names its own spouse
-            # even when no further descendant ring exists below it.
-            for union in branch.unions:
-                if union.spouse_handle:
-                    sp_raw = _spouse_label(union, _name_label)
-                    if sp_raw:
-                        spouse_entries.append(
-                            (
-                                union.spouse_handle,
-                                sp_raw,
-                                _short(sp_raw, depth),
-                            )
+        # Every displayed descendant generation keeps its couple label. This
+        # includes the final ring, where there is no child ring to associate
+        # with the union but the spouse remains part of the displayed couple.
+        for union in branch.unions:
+            if union.spouse_handle:
+                sp_raw = _spouse_label(union, _name_label)
+                if sp_raw:
+                    spouse_entries.append(
+                        (
+                            union.spouse_handle,
+                            sp_raw,
+                            _short(sp_raw, depth),
                         )
+                    )
 
         spouse_handle = spouse_entries[0][0] if spouse_entries else None
         spouse_medallion_label = spouse_entries[0][1] if spouse_entries else None

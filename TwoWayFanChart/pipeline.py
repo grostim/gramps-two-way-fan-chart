@@ -435,6 +435,7 @@ def _build_scene(
         portrait_lookup=_safe_portrait,
         highlight_lookup=_safe_highlight,
         show_highlight_markers=config.show_highlight_markers,
+        configured_generation_limit=config.descendant_generations,
     )
 
     # --- Titles and scene statistics ---

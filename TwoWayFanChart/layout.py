@@ -29,6 +29,7 @@ try:
         HIDDEN_FILL,
         TEXT_DARK,
         TEXT_GREY,
+        CONTINUATION_DOT_FILL,
         SECTOR_STROKE,
         SECTOR_STROKE_WIDTH,
     )
@@ -55,6 +56,7 @@ except ModuleNotFoundError:
         HIDDEN_FILL,
         TEXT_DARK,
         TEXT_GREY,
+        CONTINUATION_DOT_FILL,
         SECTOR_STROKE,
         SECTOR_STROKE_WIDTH,
     )
@@ -1812,6 +1814,12 @@ _MIN_INITIALS_MEDALLION_RADIUS_MM = 3.2
 _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM = (
     2 * _MIN_INITIALS_MEDALLION_RADIUS_MM + _MEDALLION_EDGE_CLEARANCE_MM
 ) / (1.0 - _MEDALLION_TEXT_RESERVE_RATIO)
+# Continuation marker: three small circles on the branch's outward ray.
+_DESCENDANT_CONTINUATION_DOT_RADIUS_MM = 0.55
+_DESCENDANT_CONTINUATION_DOT_OFFSET_MM = 2.0
+# Keep the marker sequence within the title gap while retaining a visible
+# radial separation between the three dots.
+_DESCENDANT_CONTINUATION_DOT_SPACING_MM = 1.75
 
 
 def _count_leaves(branch: DescendantBranch) -> int:
@@ -2216,6 +2224,7 @@ def layout_descendants(
     portrait_lookup=None,
     highlight_lookup=None,
     show_highlight_markers: bool = False,
+    configured_generation_limit: int | None = None,
 ) -> SceneNode:
     """Place all descendant medallions in the lower half-circle.
 
@@ -2226,9 +2235,16 @@ def layout_descendants(
     - A second curved arc with the spouse name prefixed by ``×``
     - Medallions at the midpoint of first-generation sectors only
     - Straight text for grandchildren
+    - Three radial continuation dots when the final displayed person has
+      recorded children beyond the configured depth
 
     Highlight markers are opt-in so publication views do not expose tag
     annotations unless explicitly requested.
+
+    ``configured_generation_limit`` is the report's requested descendant
+    depth. The production pipeline passes it explicitly; ``None`` preserves
+    compatibility for low-level callers that provide only a materialized
+    scene.
     """
     if not branches:
         return SceneNode(children=())
@@ -2255,6 +2271,11 @@ def layout_descendants(
     inner_r = canvas.descendant_inner_radius_mm
     outer_r = canvas.descendant_outer_radius_mm
     max_gen = max(_max_desc_depth(b) for b in branches) if branches else 1
+    displayed_generation_limit = (
+        max_gen
+        if configured_generation_limit is None
+        else configured_generation_limit
+    )
     total_depth = outer_r - inner_r
     if max_gen <= 1:
         ring_widths = [total_depth]
@@ -2497,6 +2518,29 @@ def layout_descendants(
                 font_size=radius * 0.55,
                 fill=TEXT_DARK,
                 anchor="middle",
+            ))
+
+    def _emit_continuation_dots(
+        start_angle: float,
+        sweep_angle: float,
+        ring_outer: float,
+    ) -> None:
+        """Render three small dots beyond one final descendant cell."""
+        if measure_only or sweep_angle <= 0.0:
+            return
+        mid_angle = start_angle + sweep_angle / 2.0
+        for index in range(3):
+            dot_radius = (
+                ring_outer
+                + _DESCENDANT_CONTINUATION_DOT_OFFSET_MM
+                + index * _DESCENDANT_CONTINUATION_DOT_SPACING_MM
+            )
+            dot_x, dot_y = _polar(cx, cy, dot_radius, mid_angle)
+            all_children.append(SceneCircle(
+                cx=dot_x,
+                cy=dot_y,
+                r=_DESCENDANT_CONTINUATION_DOT_RADIUS_MM,
+                fill=CONTINUATION_DOT_FILL,
             ))
 
     def _place_branch(
@@ -3700,6 +3744,33 @@ def layout_descendants(
             # Union boundaries and the couple labels already identify each
             # marriage cell. Do not repeat the family Gramps ID and spouse
             # name in a second header lane below the child ring.
+
+        # The extraction deliberately keeps the child handles of the final
+        # displayed generation even though their branches are not materialized.
+        # Use that metadata to signal that the visible descendant continues.
+        # Multi-union people get one marker per union cell, so a continuation
+        # cannot be mistaken for a neighboring spouse's branch.
+        if depth == displayed_generation_limit:
+            if union_cells:
+                for cell in union_cells:
+                    if (
+                        0 <= cell.union_index < len(branch.unions)
+                        and branch.unions[cell.union_index].child_handles
+                    ):
+                        _emit_continuation_dots(
+                            cell.start_angle,
+                            cell.sweep_angle,
+                            gen_outer,
+                        )
+            elif (
+                len(branch.unions) == 1
+                and branch.unions[0].child_handles
+            ):
+                _emit_continuation_dots(
+                    alloc_start,
+                    alloc_sweep,
+                    gen_outer,
+                )
 
     # Measure every name once so the smallest fitting size becomes the
     # generation-wide contract. The second pass then renders all names in that

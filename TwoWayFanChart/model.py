@@ -241,7 +241,7 @@ class SceneSector:
 
 @dataclass(frozen=True, slots=True)
 class SceneCircle:
-    """A circle (typically a portrait medallion)."""
+    """A circle (typically a portrait medallion or continuation dot)."""
 
     cx: float
     cy: float

@@ -320,6 +320,38 @@ def extract_descendant_branches(
                 for ref, child_relation in child_refs_with_relations
                 if allowed is None or child_relation in allowed
             ]
+            if generation == generations:
+                # Final-generation children are not materialized, so validate
+                # their handles before retaining them as continuation evidence.
+                validated_child_refs: list[tuple[Any, str]] = []
+                for child_index, (child_ref, child_relation) in enumerate(
+                    child_refs_with_relations
+                ):
+                    child_handle = child_ref.get_reference_handle()
+                    child = database.get_person_from_handle(child_handle)
+                    child_position_id = (
+                        f"{position_id}-{union_index}-{child_index}"
+                    )
+                    if child is None:
+                        diagnostics.append(
+                            Diagnostic(
+                                "MISSING_DESCENDANT",
+                                "A recorded descendant handle cannot be resolved.",
+                                child_position_id,
+                            )
+                        )
+                        continue
+                    if child_handle in path or child_handle == person_handle:
+                        diagnostics.append(
+                            Diagnostic(
+                                "DESCENDANT_CYCLE",
+                                "Descendant branch stopped because a recorded relationship loops.",
+                                child_position_id,
+                            )
+                        )
+                        continue
+                    validated_child_refs.append((child_ref, child_relation))
+                child_refs_with_relations = validated_child_refs
             union = UnionBranch(
                 family.get_handle(),
                 _spouse_handle(family, person_handle),

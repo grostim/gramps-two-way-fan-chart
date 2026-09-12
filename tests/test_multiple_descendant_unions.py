@@ -7,6 +7,7 @@ import unittest
 from TwoWayFanChart.extract import extract_descendant_branches
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
+    _DESCENDANT_CONTINUATION_DOT_RADIUS_MM,
     _allocate_descendant_branches_by_demand,
     _allocate_descendant_union_cells,
     _allocate_descendant_union_groups,
@@ -212,6 +213,60 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             ],
             [["I1001", "I1002"], ["I1003"]],
         )
+
+    def test_final_generation_continuation_uses_only_resolved_children(self):
+        database = make_multiple_union_database()
+        database.people["child-0335-a"].families.append("f-final")
+        database.people["resolved-final"] = FakePerson(
+            "resolved-final",
+            "I3001",
+        )
+        database.families["f-final"] = FakeFamily(
+            "f-final",
+            "F-FINAL",
+            "child-0335-a",
+            "spouse-final",
+            [
+                FakeChildRef("resolved-final"),
+                FakeChildRef("missing-final"),
+            ],
+        )
+
+        branches, diagnostics = extract_descendant_branches(
+            database,
+            "center",
+            generations=2,
+        )
+        final_branch = branches[0].children_by_union[0][0]
+
+        self.assertEqual(
+            final_branch.unions[0].child_handles,
+            ("resolved-final",),
+        )
+        self.assertEqual(
+            [diagnostic.code for diagnostic in diagnostics],
+            ["MISSING_DESCENDANT"],
+        )
+
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+        scene = layout_descendants(
+            canvas,
+            branches,
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+            configured_generation_limit=2,
+        )
+        dots = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneCircle)
+            and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
+        ]
+        self.assertEqual(len(dots), 3)
 
     def test_layout_keeps_all_union_spouses_visible(self):
         child_a = DescendantBranch(

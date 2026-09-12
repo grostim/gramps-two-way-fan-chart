@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc \
+            libcairo2-dev \
+            libgirepository1.0-dev \
+            pkg-config \
+            python3-dev \
+            gir1.2-gtk-3.0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-ci.txt
+          python -m pip check
+
+      - name: Verify Gramps rendering runtime
+        run: |
+          python - <<'PY'
+          import cairo
+          import gi
+          from importlib.metadata import version
+
+          print(f"gramps={version('gramps')}")
+          print(f"pycairo={cairo.version}")
+          print(f"pygobject={gi.__file__}")
+          PY
+
+      - name: Compile sources
+        run: |
+          python -m compileall -q \
+            TwoWayFanChart \
+            build_addon.py \
+            tests
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Check committed diff formatting
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -eu
+          case "$GITHUB_EVENT_NAME" in
+            pull_request)
+              git diff --check "$BASE_SHA...$HEAD_SHA"
+              ;;
+            push)
+              git diff --check "$BEFORE_SHA" "$GITHUB_SHA"
+              ;;
+            *)
+              git diff --check HEAD^ HEAD
+              ;;
+          esac
+
+  distribution:
+    name: distribution
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Build distribution
+        run: python build_addon.py
+
+      - name: Validate distribution
+        run: python ci/validate_distribution.py
+
+      - name: Verify generated files are committed
+        run: git diff --exit-code -- gramps60
+
+      - name: Upload add-on archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: TwoWayFanChart-${{ github.sha }}
+          path: gramps60/download/TwoWayFanChart.addon.tgz
+          if-no-files-found: error

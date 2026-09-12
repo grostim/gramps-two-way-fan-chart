@@ -381,6 +381,17 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                 ring_outer + 1e-3,
                 msg=f"{name} label leaves its direct-child ring",
             )
+            glyph_half_height = couple_label.font_size * 0.50
+            self.assertGreaterEqual(
+                radius - glyph_half_height,
+                chart.center_radius_mm + _RING_GAP_MM - 1e-3,
+                msg=f"{name} label glyphs intersect the center circle",
+            )
+            self.assertLessEqual(
+                radius + glyph_half_height,
+                ring_outer - _RING_GAP_MM + 1e-3,
+                msg=f"{name} label glyphs leave the direct-child ring",
+            )
 
 
 if __name__ == "__main__":

@@ -3493,6 +3493,16 @@ def layout_descendants(
                     ),
                 )
                 font_size = outer_r * (12 / 600)
+                radial_text_capacity = max(
+                    0.0,
+                    2.0
+                    * min(
+                        label_r - canvas.center_radius_mm,
+                        gen_outer - label_r,
+                    )
+                    - 2.0 * _RING_GAP_MM,
+                )
+                couple_minimum_size = min(4.0, radial_text_capacity)
                 child_dates = (
                     _date_label(branch.person.handle)
                     if dates_lookup is not None and branch.person
@@ -3530,7 +3540,7 @@ def layout_descendants(
                     fitted_couple, fitted_size, fitted_width = _fit_text_to_width(
                         couple_label,
                         target_size=font_size,
-                        minimum_size=4.0,
+                        minimum_size=couple_minimum_size,
                         max_width=couple_width,
                         allow_ellipsis=False,
                     )

@@ -65,7 +65,7 @@ def update_compose(
     text = compose_path.read_text(encoding="utf-8")
     required_fragments = (
         "grampsweb_addon:",
-        "service_completed_successfully",
+        "service_healthy",
         "twfc_addon_sync",
         "addons/TwoWayFanChart:/root/gramps/gramps60/plugins/TwoWayFanChart:ro",
     )

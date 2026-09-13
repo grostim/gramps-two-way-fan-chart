@@ -15,7 +15,7 @@ _COMPOSE = """services:
   grampsweb:
     depends_on:
       grampsweb_addon:
-        condition: service_completed_successfully
+        condition: service_healthy
     volumes:
       - '${APPDATA_PATH}/grampsweb/addons/TwoWayFanChart:/root/gramps/gramps60/plugins/TwoWayFanChart:ro'
     environment:

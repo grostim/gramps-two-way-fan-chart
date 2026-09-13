@@ -66,13 +66,11 @@ except ModuleNotFoundError:
 # Layout constants (mm) — defaults from spec §5.6
 # ---------------------------------------------------------------------------
 
-_TITLE_ZONE_MM = 14.0  # title + subtitle area
+_TITLE_ZONE_MM = 14.0  # retained for ChartCanvas compatibility
 _LEGEND_ZONE_MM = 18.0  # legend at bottom
 _STATS_ZONE_MM = 6.0  # statistics line
 _MIN_CENTER_RADIUS_MM = 8.0  # minimum medallion radius
 _RING_GAP_MM = 0.3  # white space between generation rings
-_ANCESTOR_TITLE_GAP_MM = 4.0
-_DESCENDANT_TITLE_GAP_MM = 8.0
 _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
 # When the target grandchild ring is widened, keep enough radial room in later
 # rings for their identity labels before asking the direct-child ring to donate
@@ -145,8 +143,8 @@ def calculate_canvas(
     available_h = content_h
     available_w = content_w
 
-    # Fill almost the complete content height while retaining enough room for
-    # the two small-cap titles just outside the fan.
+    # Fill almost the complete content height while keeping the fan inside the
+    # printable area.
     max_radius = min(available_h / 2, available_w / 2) * 0.94
 
     # Center zone: the mockup uses 190 px inside a 600 px fan radius.
@@ -170,12 +168,8 @@ def calculate_canvas(
     # is intentionally compact while the ancestor fan fills the publication
     # radius. Center the visible composition bounds instead of the rosace
     # itself, so the lower paper margin is not needlessly oversized.
-    top_extent = ancestor_outer + (
-        _ANCESTOR_TITLE_GAP_MM if ancestor_generations > 0 else 0.0
-    )
-    bottom_extent = descendant_outer + (
-        _DESCENDANT_TITLE_GAP_MM if descendant_generations > 0 else 0.0
-    )
+    top_extent = ancestor_outer
+    bottom_extent = descendant_outer
     cy = paper.effective_margin_top_mm + (
         content_h + top_extent - bottom_extent
     ) / 2
@@ -1473,7 +1467,7 @@ def layout_center(
 
 
 # ---------------------------------------------------------------------------
-# Title and legend placement
+# Optional decorative blocks
 # ---------------------------------------------------------------------------
 
 def layout_titles(
@@ -1482,38 +1476,8 @@ def layout_titles(
     ancestor_generations: int,
     descendant_generations: int,
 ) -> SceneNode:
-    """Place the ASCENDANTS and DESCENDANTS titles above and below the fan."""
-    cx = canvas.center_cx_mm
-    cy = canvas.center_cy_mm
-    children: list = []
-
-    if ancestor_generations > 0:
-        # Title above the top arc
-        title_y = cy - canvas.ancestor_outer_radius_mm - _ANCESTOR_TITLE_GAP_MM
-        generation_word = "GÉNÉRATION" if ancestor_generations == 1 else "GÉNÉRATIONS"
-        title_text = f"ASCENDANTS · {ancestor_generations} {generation_word}"
-        children.append(SceneText(
-            x=cx, y=title_y,
-            content=title_text,
-            font_size=5.0,
-            fill=TEXT_GREY,
-            anchor="middle",
-        ))
-
-    if descendant_generations > 0:
-        # Title below the bottom arc
-        title_y = cy + canvas.descendant_outer_radius_mm + _DESCENDANT_TITLE_GAP_MM
-        generation_word = "GÉNÉRATION" if descendant_generations == 1 else "GÉNÉRATIONS"
-        title_text = f"DESCENDANTS · {descendant_generations} {generation_word}"
-        children.append(SceneText(
-            x=cx, y=title_y,
-            content=title_text,
-            font_size=5.0,
-            fill=TEXT_GREY,
-            anchor="middle",
-        ))
-
-    return SceneNode(children=tuple(children))
+    """Return an empty compatibility node; section titles are omitted."""
+    return SceneNode(children=())
 
 
 def layout_legend(

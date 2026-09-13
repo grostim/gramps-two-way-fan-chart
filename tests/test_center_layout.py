@@ -21,8 +21,8 @@ class CenterLayoutTests(unittest.TestCase):
             descendant_generations=4,
         )
 
-        top_extent = canvas.ancestor_outer_radius_mm + 4.0
-        bottom_extent = canvas.descendant_outer_radius_mm + 8.0
+        top_extent = canvas.ancestor_outer_radius_mm
+        bottom_extent = canvas.descendant_outer_radius_mm
         top_clearance = (
             canvas.center_cy_mm
             - top_extent

@@ -1942,6 +1942,7 @@ def _allocate_descendant_union_groups(
     start_angle: float,
     total_sweep: float,
     include_empty: bool = False,
+    reverse_display: bool = False,
 ) -> tuple[_DescendantUnionAllocation, ...]:
     """Allocate one contiguous angular block per recorded union.
 
@@ -1954,6 +1955,10 @@ def _allocate_descendant_union_groups(
     marriage without visible children still receives its own block. Child
     placement also enables it, preserving the radial alignment while leaving
     the block empty in later rings.
+
+    ``reverse_display`` reverses the union blocks without changing their
+    original ``union_index`` values, so source associations remain intact while
+    the oldest union is displayed on the left.
     """
     groups = list(_children_grouped_by_union(branch))
     if branch.unions:
@@ -1973,6 +1978,8 @@ def _allocate_descendant_union_groups(
 
     if not indexed_groups:
         return ()
+    if reverse_display:
+        indexed_groups.reverse()
 
     demands = []
     for _union_index, group in indexed_groups:
@@ -2013,6 +2020,7 @@ def _allocate_descendant_union_cells(
     *,
     start_angle: float,
     total_sweep: float,
+    reverse_display: bool = False,
 ) -> tuple[_DescendantUnionAllocation, ...]:
     """Allocate one cell per recorded union at any descendant depth.
 
@@ -2020,18 +2028,23 @@ def _allocate_descendant_union_cells(
     needs a cell. This keeps each generation's person/spouse presentation
     one-to-one with the recorded unions. The child allocations deliberately
     reuse these exact intervals so every union is a continuous radial cell.
+
+    ``reverse_display`` keeps those intervals aligned with the visual union
+    order while retaining each cell's source ``union_index``.
     """
     if len(branch.unions) <= 1:
         return _allocate_descendant_union_groups(
             branch,
             start_angle=start_angle,
             total_sweep=total_sweep,
+            reverse_display=reverse_display,
         )
     return _allocate_descendant_union_groups(
         branch,
         start_angle=start_angle,
         total_sweep=total_sweep,
         include_empty=True,
+        reverse_display=reverse_display,
     )
 
 
@@ -2562,6 +2575,7 @@ def layout_descendants(
                 branch,
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
+                reverse_display=True,
             )
             if len(branch.unions) > 1
             else ()
@@ -3727,6 +3741,7 @@ def layout_descendants(
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
                 include_empty=True,
+                reverse_display=True,
             )
             for union_allocation in union_allocations:
                 display_children = tuple(reversed(union_allocation.children))

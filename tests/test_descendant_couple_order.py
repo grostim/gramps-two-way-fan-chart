@@ -97,6 +97,37 @@ class DescendantCoupleOrderTests(unittest.TestCase):
 
         self.assertLess(labels["oldest-child"].x, labels["youngest-child"].x)
 
+    def test_multi_union_source_children_keep_oldest_on_left(self):
+        oldest = branch("oldest-child", 2)
+        youngest = branch("youngest-child", 2)
+        root = branch(
+            "root",
+            1,
+            children=(oldest, youngest),
+            spouse_handles=("oldest-spouse", "youngest-spouse"),
+            children_by_union=((oldest,), (youngest,)),
+        )
+        chart = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=2,
+        )
+
+        scene = layout_descendants(
+            chart,
+            (root,),
+            name_lookup=lambda handle: handle,
+            dates_lookup=lambda _handle: "",
+        )
+        labels = {
+            node.content: node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content in {"oldest-child", "youngest-child"}
+        }
+
+        self.assertLess(labels["oldest-child"].x, labels["youngest-child"].x)
+
     def test_left_side_stacked_multi_union_keeps_person_above_spouse(self):
         first_union_children = tuple(
             branch(f"first-child-{index}", 3)

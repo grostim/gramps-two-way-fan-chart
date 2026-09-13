@@ -821,8 +821,9 @@ class DescendantReadabilityTests(unittest.TestCase):
             root,
             start_angle=96.0,
             total_sweep=_DESC_TOTAL_SWEEP,
+            reverse_display=True,
         )
-        continuation_cell = cells[0]
+        continuation_cell = next(cell for cell in cells if cell.union_index == 0)
         expected_angle = (
             continuation_cell.start_angle + continuation_cell.sweep_angle / 2.0
         )

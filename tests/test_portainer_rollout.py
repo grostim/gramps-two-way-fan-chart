@@ -7,8 +7,13 @@ from ci.update_portainer_rollout import update_compose
 
 _COMPOSE = """services:
   grampsweb_addon:
-    configs:
-      - source: twfc_addon_sync
+    command:
+      - /bin/sh
+      - -ec
+      - |
+          apk add --no-cache ca-certificates curl
+          sha256sum --check archive.sha256
+          tail -f /dev/null
     environment:
       - TWFC_ADDON_VERSION=1.2.39
       - TWFC_ADDON_ROLLOUT=1.2.39-code1
@@ -21,9 +26,6 @@ _COMPOSE = """services:
     environment:
       - TWFC_ADDON_VERSION=1.2.39
       - TWFC_ADDON_ROLLOUT=1.2.39-code1
-configs:
-  twfc_addon_sync:
-    file: ./scripts/sync_grampsweb_addon.sh
 """
 
 

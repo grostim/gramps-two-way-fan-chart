@@ -1343,7 +1343,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(
             labels,
-            ["Personne privée × Conjoint public", "Personnes privées"],
+            ["Personnes privées", "Personne privée × Conjoint public"],
         )
 
     def test_union_fill_is_inherited_by_all_descendant_generations(self):
@@ -2382,7 +2382,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(
             labels,
-            ["Personne privée × Conjoint public", "Personnes privées"],
+            ["Personnes privées", "Personne privée × Conjoint public"],
         )
 
     def test_union_fill_is_inherited_by_all_descendant_generations(self):

@@ -1920,6 +1920,7 @@ def _allocate_descendant_union_groups(
     start_angle: float,
     total_sweep: float,
     include_empty: bool = False,
+    reverse_display: bool = False,
 ) -> tuple[_DescendantUnionAllocation, ...]:
     """Allocate one contiguous angular block per recorded union.
 
@@ -1932,6 +1933,10 @@ def _allocate_descendant_union_groups(
     marriage without visible children still receives its own block. Child
     placement also enables it, preserving the radial alignment while leaving
     the block empty in later rings.
+
+    ``reverse_display`` reverses the union blocks without changing their
+    original ``union_index`` values, so source associations remain intact while
+    the oldest union is displayed on the left.
     """
     groups = list(_children_grouped_by_union(branch))
     if branch.unions:
@@ -1951,6 +1956,8 @@ def _allocate_descendant_union_groups(
 
     if not indexed_groups:
         return ()
+    if reverse_display:
+        indexed_groups.reverse()
 
     demands = []
     for _union_index, group in indexed_groups:
@@ -1991,6 +1998,7 @@ def _allocate_descendant_union_cells(
     *,
     start_angle: float,
     total_sweep: float,
+    reverse_display: bool = False,
 ) -> tuple[_DescendantUnionAllocation, ...]:
     """Allocate one cell per recorded union at any descendant depth.
 
@@ -1998,18 +2006,23 @@ def _allocate_descendant_union_cells(
     needs a cell. This keeps each generation's person/spouse presentation
     one-to-one with the recorded unions. The child allocations deliberately
     reuse these exact intervals so every union is a continuous radial cell.
+
+    ``reverse_display`` keeps those intervals aligned with the visual union
+    order while retaining each cell's source ``union_index``.
     """
     if len(branch.unions) <= 1:
         return _allocate_descendant_union_groups(
             branch,
             start_angle=start_angle,
             total_sweep=total_sweep,
+            reverse_display=reverse_display,
         )
     return _allocate_descendant_union_groups(
         branch,
         start_angle=start_angle,
         total_sweep=total_sweep,
         include_empty=True,
+        reverse_display=reverse_display,
     )
 
 
@@ -2230,11 +2243,16 @@ def layout_descendants(
     # Allocate every first-generation branch from the densest visible depth,
     # not merely its immediate child count. This prevents deep lineages from
     # collapsing into sub-degree outer sectors while sparse branches stay wide.
+    # The fan sweeps clockwise from the right waist to the left waist, so walk
+    # source-ordered children in reverse for display: oldest ends up left,
+    # youngest right. The source index is restored when assigning colors below.
+    display_branches = tuple(reversed(branches))
     allocations = _allocate_descendant_branches_by_demand(
-        branches,
+        display_branches,
         start_angle=_DESC_START_ANGLE,
         total_sweep=_DESC_TOTAL_SWEEP,
     )
+    source_allocations = tuple(reversed(allocations))
 
     all_children: list = []
     measure_only = True
@@ -2535,6 +2553,7 @@ def layout_descendants(
                 branch,
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
+                reverse_display=True,
             )
             if len(branch.unions) > 1
             else ()
@@ -3700,16 +3719,19 @@ def layout_descendants(
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
                 include_empty=True,
+                reverse_display=True,
             )
             for union_allocation in union_allocations:
+                display_children = tuple(reversed(union_allocation.children))
                 child_allocs = _allocate_descendant_branches_by_demand(
-                    union_allocation.children,
+                    display_children,
                     start_angle=union_allocation.start_angle,
                     total_sweep=union_allocation.sweep_angle,
                 )
+                source_child_allocs = tuple(reversed(child_allocs))
                 for child, child_alloc in zip(
                     union_allocation.children,
-                    child_allocs,
+                    source_child_allocs,
                 ):
                     _place_branch(
                         child,
@@ -3756,8 +3778,16 @@ def layout_descendants(
     # physical width constraint without changing the hierarchy.
     # Direct-child order is the palette order; recursive unions must not reserve
     # additional colors before the next central child is visited.
-    for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
-        _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
+    for source_index, (branch, alloc) in enumerate(
+        zip(branches, source_allocations)
+    ):
+        _place_branch(
+            branch,
+            alloc.start_angle,
+            alloc.sweep_angle,
+            1,
+            source_index,
+        )
     generation_name_sizes = {
         depth: min(sizes)
         for depth, sizes in name_size_candidates.items()
@@ -3769,8 +3799,16 @@ def layout_descendants(
     }
     measure_only = False
     all_children = []
-    for bi, (branch, alloc) in enumerate(zip(branches, allocations)):
-        _place_branch(branch, alloc.start_angle, alloc.sweep_angle, 1, bi)
+    for source_index, (branch, alloc) in enumerate(
+        zip(branches, source_allocations)
+    ):
+        _place_branch(
+            branch,
+            alloc.start_angle,
+            alloc.sweep_angle,
+            1,
+            source_index,
+        )
 
     # The SVG backend renders circular arc labels as ordinary text at the arc
     # midpoint. Keep those labels above later-generation sectors: otherwise a

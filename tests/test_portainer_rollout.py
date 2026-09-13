@@ -12,7 +12,7 @@ _COMPOSE = """services:
       - -ec
       - |
           apk add --no-cache ca-certificates curl
-          sha256sum --check archive.sha256
+          sha256sum -c archive.sha256
           tail -f /dev/null
     environment:
       - TWFC_ADDON_VERSION=1.2.39

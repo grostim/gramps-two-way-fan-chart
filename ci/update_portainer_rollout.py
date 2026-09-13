@@ -66,7 +66,8 @@ def update_compose(
     required_fragments = (
         "grampsweb_addon:",
         "service_healthy",
-        "twfc_addon_sync",
+        "apk add --no-cache ca-certificates curl",
+        "sha256sum -c",
         "addons/TwoWayFanChart:/root/gramps/gramps60/plugins/TwoWayFanChart:ro",
     )
     missing_fragments = [fragment for fragment in required_fragments if fragment not in text]

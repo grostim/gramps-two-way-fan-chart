@@ -438,7 +438,7 @@ def _build_scene(
         configured_generation_limit=config.descendant_generations,
     )
 
-    # --- Titles and scene statistics ---
+    # --- Optional decorations (section titles are intentionally omitted) ---
     titles_node = layout_titles(
         canvas,
         ancestor_generations=config.ancestor_generations,

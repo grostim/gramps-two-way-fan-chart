@@ -36,6 +36,41 @@ Dans le gestionnaire d’extensions Gramps, ajoutez le projet `grostim` avec l�
 
 Download `TwoWayFanChart.addon.tgz` from the [latest GitHub release](https://github.com/grostim/gramps-two-way-fan-chart/releases/latest), then use **Addon Manager → Extensions → Install from file**.
 
+## Release and Gramps Web deployment
+
+Every successful `push` to `main`—including a merged pull request—runs the
+following gates in order:
+
+1. test and compile the add-on;
+2. rebuild and validate the committed Gramps distribution;
+3. create the GitHub release `vX.Y.Z` with `TwoWayFanChart.addon.tgz` and its
+   SHA-256 checksum.
+
+The pull request supplies the version. A release PR must update the version in
+`build_addon.py` and `TwoWayFanChart/TwoWayFanChart.gpr.py`, then regenerate the
+archive and both listings with `python3 build_addon.py`. Reusing an existing
+version is rejected rather than replacing an existing tag or release.
+
+The optional `deploy / GrampsWeb` job is skipped unless the repository variable
+`GRAMPSWEB_DEPLOY_ENABLED` is exactly `true`. To enable it:
+
+1. merge the matching `portainer-util` change that adds the
+   `grampsweb_addon` downloader service and its persistent add-on mount;
+2. configure the repository secret `PORTAINER_UTIL_TOKEN` with a fine-grained
+   token limited to **Contents: read/write** on `grostim/portainer-util`;
+3. set the repository variable `GRAMPSWEB_DEPLOY_ENABLED=true`;
+4. keep the Portainer stack connected to `grostim/portainer-util` on `main` with
+   its existing push webhook.
+
+The deployment job commits only the two validated rollout markers to
+`portainer-util`. Portainer then runs the downloader, which retrieves the exact
+GitHub release asset, verifies its checksum, stages it outside the plugin scan
+root, and promotes it atomically. The web and Celery services share the
+read-only add-on mount and are recreated by the semantic rollout marker.
+
+No SSH key or GrampsWeb credential is stored in this repository. Keep
+`PORTAINER_UTIL_TOKEN` in GitHub Actions secrets only.
+
 ## Usage
 
 1. Open a Gramps family tree.
@@ -77,7 +112,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.39**
+- Add-on version: **1.2.40**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

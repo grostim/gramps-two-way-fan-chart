@@ -11,8 +11,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PR runs share a ref-scoped group and may be cancelled. Release-producing
+  # runs use the commit SHA so every push to main keeps its own pending run.
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -73,6 +75,7 @@ jobs:
           python -m compileall -q \
             TwoWayFanChart \
             build_addon.py \
+            ci \
             tests
 
       - name: Run tests
@@ -103,6 +106,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
+    outputs:
+      version: ${{ steps.release_metadata.outputs.version }}
+      tag: ${{ steps.release_metadata.outputs.tag }}
+      archive_name: ${{ steps.release_metadata.outputs.archive_name }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -115,6 +123,30 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Read release metadata
+        id: release_metadata
+        run: python ci/release_metadata.py --github-output "$GITHUB_OUTPUT"
+
+      - name: Reject non-increasing release versions
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+
+          from ci.release_metadata import read_release_metadata, validate_version_is_newer
+
+          metadata = read_release_metadata(Path.cwd())
+          tags = subprocess.check_output(
+              ["git", "tag", "--list", "v*"], text=True
+          ).splitlines()
+          existing_versions = [tag[1:] for tag in tags if tag.startswith("v")]
+          validate_version_is_newer(metadata.version, existing_versions)
+          print(
+              f"release_version_order=ok version={metadata.version} "
+              f"existing_tags={len(existing_versions)}"
+          )
+          PY
+
       - name: Build distribution
         run: python build_addon.py
 
@@ -124,9 +156,242 @@ jobs:
       - name: Verify generated files are committed
         run: git diff --exit-code -- gramps60
 
+      - name: Create archive checksum
+        working-directory: gramps60/download
+        run: sha256sum TwoWayFanChart.addon.tgz > TwoWayFanChart.addon.tgz.sha256
+
       - name: Upload add-on archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: TwoWayFanChart-${{ github.sha }}
-          path: gramps60/download/TwoWayFanChart.addon.tgz
+          path: |
+            gramps60/download/TwoWayFanChart.addon.tgz
+            gramps60/download/TwoWayFanChart.addon.tgz.sha256
           if-no-files-found: error
+
+  release:
+    name: release
+    needs: distribution
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ needs.distribution.outputs.version }}
+      RELEASE_TAG: ${{ needs.distribution.outputs.tag }}
+      RELEASE_ARCHIVE: ${{ needs.distribution.outputs.archive_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download tested distribution
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: TwoWayFanChart-${{ github.sha }}
+          path: release-artifacts
+
+      - name: Verify archive checksum
+        working-directory: release-artifacts
+        run: sha256sum --check "${RELEASE_ARCHIVE}.sha256"
+
+      - name: Create or verify GitHub release
+        run: |
+          set -euo pipefail
+          release_json="$(mktemp)"
+          trap 'rm -f "$release_json"' EXIT
+
+          verify_release() {
+            python3 - \
+              "$release_json" \
+              "$RELEASE_TAG" \
+              "$RELEASE_ARCHIVE" \
+              "$(sha256sum "release-artifacts/$RELEASE_ARCHIVE" | cut -d ' ' -f 1)" \
+              "$(sha256sum "release-artifacts/${RELEASE_ARCHIVE}.sha256" | cut -d ' ' -f 1)" <<'PY'
+          import json
+          import sys
+
+          (
+              release_path,
+              expected_tag,
+              archive_name,
+              archive_sha256,
+              checksum_asset_sha256,
+          ) = sys.argv[1:]
+          release = json.load(open(release_path, encoding="utf-8"))
+          if release.get("draft") or release.get("prerelease"):
+              raise SystemExit("release must be published and non-prerelease")
+          if release.get("tag_name") != expected_tag:
+              raise SystemExit(
+                  f"release tag mismatch: {release.get('tag_name')!r} != {expected_tag!r}"
+              )
+
+          expected_digest = f"sha256:{archive_sha256}"
+          assets = {asset["name"]: asset for asset in release.get("assets", [])}
+          archive = assets.get(archive_name)
+          if archive is None:
+              raise SystemExit(f"release is missing asset {archive_name}")
+          if archive.get("digest") != expected_digest:
+              raise SystemExit(
+                  f"release asset digest mismatch: {archive.get('digest')!r} != {expected_digest!r}"
+              )
+          checksum_name = f"{archive_name}.sha256"
+          checksum = assets.get(checksum_name)
+          if checksum is None:
+              raise SystemExit(f"release is missing asset {checksum_name}")
+          expected_checksum_digest = f"sha256:{checksum_asset_sha256}"
+          if checksum.get("digest") != expected_checksum_digest:
+              raise SystemExit(
+                  "release checksum asset digest mismatch: "
+                  f"{checksum.get('digest')!r} != {expected_checksum_digest!r}"
+              )
+          print(
+              f"release_verified tag={release['tag_name']} "
+              f"archive={archive_name} digest={expected_digest} "
+              f"checksum_digest={expected_checksum_digest}"
+          )
+          PY
+          }
+
+          git fetch --tags origin
+          if git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
+            tag_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::${RELEASE_TAG} already points to ${tag_commit}, expected ${GITHUB_SHA}"
+              exit 1
+            fi
+            if ! gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > "$release_json"; then
+              echo "::error::${RELEASE_TAG} exists without a GitHub release"
+              exit 1
+            fi
+            verify_release
+            exit 0
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > /dev/null 2>&1; then
+            echo "::error::GitHub release ${RELEASE_TAG} exists but its tag is not available at the expected commit"
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            "release-artifacts/$RELEASE_ARCHIVE" \
+            "release-artifacts/${RELEASE_ARCHIVE}.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TwoWayFanChart ${RELEASE_VERSION}" \
+            --generate-notes
+
+          git fetch --tags origin
+          tag_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "::error::created ${RELEASE_TAG} points to ${tag_commit}, expected ${GITHUB_SHA}"
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > "$release_json"
+          verify_release
+
+  deploy_grampsweb:
+    name: deploy / GrampsWeb
+    # No Portainer API or SSH call is made here. The only external write is a
+    # commit to grostim/portainer-util; its existing push webhook deploys the
+    # updated stack on Portainer.
+    needs: [distribution, release]
+    if: >-
+      needs.release.result == 'success' &&
+      vars.GRAMPSWEB_DEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: grampsweb-addon-deploy
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.PORTAINER_UTIL_TOKEN }}
+      RELEASE_VERSION: ${{ needs.distribution.outputs.version }}
+      RELEASE_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout add-on automation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: addon
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout GitHub stack repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: grostim/portainer-util
+          ref: main
+          token: ${{ secrets.PORTAINER_UTIL_TOKEN }}
+          path: portainer-util
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate and update rollout markers
+        working-directory: portainer-util
+        run: |
+          python3 ../addon/ci/update_portainer_rollout.py \
+            docker-compose.yml "$RELEASE_VERSION" "$RELEASE_SHA"
+
+      - name: Verify the marker-only change
+        working-directory: portainer-util
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          if [[ -n "$changed" && "$changed" != "docker-compose.yml" ]]; then
+            echo "::error::unexpected changed files: $changed"
+            exit 1
+          fi
+          if [[ -z "$changed" ]]; then
+            echo "rollout markers are already present in the checked-out GitHub repository"
+          fi
+          git diff --check
+
+      - name: Commit rollout marker to grostim/portainer-util
+        working-directory: portainer-util
+        run: |
+          set -euo pipefail
+          endpoint="repos/grostim/portainer-util/contents/docker-compose.yml"
+          changed="$(git diff --name-only)"
+
+          if [[ -z "$changed" ]]; then
+            readback="$(gh api "$endpoint?ref=main" --jq '.content' | tr -d '\r\n')"
+            printf '%s' "$readback" | base64 --decode > /tmp/portainer-compose-readback.yml
+            cmp -- docker-compose.yml /tmp/portainer-compose-readback.yml
+            echo "portainer_util_commit=already-present"
+            echo "rollout_marker=${RELEASE_VERSION}-release-${RELEASE_SHA:0:12}"
+            exit 0
+          fi
+
+          remote_blob_sha="$(gh api "$endpoint?ref=main" --jq '.sha')"
+          local_blob_sha="$(git rev-parse HEAD:docker-compose.yml)"
+          if [[ "$remote_blob_sha" != "$local_blob_sha" ]]; then
+            echo "::error::portainer-util/main advanced; refusing a non-fast-forward update"
+            exit 1
+          fi
+
+          content="$(base64 -w0 docker-compose.yml)"
+          response="$(gh api "$endpoint" \
+            --method PUT \
+            --field "message=ci: roll out TwoWayFanChart ${RELEASE_VERSION}" \
+            --field "content=${content}" \
+            --field "sha=${remote_blob_sha}" \
+            --field branch=main)"
+          commit_sha="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"]["sha"])' <<<"$response")"
+
+          readback="$(gh api "$endpoint?ref=main" --jq '.content' | tr -d '\r\n')"
+          printf '%s' "$readback" | base64 --decode > /tmp/portainer-compose-readback.yml
+          cmp -- docker-compose.yml /tmp/portainer-compose-readback.yml
+          echo "portainer_util_commit=$commit_sha"
+          echo "rollout_marker=${RELEASE_VERSION}-release-${RELEASE_SHA:0:12}"

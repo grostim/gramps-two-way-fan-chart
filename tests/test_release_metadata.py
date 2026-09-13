@@ -2,7 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ci.release_metadata import read_release_metadata, validate_version, write_github_output
+from ci.release_metadata import (
+    read_release_metadata,
+    validate_version,
+    validate_version_is_newer,
+    write_github_output,
+)
 
 
 class ReleaseMetadataTests(unittest.TestCase):
@@ -23,6 +28,15 @@ class ReleaseMetadataTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "semantic version"):
             validate_version("v1.2.40")
+
+    def test_version_must_be_newer_than_existing_release_tags(self):
+        validate_version_is_newer("1.2.40", ["1.2.39", "1.2.4"])
+
+        with self.assertRaisesRegex(ValueError, "newer than existing release"):
+            validate_version_is_newer("1.2.39", ["1.2.39"])
+
+        with self.assertRaisesRegex(ValueError, "newer than existing release"):
+            validate_version_is_newer("1.2.4", ["1.2.40"])
 
     def test_github_output_contains_only_single_line_values(self):
         metadata = read_release_metadata(Path(__file__).resolve().parents[1])

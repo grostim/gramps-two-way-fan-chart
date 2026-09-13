@@ -127,6 +127,26 @@ jobs:
         id: release_metadata
         run: python ci/release_metadata.py --github-output "$GITHUB_OUTPUT"
 
+      - name: Reject non-increasing release versions
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+
+          from ci.release_metadata import read_release_metadata, validate_version_is_newer
+
+          metadata = read_release_metadata(Path.cwd())
+          tags = subprocess.check_output(
+              ["git", "tag", "--list", "v*"], text=True
+          ).splitlines()
+          existing_versions = [tag[1:] for tag in tags if tag.startswith("v")]
+          validate_version_is_newer(metadata.version, existing_versions)
+          print(
+              f"release_version_order=ok version={metadata.version} "
+              f"existing_tags={len(existing_versions)}"
+          )
+          PY
+
       - name: Build distribution
         run: python build_addon.py
 
@@ -189,14 +209,29 @@ jobs:
           trap 'rm -f "$release_json"' EXIT
 
           verify_release() {
-            python3 - "$release_json" "$RELEASE_ARCHIVE" "$(sha256sum "release-artifacts/$RELEASE_ARCHIVE" | cut -d ' ' -f 1)" <<'PY'
+            python3 - \
+              "$release_json" \
+              "$RELEASE_TAG" \
+              "$RELEASE_ARCHIVE" \
+              "$(sha256sum "release-artifacts/$RELEASE_ARCHIVE" | cut -d ' ' -f 1)" \
+              "$(sha256sum "release-artifacts/${RELEASE_ARCHIVE}.sha256" | cut -d ' ' -f 1)" <<'PY'
           import json
           import sys
 
-          release_path, archive_name, archive_sha256 = sys.argv[1:]
+          (
+              release_path,
+              expected_tag,
+              archive_name,
+              archive_sha256,
+              checksum_asset_sha256,
+          ) = sys.argv[1:]
           release = json.load(open(release_path, encoding="utf-8"))
           if release.get("draft") or release.get("prerelease"):
               raise SystemExit("release must be published and non-prerelease")
+          if release.get("tag_name") != expected_tag:
+              raise SystemExit(
+                  f"release tag mismatch: {release.get('tag_name')!r} != {expected_tag!r}"
+              )
 
           expected_digest = f"sha256:{archive_sha256}"
           assets = {asset["name"]: asset for asset in release.get("assets", [])}
@@ -208,11 +243,19 @@ jobs:
                   f"release asset digest mismatch: {archive.get('digest')!r} != {expected_digest!r}"
               )
           checksum_name = f"{archive_name}.sha256"
-          if checksum_name not in assets:
+          checksum = assets.get(checksum_name)
+          if checksum is None:
               raise SystemExit(f"release is missing asset {checksum_name}")
+          expected_checksum_digest = f"sha256:{checksum_asset_sha256}"
+          if checksum.get("digest") != expected_checksum_digest:
+              raise SystemExit(
+                  "release checksum asset digest mismatch: "
+                  f"{checksum.get('digest')!r} != {expected_checksum_digest!r}"
+              )
           print(
               f"release_verified tag={release['tag_name']} "
-              f"archive={archive_name} digest={expected_digest}"
+              f"archive={archive_name} digest={expected_digest} "
+              f"checksum_digest={expected_checksum_digest}"
           )
           PY
           }

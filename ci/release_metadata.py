@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,6 +61,29 @@ def validate_version(version: str) -> None:
     if not isinstance(version, str) or _VERSION_PATTERN.fullmatch(version) is None:
         raise ValueError(
             f"{version!r} is not a plain semantic version (expected X.Y.Z)"
+        )
+
+
+def _version_tuple(version: str) -> tuple[int, int, int]:
+    validate_version(version)
+    return tuple(int(part) for part in version.split("."))
+
+
+def validate_version_is_newer(version: str, existing_versions: Iterable[str]) -> None:
+    """Reject a version that reuses or regresses an existing release tag."""
+    candidate = _version_tuple(version)
+    parsed_existing = [
+        (_version_tuple(existing), existing)
+        for existing in existing_versions
+        if isinstance(existing, str) and _VERSION_PATTERN.fullmatch(existing)
+    ]
+    if not parsed_existing:
+        return
+
+    latest_tuple, latest_version = max(parsed_existing)
+    if candidate <= latest_tuple:
+        raise ValueError(
+            f"{version!r} must be newer than existing release {latest_version!r}"
         )
 
 

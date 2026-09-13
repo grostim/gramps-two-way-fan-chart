@@ -11,8 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  # Do not cancel a post-merge release while a newer PR run starts.
+  # PR runs share a ref-scoped group and may be cancelled. Release-producing
+  # runs use the commit SHA so every push to main keeps its own pending run.
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -305,9 +306,12 @@ jobs:
         run: |
           set -euo pipefail
           changed="$(git diff --name-only)"
-          if [[ "$changed" != "docker-compose.yml" ]]; then
+          if [[ -n "$changed" && "$changed" != "docker-compose.yml" ]]; then
             echo "::error::unexpected changed files: $changed"
             exit 1
+          fi
+          if [[ -z "$changed" ]]; then
+            echo "rollout markers are already present in the checked-out GitHub repository"
           fi
           git diff --check
 
@@ -316,6 +320,17 @@ jobs:
         run: |
           set -euo pipefail
           endpoint="repos/grostim/portainer-util/contents/docker-compose.yml"
+          changed="$(git diff --name-only)"
+
+          if [[ -z "$changed" ]]; then
+            readback="$(gh api "$endpoint?ref=main" --jq '.content' | tr -d '\r\n')"
+            printf '%s' "$readback" | base64 --decode > /tmp/portainer-compose-readback.yml
+            cmp -- docker-compose.yml /tmp/portainer-compose-readback.yml
+            echo "portainer_util_commit=already-present"
+            echo "rollout_marker=${RELEASE_VERSION}-release-${RELEASE_SHA:0:12}"
+            exit 0
+          fi
+
           remote_blob_sha="$(gh api "$endpoint?ref=main" --jq '.sha')"
           local_blob_sha="$(git rev-parse HEAD:docker-compose.yml)"
           if [[ "$remote_blob_sha" != "$local_blob_sha" ]]; then

@@ -72,18 +72,23 @@ class FakeFamily:
 
 
 class FakePlace:
-    def __init__(self, private):
+    def __init__(self, private, *, parents=()):
         self.private = private
+        self.parents = parents
 
     def get_privacy(self):
         return self.private
 
+    def get_placeref_list(self):
+        return [type("PlaceRef", (), {"ref": handle})() for handle in self.parents]
+
 
 class FakeDatabase:
-    def __init__(self, event, *, family=None, place=None):
+    def __init__(self, event, *, family=None, place=None, places=None):
         self.event = event
         self.family = family
         self.place = place
+        self.places = {"place-1": place, **(places or {})}
 
     def get_event_from_handle(self, handle):
         return self.event if handle == self.event.handle else None
@@ -92,7 +97,7 @@ class FakeDatabase:
         return self.family if handle == "family-1" else None
 
     def get_place_from_handle(self, handle):
-        return self.place if handle == "place-1" else None
+        return self.places.get(handle)
 
 
 class PrivateMarriageTests(unittest.TestCase):
@@ -137,6 +142,36 @@ class PrivateMarriageTests(unittest.TestCase):
             "Displayer",
             (),
             {"display_event": lambda _self, _database, _event: "Secret locality"},
+        )()
+
+        fact = extract_union(
+            database,
+            family,
+            "years",
+            "gramps",
+            displayer=displayer,
+            include_private=False,
+        )
+
+        self.assertIsNotNone(fact)
+        self.assertEqual(fact.place, "")
+
+    @unittest.skipUnless(EventType is not None, "Gramps is not installed")
+    def test_private_ancestor_place_is_omitted_when_direct_place_is_public(self):
+        event = FakeEvent("marriage-1", private=False, place_handle="place-1")
+        family = FakeFamily(event)
+        direct_place = FakePlace(False, parents=("place-parent",))
+        parent_place = FakePlace(True)
+        database = FakeDatabase(
+            event,
+            family=family,
+            place=direct_place,
+            places={"place-parent": parent_place},
+        )
+        displayer = type(
+            "Displayer",
+            (),
+            {"display_event": lambda _self, _database, _event: "Secret hierarchy"},
         )()
 
         fact = extract_union(

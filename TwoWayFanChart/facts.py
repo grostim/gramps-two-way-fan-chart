@@ -105,6 +105,41 @@ def extract_vital_dates(
     )
 
 
+def _place_hierarchy_is_private(database, place) -> bool:
+    """Return whether a place or any of its parents is private."""
+    pending = [place]
+    visited = set()
+    while pending:
+        current = pending.pop()
+        get_handle = getattr(current, "get_handle", None)
+        key = get_handle() if callable(get_handle) else id(current)
+        if key in visited:
+            continue
+        visited.add(key)
+
+        privacy_getter = getattr(current, "get_privacy", None)
+        try:
+            if not callable(privacy_getter) or bool(privacy_getter()):
+                return True
+        except Exception:
+            return True
+
+        parents_getter = getattr(current, "get_placeref_list", None)
+        try:
+            parent_refs = parents_getter() if callable(parents_getter) else ()
+        except Exception:
+            return True
+        for parent_ref in parent_refs:
+            parent_handle = getattr(parent_ref, "ref", None)
+            if not parent_handle:
+                continue
+            parent = database.get_place_from_handle(parent_handle)
+            if parent is None:
+                return True
+            pending.append(parent)
+    return False
+
+
 def format_event_place(
     database,
     event,
@@ -138,7 +173,7 @@ def format_event_place(
             )
         except Exception:
             place_is_private = True
-        if place_is_private:
+        if place_is_private or _place_hierarchy_is_private(database, place):
             return ""
     displayed = displayer.display_event(database, event).strip()
     if not displayed or strategy == "gramps":

@@ -81,6 +81,32 @@ class CenterLayoutTests(unittest.TestCase):
         self.assertLess(node.max_width, self.canvas.center_radius_mm * 1.8)
         self.assertGreater(node.max_width, self.canvas.center_radius_mm)
 
+    def test_center_marriage_label_is_rendered_below_life_dates(self):
+        scene = layout_center(
+            canvas=self.canvas,
+            left_label="Louis Roque",
+            right_label="Lucie Roque",
+            left_dates="° 1800 – † 1860",
+            right_dates="° 1805 – † 1870",
+            marriage_label="x 1825 · Lyon",
+        )
+
+        marriage = next(
+            node
+            for node in scene.children
+            if isinstance(node, SceneText) and node.content == "x 1825 · Lyon"
+        )
+        life_dates = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content in {"° 1800 – † 1860", "° 1805 – † 1870"}
+        ]
+
+        self.assertEqual(len(life_dates), 2)
+        self.assertGreater(marriage.y, max(node.y for node in life_dates))
+        self.assertIsNotNone(marriage.max_width)
+
 
 if __name__ == "__main__":
     unittest.main()

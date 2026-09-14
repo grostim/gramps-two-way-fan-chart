@@ -2,6 +2,10 @@
 
 Graphical report add-on for Gramps 6.0.x: ancestors above a central couple, descendants below, portrait medallions, and publication-safe privacy filtering.
 
+When recorded, the central couple's marriage date and place appear below
+their life dates. The label is omitted when privacy rules do not permit the
+underlying family or partners to be shown.
+
 ## Recommended installation
 
 Add this project URL to the Gramps Addon Manager:

@@ -82,6 +82,10 @@ No SSH key or GrampsWeb credential is stored in this repository. Keep
    the signal is cleared automatically for masked or excluded people.
 5. Choose SVG, PDF, or PNG output and generate the report.
 
+When the selected center family has a recorded marriage event, the chart
+displays its marriage date and place below the central couple's life dates.
+The information follows the same privacy rules as the rest of the chart.
+
 To include marriage information for each recorded ancestor couple, enable
 **Show ancestor marriages**. The report then inserts compact intermediate
 sectors in the ancestor fan and displays the recorded marriage year and place.
@@ -104,6 +108,7 @@ gramps -O "MyTree" -a report -p \
 - bidirectional ancestor/descendant fan layout;
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
 - complete given-name + surname labels for the center and ancestors, with usage-name labels for descendants; records without known life years have no date label;
+- central couple marriage date and place when recorded;
 - optional intermediate ancestor-marriage sectors with marriage year and place;
 - optional intermediate descendant-marriage sectors with year/place fallback;
 - privacy filtering before formatting and media loading;

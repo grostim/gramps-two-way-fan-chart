@@ -4,13 +4,14 @@ try:
     from gramps.gen.lib import Date, EventType
     from TwoWayFanChart.facts import extract_union
     from TwoWayFanChart.model import VisibilityState
-    from TwoWayFanChart.pipeline import _ancestor_marriage_label
+    from TwoWayFanChart.pipeline import _ancestor_marriage_label, _marriage_label
 except ModuleNotFoundError:  # pragma: no cover - exercised in CI with Gramps
     Date = None
     EventType = None
     extract_union = None
     VisibilityState = None
     _ancestor_marriage_label = None
+    _marriage_label = None
 
 
 class FakeDate:
@@ -213,6 +214,21 @@ class PrivateMarriageTests(unittest.TestCase):
         )
 
         self.assertEqual(label, "")
+
+    @unittest.skipUnless(_marriage_label is not None, "Gramps is not installed")
+    def test_central_marriage_label_uses_the_same_privacy_gate(self):
+        event = FakeEvent("marriage-1", private=False)
+        family = FakeFamily(event, private=False)
+        database = FakeDatabase(event, family=family)
+
+        label = _marriage_label(
+            database,
+            "family-1",
+            lambda _handle: (object(), VisibilityState.VISIBLE),
+            include_private=False,
+        )
+
+        self.assertEqual(label, "x 1899")
 
 
 if __name__ == "__main__":

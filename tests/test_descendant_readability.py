@@ -15,6 +15,7 @@ from TwoWayFanChart.layout import (
     _DESC_TOTAL_SWEEP,
     _allocate_descendant_union_cells,
     _descendant_ring_bounds,
+    _descendant_ring_layout,
     _MIN_INITIALS_MEDALLION_RADIUS_MM,
     _allocate_descendant_branches_by_demand,
     calculate_canvas,
@@ -722,6 +723,91 @@ class DescendantReadabilityTests(unittest.TestCase):
                 and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
                 for node in scene.children
             )
+        )
+
+    def test_disabled_marriages_keep_legacy_deep_ring_allocation(self):
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A4, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=3,
+        )
+        widths = [
+            outer - inner
+            for inner, outer in (
+                _descendant_ring_bounds(
+                    canvas.descendant_inner_radius_mm,
+                    canvas.descendant_outer_radius_mm,
+                    3,
+                    depth,
+                )
+                for depth in range(1, 4)
+            )
+        ]
+        # The pre-marriage-band allocation left the grandchild lane about
+        # 20.6 mm wide on A4 and never donated ring space to a direct-child
+        # floor; the disabled path must keep that exact contract.
+        self.assertAlmostEqual(widths[0], 9.2694, places=3)
+        self.assertAlmostEqual(widths[1], 20.5868, places=3)
+        self.assertAlmostEqual(widths[2], 8.0, places=3)
+
+    def test_continuation_dots_clear_emitted_marriage_band(self):
+        root = DescendantBranch(
+            "banded-last-visible",
+            person("banded-last-visible"),
+            1,
+            (
+                UnionBranch(
+                    "banded-family",
+                    "banded-spouse",
+                    ("not-rendered-child",),
+                    ("birth",),
+                ),
+            ),
+            (),
+        )
+        canvas = a0_canvas(descendant_generations=1)
+
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: {
+                "banded-last-visible": "Banded Last Visible",
+                "banded-spouse": "Banded Spouse",
+            }[handle],
+            dates_lookup=lambda _handle: "",
+            configured_generation_limit=1,
+            descendant_marriages={"banded-family": ("1920 · Paris", "1920")},
+            show_descendant_marriages=True,
+        )
+        dots = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneCircle)
+            and node.fill == CONTINUATION_DOT_FILL
+            and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
+        ]
+        _rings, bands = _descendant_ring_layout(
+            canvas.descendant_inner_radius_mm,
+            canvas.descendant_outer_radius_mm,
+            1,
+            show_marriages=True,
+        )
+        band_outer = bands[0][1]
+
+        self.assertEqual(len(dots), 3)
+        radii = sorted(
+            math.hypot(
+                dot.cx - canvas.center_cx_mm,
+                dot.cy - canvas.center_cy_mm,
+            )
+            for dot in dots
+        )
+        self.assertGreaterEqual(
+            radii[0] - _DESCENDANT_CONTINUATION_DOT_RADIUS_MM,
+            band_outer
+            + _DESCENDANT_CONTINUATION_DOT_OFFSET_MM
+            - _DESCENDANT_CONTINUATION_DOT_RADIUS_MM
+            - 1e-6,
         )
 
     def test_unresolved_child_before_configured_limit_does_not_emit_dots(self):

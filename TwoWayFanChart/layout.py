@@ -2234,21 +2234,26 @@ def _rebalance_descendant_widths(
         _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
         max(8.0, total_depth * 0.30),
     )
-    direct_floor_deficit = max(
-        minimum_direct_visible_width - widths[0],
-        0.0,
-    )
-    for offset in range(len(widths) - 1, 1, -1):
-        reducible = max(
-            widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
+    # The direct-floor deficit transfer only runs on the marriage-enabled
+    # path, where the ring budget is real and the rebalance must protect the
+    # direct-child medallions; the disabled path keeps the legacy allocation
+    # exactly.
+    if direct_floor_extra > 0.0:
+        direct_floor_deficit = max(
+            minimum_direct_visible_width - widths[0],
             0.0,
         )
-        transfer = min(direct_floor_deficit, reducible)
-        widths[offset] -= transfer
-        widths[0] += transfer
-        direct_floor_deficit -= transfer
-        if direct_floor_deficit <= 0.0:
-            break
+        for offset in range(len(widths) - 1, 1, -1):
+            reducible = max(
+                widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
+                0.0,
+            )
+            transfer = min(direct_floor_deficit, reducible)
+            widths[offset] -= transfer
+            widths[0] += transfer
+            direct_floor_deficit -= transfer
+            if direct_floor_deficit <= 0.0:
+                break
     direct_donor_capacity = max(
         widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
         0.0,
@@ -4033,6 +4038,10 @@ def layout_descendants(
         # Multi-union people get one marker per union cell, so a continuation
         # cannot be mistaken for a neighboring spouse's branch.
         if depth == displayed_generation_limit:
+            # The marriage band starts at the ring's outer edge and reaches
+            # past it, so anchor the continuation marker at the band's outer
+            # radius when the band was emitted; otherwise keep the ring edge.
+            dot_anchor = marriage_band[1] if marriage_band else gen_outer
             if union_cells:
                 for cell in union_cells:
                     if (
@@ -4042,7 +4051,7 @@ def layout_descendants(
                         _emit_continuation_dots(
                             cell.start_angle,
                             cell.sweep_angle,
-                            gen_outer,
+                            dot_anchor,
                         )
             elif (
                 len(branch.unions) == 1
@@ -4051,7 +4060,7 @@ def layout_descendants(
                 _emit_continuation_dots(
                     alloc_start,
                     alloc_sweep,
-                    gen_outer,
+                    dot_anchor,
                 )
 
     # Measure every name once so the smallest fitting size becomes the

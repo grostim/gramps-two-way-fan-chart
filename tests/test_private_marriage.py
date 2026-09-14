@@ -3,9 +3,13 @@ import unittest
 try:
     from gramps.gen.lib import EventType
     from TwoWayFanChart.facts import extract_union
+    from TwoWayFanChart.model import VisibilityState
+    from TwoWayFanChart.pipeline import _ancestor_marriage_label
 except ModuleNotFoundError:  # pragma: no cover - exercised in CI with Gramps
     EventType = None
     extract_union = None
+    VisibilityState = None
+    _ancestor_marriage_label = None
 
 
 class FakeDate:
@@ -49,8 +53,18 @@ class FakeEvent:
 
 
 class FakeFamily:
-    def __init__(self, event):
+    def __init__(self, event, *, private=False):
         self.event = event
+        self.private = private
+
+    def get_father_handle(self):
+        return "father"
+
+    def get_mother_handle(self):
+        return "mother"
+
+    def get_privacy(self):
+        return self.private
 
     def get_event_ref_list(self):
         return [FakeEventRef(self.event.handle)]
@@ -96,6 +110,24 @@ class PrivateMarriageTests(unittest.TestCase):
                 include_private=True,
             )
         )
+
+    @unittest.skipUnless(
+        _ancestor_marriage_label is not None,
+        "Gramps is not installed",
+    )
+    def test_private_family_is_filtered_before_rendering_public_marriage_event(self):
+        event = FakeEvent("marriage-1", private=False)
+        family = FakeFamily(event, private=True)
+        database = FakeDatabase(event)
+
+        label = _ancestor_marriage_label(
+            database,
+            "family-1",
+            lambda _handle: (object(), VisibilityState.VISIBLE),
+            include_private=False,
+        )
+
+        self.assertEqual(label, "")
 
 
 if __name__ == "__main__":

@@ -189,6 +189,17 @@ def _ancestor_marriage_label(
         return ""
     if family is None:
         return ""
+    if not include_private:
+        privacy_getter = getattr(family, "get_privacy", None)
+        try:
+            family_is_private = (
+                bool(privacy_getter()) if callable(privacy_getter) else False
+            )
+        except Exception:
+            # A privacy inference failure must not expose a family fact.
+            family_is_private = True
+        if family_is_private:
+            return ""
 
     parent_handles = tuple(
         handle

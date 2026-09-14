@@ -23,7 +23,7 @@ try:
     )
     from TwoWayFanChart.styles import (
         ancestor_fill,
-        descendant_fill,
+        descendant_generation_fill,
         MEDALLION_BORDER,
         MEDALLION_FILL,
         HIDDEN_FILL,
@@ -50,7 +50,7 @@ except ModuleNotFoundError:
     )
     from styles import (  # type: ignore[no-redef]
         ancestor_fill,
-        descendant_fill,
+        descendant_generation_fill,
         MEDALLION_BORDER,
         MEDALLION_FILL,
         HIDDEN_FILL,
@@ -2861,8 +2861,9 @@ def layout_descendants(
                         outer_radius=gen_outer,
                         start_angle=cell.start_angle,
                         sweep_angle=cell.sweep_angle,
-                        fill=descendant_fill(
-                            union_cell_fill_indices[cell.union_index]
+                        fill=descendant_generation_fill(
+                            union_cell_fill_indices[cell.union_index],
+                            depth,
                         ),
                         stroke=SECTOR_STROKE,
                         stroke_width=SECTOR_STROKE_WIDTH,
@@ -2870,7 +2871,7 @@ def layout_descendants(
                         cy=cy,
                     ))
             else:
-                fill = descendant_fill(inherited_fill_index)
+                fill = descendant_generation_fill(inherited_fill_index, depth)
                 all_children.append(SceneSector(
                     inner_radius=gen_inner,
                     outer_radius=gen_outer,

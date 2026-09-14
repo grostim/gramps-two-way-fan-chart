@@ -96,6 +96,10 @@ To include the same information for descendant couples, enable
 descendant generation; when a distant sector cannot carry the place legibly,
 the label keeps the marriage year only. This option is also disabled by default.
 
+Each descendant generation is drawn in a progressively lighter shade of its
+direct-child branch color, so a branch remains recognizable across the whole
+fan while the generation depth stays readable at a glance.
+
 Headless example:
 
 ```bash
@@ -115,6 +119,7 @@ gramps -O "MyTree" -a report -p \
 - optional exact-name tag highlighting with a grayscale-distinct marker;
 - circular portrait crops with neutral, gendered, or initials fallbacks;
 - weighted descendant sectors and narrow-sector radial labels;
+- progressive generation shading inside each descendant branch;
 - portable vector labels for SVG, librsvg/Cairo, and browser renderers;
 - standalone SVG output without network resources or JavaScript;
 - optional PDF and PNG output through Cairo;
@@ -129,7 +134,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.45**
+- Add-on version: **1.2.46**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

@@ -178,3 +178,16 @@ def ancestor_fill(generation: int, lineage: str) -> str:
 def descendant_fill(index: int) -> str:
     """Return the fill assigned to a direct-child branch index."""
     return DESCENDANT_FILLS[index % len(DESCENDANT_FILLS)]
+
+
+def descendant_generation_fill(index: int, generation: int) -> str:
+    """Return a branch fill progressively lightened by descendant generation.
+
+    Descendant generation numbers are one-based: direct children keep their
+    branch's base color, while later generations move progressively toward
+    white without changing the branch association.
+    """
+    return generation_shade(
+        descendant_fill(index),
+        generation=max(generation - 1, 0),
+    )

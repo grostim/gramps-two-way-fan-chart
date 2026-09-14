@@ -1,4 +1,4 @@
-# Two-Way Fan Chart 1.2.45
+# Two-Way Fan Chart 1.2.46
 
 Graphical report add-on for Gramps 6.0.x: ancestors above a central couple, descendants below, portrait medallions, and publication-safe privacy filtering.
 
@@ -24,6 +24,10 @@ The **Show descendant marriages** option is disabled by default. When enabled,
 the descendant fan gains matching intermediate sectors for each recorded
 union. Narrow distant sectors retain the marriage year and omit the place when
 the complete label would not remain legible.
+
+Descendant branches keep one base color per direct child of the central couple;
+each following generation lightens that color progressively so the generation
+depth is visible without losing the branch association.
 
 ## Manual installation
 

@@ -27,6 +27,7 @@ from TwoWayFanChart.model import (
     SceneText,
     UnionBranch,
 )
+from TwoWayFanChart.styles import generation_shade
 
 
 @dataclass
@@ -1132,7 +1133,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             1,
         )
 
-    def test_union_cell_and_child_sector_keep_same_fill_with_empty_unions(self):
+    def test_union_cell_and_child_sector_keep_branch_hue_with_generation_shade(self):
         first_child = DescendantBranch(
             "first-child",
             PersonNode("first-child", "I1001"),
@@ -1194,12 +1195,14 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(len(first_ring), 4)
         self.assertEqual(len(child_ring), 2)
+        self.assertEqual(len({sector.fill for sector in first_ring}), 1)
+        self.assertEqual(len({sector.fill for sector in child_ring}), 1)
         self.assertEqual(
-            len({sector.fill for sector in (*first_ring, *child_ring)}),
-            1,
+            child_ring[0].fill,
+            generation_shade(first_ring[0].fill, generation=1),
         )
 
-    def test_empty_union_keeps_the_direct_child_fill_for_following_children(self):
+    def test_empty_union_keeps_the_direct_child_hue_for_following_children(self):
         child = DescendantBranch(
             "child-after-empty-union",
             PersonNode("child-after-empty-union", "I1001"),
@@ -1255,7 +1258,10 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(len(first_ring), 2)
         self.assertEqual(len(child_ring), 1)
         self.assertEqual(first_ring[0].fill, first_ring[1].fill)
-        self.assertEqual(child_ring[0].fill, first_ring[0].fill)
+        self.assertEqual(
+            child_ring[0].fill,
+            generation_shade(first_ring[0].fill, generation=1),
+        )
 
     def test_split_cells_keep_the_collapsed_private_couple_label(self):
         first_child = DescendantBranch(
@@ -1346,7 +1352,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             ["Personnes privées", "Personne privée × Conjoint public"],
         )
 
-    def test_union_fill_is_inherited_by_all_descendant_generations(self):
+    def test_union_hue_is_inherited_by_all_descendant_generations(self):
         first_grandchild = DescendantBranch(
             "first-grandchild",
             PersonNode("first-grandchild", "I2001"),
@@ -1405,7 +1411,19 @@ class MultipleDescendantUnionTests(unittest.TestCase):
                 for cell in union_cells
                 if math.isclose(cell.start_angle, sector.start_angle)
             )
-            self.assertEqual(sector.fill, parent_cell.fill)
+            depth = 3 if math.isclose(
+                sector.inner_radius,
+                _descendant_ring_bounds(
+                    canvas.descendant_inner_radius_mm,
+                    canvas.descendant_outer_radius_mm,
+                    3,
+                    3,
+                )[0],
+            ) else 2
+            self.assertEqual(
+                sector.fill,
+                generation_shade(parent_cell.fill, generation=depth - 1),
+            )
 
     def test_two_ring_union_portraits_stay_inside_their_outer_ring(self):
         first_child = DescendantBranch(
@@ -2171,7 +2189,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             1,
         )
 
-    def test_union_cell_and_child_sector_keep_same_fill_with_empty_unions(self):
+    def test_union_cell_and_child_sector_keep_branch_hue_with_generation_shade(self):
         first_child = DescendantBranch(
             "first-child",
             PersonNode("first-child", "I1001"),
@@ -2233,12 +2251,14 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertEqual(len(first_ring), 4)
         self.assertEqual(len(child_ring), 2)
+        self.assertEqual(len({sector.fill for sector in first_ring}), 1)
+        self.assertEqual(len({sector.fill for sector in child_ring}), 1)
         self.assertEqual(
-            len({sector.fill for sector in (*first_ring, *child_ring)}),
-            1,
+            child_ring[0].fill,
+            generation_shade(first_ring[0].fill, generation=1),
         )
 
-    def test_empty_union_keeps_the_direct_child_fill_for_following_children(self):
+    def test_empty_union_keeps_the_direct_child_hue_for_following_children(self):
         child = DescendantBranch(
             "child-after-empty-union",
             PersonNode("child-after-empty-union", "I1001"),
@@ -2294,7 +2314,10 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(len(first_ring), 2)
         self.assertEqual(len(child_ring), 1)
         self.assertEqual(first_ring[0].fill, first_ring[1].fill)
-        self.assertEqual(child_ring[0].fill, first_ring[0].fill)
+        self.assertEqual(
+            child_ring[0].fill,
+            generation_shade(first_ring[0].fill, generation=1),
+        )
 
     def test_split_cells_keep_the_collapsed_private_couple_label(self):
         first_child = DescendantBranch(
@@ -2385,7 +2408,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             ["Personnes privées", "Personne privée × Conjoint public"],
         )
 
-    def test_union_fill_is_inherited_by_all_descendant_generations(self):
+    def test_union_hue_is_inherited_by_all_descendant_generations(self):
         first_grandchild = DescendantBranch(
             "first-grandchild",
             PersonNode("first-grandchild", "I2001"),
@@ -2444,7 +2467,19 @@ class MultipleDescendantUnionTests(unittest.TestCase):
                 for cell in union_cells
                 if math.isclose(cell.start_angle, sector.start_angle)
             )
-            self.assertEqual(sector.fill, parent_cell.fill)
+            depth = 3 if math.isclose(
+                sector.inner_radius,
+                _descendant_ring_bounds(
+                    canvas.descendant_inner_radius_mm,
+                    canvas.descendant_outer_radius_mm,
+                    3,
+                    3,
+                )[0],
+            ) else 2
+            self.assertEqual(
+                sector.fill,
+                generation_shade(parent_cell.fill, generation=depth - 1),
+            )
 
     def test_two_ring_union_portraits_stay_inside_their_outer_ring(self):
         first_child = DescendantBranch(

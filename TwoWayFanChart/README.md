@@ -1,4 +1,4 @@
-# Two-Way Fan Chart 1.2.43
+# Two-Way Fan Chart 1.2.44
 
 Graphical report add-on for Gramps 6.0.x: ancestors above a central couple, descendants below, portrait medallions, and publication-safe privacy filtering.
 
@@ -11,6 +11,10 @@ https://raw.githubusercontent.com/grostim/gramps-two-way-fan-chart/main/gramps60
 ```
 
 Then refresh the **Extensions** list and install **Two-Way Fan Chart**.
+
+The **Show ancestor marriages** option is disabled by default. When enabled,
+the ancestor fan gains compact intermediate sectors containing the recorded
+marriage year and place for each available parent couple.
 
 ## Manual installation
 

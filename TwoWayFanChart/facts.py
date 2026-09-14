@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from gramps.gen.const import GRAMPS_LOCALE as glocale
 from gramps.gen.display.place import displayer as place_displayer
-from gramps.gen.lib import EventType, PlaceType
+from gramps.gen.lib import Date, EventType, PlaceType
 from gramps.gen.utils.db import get_birth_or_fallback, get_death_or_fallback
 from gramps.gen.utils.location import get_main_location
 
@@ -58,6 +58,41 @@ class EventFact:
     year: int | None
 
 
+def event_date_symbol(event_type: int, occurrence: int = 1) -> str:
+    """Return the genealogical symbol for one event date."""
+    if occurrence < 1:
+        raise ValueError("event occurrence must be positive")
+    if event_type == EventType.BIRTH:
+        return "°"
+    if event_type == EventType.DEATH:
+        return "†"
+    if event_type == EventType.MARRIAGE:
+        return "x" if occurrence == 1 else f"x{occurrence}"
+    return ""
+
+
+def _format_years(date) -> str:
+    """Format a Gramps date as a year while retaining its uncertainty."""
+    year = date.get_year()
+    if not year:
+        return ""
+
+    modifier = date.get_modifier()
+    if modifier in {Date.MOD_BEFORE, Date.MOD_TO}:
+        return f"/{year}"
+    if modifier in {Date.MOD_AFTER, Date.MOD_FROM}:
+        return f"{year}/"
+    if modifier == Date.MOD_ABOUT or date.get_quality() & Date.QUAL_ESTIMATED:
+        return f"ca {year}"
+
+    if date.is_compound():
+        stop = date.get_stop_date()
+        stop_year = stop[2] if stop and len(stop) > 2 else 0
+        if stop_year and stop_year != year:
+            return f"{year}–{stop_year}"
+    return str(year)
+
+
 def format_date(date, date_format: str, locale=glocale) -> str:
     """Format one Gramps Date without changing global locale preferences."""
     if date_format not in {"years", "short", "full"}:
@@ -65,8 +100,7 @@ def format_date(date, date_format: str, locale=glocale) -> str:
     if date is None or not date.is_valid():
         return ""
     if date_format == "years":
-        year = date.get_year()
-        return str(year) if year else ""
+        return _format_years(date)
     displayer = locale.date_displayer
     if hasattr(displayer, "set_format"):
         format_number = 1 if date_format == "short" else 2
@@ -74,11 +108,41 @@ def format_date(date, date_format: str, locale=glocale) -> str:
     return displayer.display_formatted(date)
 
 
-def _event_fact(event, direct_ref, date_format: str, locale) -> VitalFact:
+def format_event_date(
+    date,
+    date_format: str,
+    event_type: int,
+    *,
+    occurrence: int = 1,
+    locale=glocale,
+) -> str:
+    """Format an event date with its conventional genealogical symbol."""
+    text = format_date(date, date_format, locale)
+    if not text:
+        return ""
+    symbol = event_date_symbol(event_type, occurrence)
+    return f"{symbol} {text}" if symbol else text
+
+
+def _event_fact(
+    event,
+    direct_ref,
+    date_format: str,
+    locale,
+    event_type: int,
+    *,
+    occurrence: int = 1,
+) -> VitalFact:
     if event is None:
         return VitalFact("", None, False)
     date = event.get_date_object()
-    text = format_date(date, date_format, locale)
+    text = format_event_date(
+        date,
+        date_format,
+        event_type,
+        occurrence=occurrence,
+        locale=locale,
+    )
     year = date.get_year() if date is not None and date.is_valid() else None
     direct_handle = direct_ref.get_reference_handle() if direct_ref else None
     return VitalFact(text, year or None, event.get_handle() != direct_handle)
@@ -97,10 +161,10 @@ def extract_vital_dates(
     death = get_death_or_fallback(database, person)
     return VitalDates(
         birth=_event_fact(
-            birth, person.get_birth_ref(), date_format, locale
+            birth, person.get_birth_ref(), date_format, locale, EventType.BIRTH
         ),
         death=_event_fact(
-            death, person.get_death_ref(), date_format, locale
+            death, person.get_death_ref(), date_format, locale, EventType.DEATH
         ),
     )
 
@@ -298,6 +362,7 @@ def extract_union(
     *,
     locale=glocale,
     displayer=place_displayer,
+    occurrence: int = 1,
 ) -> EventFact | None:
     """Extract the first marriage event in the family's Gramps order."""
     events = _events_for(database, family, EventType.MARRIAGE)
@@ -306,7 +371,13 @@ def extract_union(
     selected = events[0]
     return EventFact(
         text=selected.get_description().strip(),
-        date_text=format_date(selected.get_date_object(), date_format, locale),
+        date_text=format_event_date(
+            selected.get_date_object(),
+            date_format,
+            EventType.MARRIAGE,
+            occurrence=occurrence,
+            locale=locale,
+        ),
         place=format_event_place(
             database, selected, place_strategy, displayer=displayer
         ),
@@ -324,15 +395,15 @@ _INFORMATION_ZONES = {
 
 
 def _lifespan(vitals: VitalDates) -> str:
-    birth = vitals.birth.year
-    death = vitals.death.year
-    if birth and death:
-        return f"{birth}–{death}"
-    if birth:
-        return f"{birth}–"
-    if death:
-        return f"–{death}"
-    return ""
+    birth = vitals.birth.text or (
+        f"° {vitals.birth.year}" if vitals.birth.year else ""
+    )
+    death = vitals.death.text or (
+        f"† {vitals.death.year}" if vitals.death.year else ""
+    )
+    return " – ".join(
+        text for text in (birth, death) if text
+    )
 
 
 def _event_fact_label(fact: EventFact | None) -> str:
@@ -513,10 +584,10 @@ def simple_dates(database, handle: str | None) -> str:
     """Return a compact life-years label for a person handle.
 
     Returns one of:
-      - "YYYY–YYYY" when both birth and death years are known
-      - "YYYY–"     when only birth year is known
-      - "–YYYY"     when only death year is known
-      - ""          when neither is known
+      - "° YYYY – † YYYY" when both birth and death years are known
+      - "° YYYY"          when only birth year is known
+      - "† YYYY"          when only death year is known
+      - ""                when neither is known
 
     Uses Gramps' fallback birth/death event search so that christening
     or burial events are considered when birth/death are missing.
@@ -531,15 +602,23 @@ def simple_dates(database, handle: str | None) -> str:
         death = get_death_or_fallback(database, person)
     except Exception:
         return ""
-    birth_year = _event_year(birth) if birth is not None else None
-    death_year = _event_year(death) if death is not None else None
-    if birth_year and death_year:
-        return f"{birth_year}–{death_year}"
-    if birth_year:
-        return f"{birth_year}–"
-    if death_year:
-        return f"–{death_year}"
-    return ""
+    birth_fact = _event_fact(
+        birth,
+        getattr(person, "get_birth_ref", lambda: None)(),
+        "years",
+        glocale,
+        EventType.BIRTH,
+    )
+    death_fact = _event_fact(
+        death,
+        getattr(person, "get_death_ref", lambda: None)(),
+        "years",
+        glocale,
+        EventType.DEATH,
+    )
+    return " – ".join(
+        text for text in (birth_fact.text, death_fact.text) if text
+    )
 
 
 def build_person_view(

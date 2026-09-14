@@ -91,6 +91,11 @@ To include marriage information for each recorded ancestor couple, enable
 sectors in the ancestor fan and displays the recorded marriage year and place.
 The option is disabled by default and does not alter the standard fan layout.
 
+To include the same information for descendant couples, enable
+**Show descendant marriages**. Intermediate sectors are inserted after each
+descendant generation; when a distant sector cannot carry the place legibly,
+the label keeps the marriage year only. This option is also disabled by default.
+
 Each descendant generation is drawn in a progressively lighter shade of its
 direct-child branch color, so a branch remains recognizable across the whole
 fan while the generation depth stays readable at a glance.
@@ -109,6 +114,7 @@ gramps -O "MyTree" -a report -p \
 - complete given-name + surname labels for the center and ancestors, with usage-name labels for descendants; records without known life years have no date label;
 - central couple marriage date and place when recorded;
 - optional intermediate ancestor-marriage sectors with marriage year and place;
+- optional intermediate descendant-marriage sectors with year/place fallback;
 - privacy filtering before formatting and media loading;
 - optional exact-name tag highlighting with a grayscale-distinct marker;
 - circular portrait crops with neutral, gendered, or initials fallbacks;
@@ -128,7 +134,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.47**
+- Add-on version: **1.2.48**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

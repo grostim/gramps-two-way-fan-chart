@@ -81,6 +81,7 @@ class ChartConfig:
     highlight_tag: str = ""
     show_highlight_markers: bool = False
     show_ancestor_marriages: bool = False
+    show_descendant_marriages: bool = False
 
     def __post_init__(self) -> None:
         enum_fields = (

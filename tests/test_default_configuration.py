@@ -22,8 +22,8 @@ class DefaultConfigurationTests(unittest.TestCase):
         )
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
-        self.assertIn('version="1.2.47"', registration)
-        self.assertIn('VERSION = "1.2.47"', builder)
+        self.assertIn('version="1.2.48"', registration)
+        self.assertIn('VERSION = "1.2.48"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
@@ -39,6 +39,7 @@ class DefaultConfigurationTests(unittest.TestCase):
         self.assertEqual(config.living_people_mode, 99)
         self.assertFalse(config.show_highlight_markers)
         self.assertFalse(config.show_ancestor_marriages)
+        self.assertFalse(config.show_descendant_marriages)
 
     def test_publication_preset_uses_the_same_requested_defaults(self):
         config = build_preset(PresetName.PUBLICATION)
@@ -73,6 +74,7 @@ class DefaultConfigurationTests(unittest.TestCase):
             'mode=LivingProxyDb.MODE_INCLUDE_ALL',
             'BooleanOption(_("Show citation markers"), False)',
             'BooleanOption(_("Show ancestor marriages"), False)',
+            'BooleanOption(_("Show descendant marriages"), False)',
         ):
             self.assertIn(expected, source)
 

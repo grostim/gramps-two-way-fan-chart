@@ -29,9 +29,10 @@ class FakeEventRef:
 
 
 class FakeEvent:
-    def __init__(self, handle, private):
+    def __init__(self, handle, private, *, place_handle=None):
         self.handle = handle
         self.private = private
+        self.place_handle = place_handle
 
     def get_type(self):
         return EventType.MARRIAGE
@@ -46,7 +47,7 @@ class FakeEvent:
         return FakeDate()
 
     def get_place_handle(self):
-        return None
+        return self.place_handle
 
     def get_description(self):
         return ""
@@ -70,12 +71,28 @@ class FakeFamily:
         return [FakeEventRef(self.event.handle)]
 
 
+class FakePlace:
+    def __init__(self, private):
+        self.private = private
+
+    def get_privacy(self):
+        return self.private
+
+
 class FakeDatabase:
-    def __init__(self, event):
+    def __init__(self, event, *, family=None, place=None):
         self.event = event
+        self.family = family
+        self.place = place
 
     def get_event_from_handle(self, handle):
         return self.event if handle == self.event.handle else None
+
+    def get_family_from_handle(self, handle):
+        return self.family if handle == "family-1" else None
+
+    def get_place_from_handle(self, handle):
+        return self.place if handle == "place-1" else None
 
 
 class PrivateMarriageTests(unittest.TestCase):
@@ -111,6 +128,29 @@ class PrivateMarriageTests(unittest.TestCase):
             )
         )
 
+    @unittest.skipUnless(EventType is not None, "Gramps is not installed")
+    def test_private_marriage_place_is_omitted_when_private_facts_are_disabled(self):
+        event = FakeEvent("marriage-1", private=False, place_handle="place-1")
+        family = FakeFamily(event)
+        database = FakeDatabase(event, place=FakePlace(private=True))
+        displayer = type(
+            "Displayer",
+            (),
+            {"display_event": lambda _self, _database, _event: "Secret locality"},
+        )()
+
+        fact = extract_union(
+            database,
+            family,
+            "years",
+            "gramps",
+            displayer=displayer,
+            include_private=False,
+        )
+
+        self.assertIsNotNone(fact)
+        self.assertEqual(fact.place, "")
+
     @unittest.skipUnless(
         _ancestor_marriage_label is not None,
         "Gramps is not installed",
@@ -118,7 +158,7 @@ class PrivateMarriageTests(unittest.TestCase):
     def test_private_family_is_filtered_before_rendering_public_marriage_event(self):
         event = FakeEvent("marriage-1", private=False)
         family = FakeFamily(event, private=True)
-        database = FakeDatabase(event)
+        database = FakeDatabase(event, family=family)
 
         label = _ancestor_marriage_label(
             database,

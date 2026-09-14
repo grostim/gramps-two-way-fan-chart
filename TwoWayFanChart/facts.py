@@ -111,6 +111,7 @@ def format_event_place(
     strategy: str,
     *,
     displayer=place_displayer,
+    include_private: bool = True,
 ) -> str:
     """Format one event place through Gramps, then shorten explicitly."""
     if strategy not in {
@@ -122,6 +123,23 @@ def format_event_place(
         raise ValueError(f"unsupported place strategy: {strategy}")
     if event is None:
         return ""
+    place_handle = event.get_place_handle()
+    if not include_private and place_handle:
+        get_place = getattr(database, "get_place_from_handle", None)
+        if not callable(get_place):
+            return ""
+        place = get_place(place_handle)
+        if place is None:
+            return ""
+        privacy_getter = getattr(place, "get_privacy", None)
+        try:
+            place_is_private = (
+                bool(privacy_getter()) if callable(privacy_getter) else True
+            )
+        except Exception:
+            place_is_private = True
+        if place_is_private:
+            return ""
     displayed = displayer.display_event(database, event).strip()
     if not displayed or strategy == "gramps":
         return displayed
@@ -315,7 +333,11 @@ def extract_union(
         text=selected.get_description().strip(),
         date_text=format_date(selected.get_date_object(), date_format, locale),
         place=format_event_place(
-            database, selected, place_strategy, displayer=displayer
+            database,
+            selected,
+            place_strategy,
+            displayer=displayer,
+            include_private=include_private,
         ),
         year=_event_year(selected),
     )

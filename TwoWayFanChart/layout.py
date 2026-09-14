@@ -2389,10 +2389,27 @@ def _descendant_ring_layout(
         total_weight = sum(weights)
         widths = [person_depth * weight / total_weight for weight in weights]
     else:
+        # The direct-child ring must keep the radial depth it would have had
+        # without marriage bands: that depth is what sustains the four-line
+        # first-generation stack (name, dates, spouse, spouse dates) through
+        # _first_generation_line_layout. Carving bands out of a shallower
+        # direct ring makes the layout drop the life-date lanes.
+        legacy_ring = _descendant_ring_bounds(
+            inner_radius,
+            outer_radius,
+            generation_count,
+            1,
+        )
+        legacy_ring1_visible = legacy_ring[1] - legacy_ring[0]
+        floor_extra = max(
+            2 * _RING_GAP_MM,
+            legacy_ring1_visible
+            - _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
+        )
         widths = _rebalance_descendant_widths(
             person_depth,
             generation_count,
-            direct_floor_extra=2 * _RING_GAP_MM,
+            direct_floor_extra=floor_extra,
         )
 
     rings: list[tuple[float, float]] = []
@@ -2409,6 +2426,49 @@ def _descendant_ring_layout(
     return tuple(rings), tuple(bands)
 
 
+def _descendant_marriage_label_and_size(
+    full_label: str,
+    year_label: str,
+    capacity: float,
+    *,
+    inner_r: float,
+    outer_r: float,
+    common_size: float | None = None,
+) -> tuple[str, float]:
+    """Return the best-fit label and its font size for one marriage sector.
+
+    Without a common size the call computes the sector-local fit as before.
+    With a common generation size (measured over every marriage of the ring),
+    the label degrades to the year when the full label does not fit at that
+    shared size; every marriage of a generation then shares the same font.
+    """
+    if common_size is not None:
+        full_at_common = estimate_text_width(full_label, common_size)
+        if full_label and full_at_common <= capacity:
+            return full_label, common_size
+        if not year_label:
+            return "", 0.0
+        # Keep the year even when the shared minimum size is still wider than
+        # this narrow sector: the renderer compresses the label through its
+        # max_width lane, preserving the pre-common-size fallback instead of
+        # dropping dense marriage rings entirely.
+        return year_label, common_size
+    label = full_label
+    if (
+        year_label
+        and estimate_text_width(full_label, 1.8) > capacity
+    ):
+        label = year_label
+    if not label:
+        return "", 0.0
+    font_size = _font_size_for_width(
+        label,
+        target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
+        max_width=capacity,
+    )
+    return label, font_size
+
+
 def _emit_descendant_marriage_sector(
     children: list,
     cx: float,
@@ -2420,6 +2480,7 @@ def _emit_descendant_marriage_sector(
     fill: str,
     labels: dict[str, tuple[str, str]],
     family_handle: str,
+    font_size: float | None = None,
 ) -> None:
     """Emit one optional descendant marriage sector and its best-fit label."""
     children.append(SceneSector(
@@ -2444,19 +2505,16 @@ def _emit_descendant_marriage_sector(
     # A place is retained only when it fits at the minimum practical label
     # size. Distant generations therefore degrade to the year, never to a
     # truncated place name.
-    label = full_label
-    if (
-        year_label
-        and estimate_text_width(full_label, 1.8) > capacity
-    ):
-        label = year_label
+    label, size = _descendant_marriage_label_and_size(
+        full_label,
+        year_label,
+        capacity,
+        inner_r=inner_r,
+        outer_r=outer_r,
+        common_size=font_size,
+    )
     if not label:
         return
-    font_size = _font_size_for_width(
-        label,
-        target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
-        max_width=capacity,
-    )
     children.append(ScenePathText(
         path=_arc_text_path(
             cx,
@@ -2467,10 +2525,40 @@ def _emit_descendant_marriage_sector(
             lower=True,
         ),
         content=label,
-        font_size=font_size,
+        font_size=size,
         fill=TEXT_DARK,
         max_width=capacity,
     ))
+
+
+def _collect_descendant_marriage_size(
+    candidates: dict[int, list[float]],
+    depth: int,
+    inner_r: float,
+    outer_r: float,
+    start_angle: float,
+    sweep: float,
+    labels: dict[str, tuple[str, str]],
+    family_handle: str,
+) -> None:
+    """Record the sector-local fitted size for one marriage, per generation."""
+    full_label, year_label = labels.get(family_handle, ("", ""))
+    if not full_label and not year_label:
+        return
+    text_radius = (inner_r + outer_r) / 2.0
+    capacity = _ancestor_arc_text_capacity(
+        text_radius=text_radius,
+        sweep_angle=sweep,
+    )
+    _label, size = _descendant_marriage_label_and_size(
+        full_label,
+        year_label,
+        capacity,
+        inner_r=inner_r,
+        outer_r=outer_r,
+    )
+    if size > 0.0:
+        candidates.setdefault(depth, []).append(size)
 
 
 def layout_descendants(
@@ -2532,6 +2620,8 @@ def layout_descendants(
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
     generation_date_sizes: dict[int, float] = {}
+    marriage_size_candidates: dict[int, list[float]] = {}
+    generation_marriage_sizes: dict[int, float] = {}
     name_cache: dict[str, str] = {}
     date_cache: dict[str, str] = {}
     inner_r = canvas.descendant_inner_radius_mm
@@ -2889,34 +2979,62 @@ def layout_descendants(
             if show_descendant_marriages and depth <= len(marriage_bands)
             else None
         )
-        if not measure_only and marriage_band and branch.unions:
+        if marriage_band and branch.unions:
             band_inner, band_outer = marriage_band
-            marriage_cells = union_cells
-            if not marriage_cells:
-                marriage_cells = (
-                    _DescendantUnionAllocation(
-                        0,
-                        (),
-                        alloc_start,
-                        alloc_sweep,
-                    ),
-                )
-            for cell in marriage_cells:
-                if not 0 <= cell.union_index < len(branch.unions):
-                    continue
-                union = branch.unions[cell.union_index]
-                _emit_descendant_marriage_sector(
-                    all_children,
-                    cx,
-                    cy,
-                    band_inner,
-                    band_outer,
-                    cell.start_angle,
-                    cell.sweep_angle,
-                    descendant_generation_fill(inherited_fill_index, depth),
-                    descendant_marriages or {},
-                    union.family_handle,
-                )
+            if measure_only:
+                # Measure every marriage of the generation so the render pass
+                # can apply one shared font size to the whole ring.
+                marriage_cells = union_cells
+                if not marriage_cells:
+                    marriage_cells = (
+                        _DescendantUnionAllocation(
+                            0,
+                            (),
+                            alloc_start,
+                            alloc_sweep,
+                        ),
+                    )
+                for cell in marriage_cells:
+                    if not 0 <= cell.union_index < len(branch.unions):
+                        continue
+                    _collect_descendant_marriage_size(
+                        marriage_size_candidates,
+                        depth,
+                        band_inner,
+                        band_outer,
+                        cell.start_angle,
+                        cell.sweep_angle,
+                        descendant_marriages or {},
+                        branch.unions[cell.union_index].family_handle,
+                    )
+            else:
+                marriage_cells = union_cells
+                if not marriage_cells:
+                    marriage_cells = (
+                        _DescendantUnionAllocation(
+                            0,
+                            (),
+                            alloc_start,
+                            alloc_sweep,
+                        ),
+                    )
+                for cell in marriage_cells:
+                    if not 0 <= cell.union_index < len(branch.unions):
+                        continue
+                    union = branch.unions[cell.union_index]
+                    _emit_descendant_marriage_sector(
+                        all_children,
+                        cx,
+                        cy,
+                        band_inner,
+                        band_outer,
+                        cell.start_angle,
+                        cell.sweep_angle,
+                        descendant_generation_fill(inherited_fill_index, depth),
+                        descendant_marriages or {},
+                        union.family_handle,
+                        font_size=generation_marriage_sizes.get(depth),
+                    )
 
         raw_label = _descendant_label(branch, _name_label)
         child_label = _short(raw_label, depth)
@@ -4109,6 +4227,13 @@ def layout_descendants(
     generation_date_sizes = {
         depth: _descendant_date_font_size(name_size)
         for depth, name_size in generation_name_sizes.items()
+    }
+    # One marriage font size per generation: the smallest measured sector fit
+    # becomes the shared render size for every marriage of that ring.
+    generation_marriage_sizes = {
+        depth: min(sizes)
+        for depth, sizes in marriage_size_candidates.items()
+        if sizes
     }
     measure_only = False
     all_children = []

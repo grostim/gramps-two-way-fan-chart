@@ -231,6 +231,63 @@ def _ancestor_marriage_label(
     )
 
 
+def _descendant_marriage_labels(
+    database,
+    branches,
+    visibility_lookup,
+    *,
+    include_private: bool,
+) -> dict[str, tuple[str, str]]:
+    """Return full/year marriage labels for every rendered descendant union."""
+    labels: dict[str, tuple[str, str]] = {}
+    for branch in _iter_all_descendants(branches):
+        for union in branch.unions:
+            if union.family_handle in labels:
+                continue
+            try:
+                family = database.get_family_from_handle(union.family_handle)
+            except Exception:
+                continue
+            if family is None:
+                continue
+            if not include_private:
+                privacy_getter = getattr(family, "get_privacy", None)
+                try:
+                    if callable(privacy_getter) and bool(privacy_getter()):
+                        continue
+                except Exception:
+                    continue
+            parent_handles = tuple(
+                handle
+                for handle in (
+                    family.get_father_handle(),
+                    family.get_mother_handle(),
+                )
+                if handle
+            )
+            if not parent_handles or any(
+                visibility_lookup(handle)[1] is not VisibilityState.VISIBLE
+                for handle in parent_handles
+            ):
+                continue
+            try:
+                fact = extract_union(
+                    database,
+                    family,
+                    "years",
+                    "locality",
+                    include_private=include_private,
+                )
+            except Exception:
+                continue
+            if fact is None:
+                continue
+            year = fact.date_text
+            full = " · ".join(value for value in (year, fact.place) if value)
+            labels[union.family_handle] = (full, year)
+    return labels
+
+
 def _center_portrait_data_uri(config: ChartConfig, db, handle: str | None) -> str | None:
     """Resolve one center-person portrait from Gramps media, if available."""
     if not config.show_portraits or not handle:
@@ -501,6 +558,19 @@ def _build_scene(
     def _dates_lookup(handle: str | None) -> str:
         return _safe_dates(handle)
 
+    descendant_marriages = (
+        _descendant_marriage_labels(
+            db,
+            graph.descendant_branches,
+            _person_visibility,
+            include_private=(
+                config.include_private
+                and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
+            ),
+        )
+        if config.show_descendant_marriages
+        else {}
+    )
     descendants_node = layout_descendants(
         canvas,
         graph.descendant_branches,
@@ -511,6 +581,8 @@ def _build_scene(
         highlight_lookup=_safe_highlight,
         show_highlight_markers=config.show_highlight_markers,
         configured_generation_limit=config.descendant_generations,
+        descendant_marriages=descendant_marriages,
+        show_descendant_marriages=config.show_descendant_marriages,
     )
 
     # --- Optional decorations (section titles are intentionally omitted) ---

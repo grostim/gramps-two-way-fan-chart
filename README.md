@@ -87,6 +87,11 @@ To include marriage information for each recorded ancestor couple, enable
 sectors in the ancestor fan and displays the recorded marriage year and place.
 The option is disabled by default and does not alter the standard fan layout.
 
+To include the same information for descendant couples, enable
+**Show descendant marriages**. Intermediate sectors are inserted after each
+descendant generation; when a distant sector cannot carry the place legibly,
+the label keeps the marriage year only. This option is also disabled by default.
+
 Headless example:
 
 ```bash
@@ -100,6 +105,7 @@ gramps -O "MyTree" -a report -p \
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
 - complete given-name + surname labels for the center and ancestors, with usage-name labels for descendants; records without known life years have no date label;
 - optional intermediate ancestor-marriage sectors with marriage year and place;
+- optional intermediate descendant-marriage sectors with year/place fallback;
 - privacy filtering before formatting and media loading;
 - optional exact-name tag highlighting with a grayscale-distinct marker;
 - circular portrait crops with neutral, gendered, or initials fallbacks;

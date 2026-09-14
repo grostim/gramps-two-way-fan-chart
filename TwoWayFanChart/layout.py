@@ -2913,7 +2913,7 @@ def layout_descendants(
                     band_outer,
                     cell.start_angle,
                     cell.sweep_angle,
-                    descendant_fill(inherited_fill_index),
+                    descendant_generation_fill(inherited_fill_index, depth),
                     descendant_marriages or {},
                     union.family_handle,
                 )

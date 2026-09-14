@@ -1,11 +1,12 @@
 import unittest
 
 try:
-    from gramps.gen.lib import EventType
+    from gramps.gen.lib import Date, EventType
     from TwoWayFanChart.facts import extract_union
     from TwoWayFanChart.model import VisibilityState
     from TwoWayFanChart.pipeline import _ancestor_marriage_label
 except ModuleNotFoundError:  # pragma: no cover - exercised in CI with Gramps
+    Date = None
     EventType = None
     extract_union = None
     VisibilityState = None
@@ -18,6 +19,15 @@ class FakeDate:
 
     def get_year(self):
         return 1899
+
+    def get_modifier(self):
+        return Date.MOD_NONE
+
+    def get_quality(self):
+        return Date.QUAL_NONE
+
+    def is_compound(self):
+        return False
 
 
 class FakeEventRef:

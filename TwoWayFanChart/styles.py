@@ -108,8 +108,10 @@ def generation_shade(base_color: str, *, generation: int) -> str:
     """
     if generation <= 0:
         return base_color
-    # Each generation lightens by ~8%, capped at white
-    factor = min(generation * 0.08, 1.0)
+    # Each generation lightens by ~22%, capped at white. The former ~8% step
+    # moved pastel fills by only 3-4 RGB units per ring, which is below the
+    # perceptual threshold: keep the progression visible on light pastels.
+    factor = min(generation * 0.22, 1.0)
     return _lighten(base_color, factor)
 
 

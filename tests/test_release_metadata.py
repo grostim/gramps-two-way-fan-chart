@@ -21,22 +21,22 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(metadata.archive_name, "TwoWayFanChart.addon.tgz")
 
     def test_version_must_be_a_plain_semver_patch_version(self):
-        validate_version("1.2.40")
+        validate_version("1.2.46")
 
         with self.assertRaisesRegex(ValueError, "semantic version"):
             validate_version("1.2")
 
         with self.assertRaisesRegex(ValueError, "semantic version"):
-            validate_version("v1.2.40")
+            validate_version("v1.2.46")
 
     def test_version_must_be_newer_than_existing_release_tags(self):
-        validate_version_is_newer("1.2.40", ["1.2.39", "1.2.4"])
+        validate_version_is_newer("1.2.46", ["1.2.39", "1.2.4"])
 
         with self.assertRaisesRegex(ValueError, "newer than existing release"):
             validate_version_is_newer("1.2.39", ["1.2.39"])
 
         with self.assertRaisesRegex(ValueError, "newer than existing release"):
-            validate_version_is_newer("1.2.4", ["1.2.40"])
+            validate_version_is_newer("1.2.4", ["1.2.46"])
 
     def test_github_output_contains_only_single_line_values(self):
         metadata = read_release_metadata(Path(__file__).resolve().parents[1])

@@ -1388,6 +1388,7 @@ def layout_center(
     right_label: str | None = None,
     left_dates: str = "",
     right_dates: str = "",
+    marriage_label: str = "",
     left_portrait: str | None = None,
     right_portrait: str | None = None,
     left_fallback: str = "",
@@ -1509,6 +1510,16 @@ def layout_center(
                 fill=TEXT_GREY,
                 anchor="middle",
             ))
+        if marriage_label:
+            children.append(SceneText(
+                x=cx,
+                y=cy + r * (94.0 / 190.0),
+                content=marriage_label,
+                font_size=r * (11.0 / 190.0),
+                fill=TEXT_GREY,
+                anchor="middle",
+                max_width=r * 1.72,
+            ))
     else:
         # Single medallion for incomplete couple
         med_r = r * (52.0 / 190.0)
@@ -1555,6 +1566,16 @@ def layout_center(
                 font_size=r * (13.0 / 190.0),
                 fill=TEXT_GREY,
                 anchor="middle",
+            ))
+        if marriage_label:
+            children.append(SceneText(
+                x=cx,
+                y=cy + r * (94.0 / 190.0),
+                content=marriage_label,
+                font_size=r * (11.0 / 190.0),
+                fill=TEXT_GREY,
+                anchor="middle",
+                max_width=r * 1.72,
             ))
 
     if statistics:

@@ -175,14 +175,14 @@ def _public_dates(database, handle: str | None) -> str:
     return simple_dates(database, handle)
 
 
-def _ancestor_marriage_label(
+def _marriage_label(
     database,
     family_handle: str,
     visibility_lookup,
     *,
     include_private: bool,
 ) -> str:
-    """Return only a privacy-safe marriage year and place for one family."""
+    """Return only a privacy-safe marriage date and place for one family."""
     try:
         family = database.get_family_from_handle(family_handle)
     except Exception:
@@ -228,6 +228,22 @@ def _ancestor_marriage_label(
         return ""
     return " · ".join(
         value for value in (fact.date_text, fact.place) if value
+    )
+
+
+def _ancestor_marriage_label(
+    database,
+    family_handle: str,
+    visibility_lookup,
+    *,
+    include_private: bool,
+) -> str:
+    """Return a privacy-safe label for one ancestor family marriage."""
+    return _marriage_label(
+        database,
+        family_handle,
+        visibility_lookup,
+        include_private=include_private,
     )
 
 
@@ -415,6 +431,15 @@ def _build_scene(
     right_portrait = _safe_portrait(center_right_handle)
     left_dates = _safe_dates(center_left_handle)
     right_dates = _safe_dates(center_right_handle)
+    center_marriage_label = _marriage_label(
+        db,
+        graph.center_family_handle,
+        _person_visibility,
+        include_private=(
+            config.include_private
+            and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
+        ),
+    )
 
     # Statistics line is omitted (not needed for now)
     statistics = None
@@ -425,6 +450,7 @@ def _build_scene(
         right_label=right_label,
         left_dates=left_dates,
         right_dates=right_dates,
+        marriage_label=center_marriage_label,
         left_portrait=left_portrait,
         right_portrait=right_portrait,
         left_fallback=_safe_fallback(center_left_handle, left_label),

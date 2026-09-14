@@ -13,7 +13,7 @@ from TwoWayFanChart.layout import (
     layout_descendants,
 )
 from TwoWayFanChart.model import DescendantBranch, PersonNode, SceneSector, UnionBranch
-from TwoWayFanChart.styles import DESCENDANT_FILLS
+from TwoWayFanChart.styles import DESCENDANT_FILLS, generation_shade
 
 
 def branch(
@@ -59,7 +59,7 @@ class DescendantColorTests(unittest.TestCase):
         self.assertNotIn("#EEF1E8", DESCENDANT_FILLS)
         self.assertNotIn("#F7EBE6", DESCENDANT_FILLS)
 
-    def test_each_central_child_keeps_one_fill_across_its_whole_dependency(self):
+    def test_each_central_child_keeps_its_branch_hue_across_generations(self):
         a_grandchild = branch("a-grandchild", 3)
         a_child_one = branch(
             "a-child-one",
@@ -104,22 +104,35 @@ class DescendantColorTests(unittest.TestCase):
         sectors = [node for node in scene.children if isinstance(node, SceneSector)]
         self.assertTrue(sectors)
 
-        root_colors: list[set[str]] = []
-        for allocation in allocations:
-            colors = {
-                sector.fill
-                for sector in sectors
-                if _in_interval(
-                    _sector_mid_angle(sector),
-                    allocation.start_angle,
-                    allocation.sweep_angle,
+        root_colors: list[list[set[str]]] = []
+        source_allocations = tuple(reversed(allocations))
+        for allocation in source_allocations:
+            generations: list[set[str]] = []
+            for depth in (1, 2, 3):
+                ring_inner, ring_outer = _descendant_ring_bounds(
+                    canvas.descendant_inner_radius_mm,
+                    canvas.descendant_outer_radius_mm,
+                    3,
+                    depth,
                 )
-            }
-            root_colors.append(colors)
+                generations.append({
+                    sector.fill
+                    for sector in sectors
+                    if math.isclose(sector.inner_radius, ring_inner)
+                    and math.isclose(sector.outer_radius, ring_outer)
+                    and _in_interval(
+                        _sector_mid_angle(sector),
+                        allocation.start_angle,
+                        allocation.sweep_angle,
+                    )
+                })
+            root_colors.append(generations)
 
-        self.assertEqual(len(root_colors[0]), 1)
-        self.assertEqual(len(root_colors[1]), 1)
-        self.assertNotEqual(root_colors[0], root_colors[1])
+        self.assertTrue(all(len(colors) == 1 for colors in root_colors[0]))
+        self.assertTrue(all(len(colors) <= 1 for colors in root_colors[1]))
+        self.assertNotEqual(root_colors[0][0], root_colors[1][0])
+        self.assertNotEqual(root_colors[0][0], root_colors[0][1])
+        self.assertNotEqual(root_colors[0][1], root_colors[0][2])
 
         first_ring_inner, first_ring_outer = _descendant_ring_bounds(
             canvas.descendant_inner_radius_mm,
@@ -135,6 +148,54 @@ class DescendantColorTests(unittest.TestCase):
         ]
         self.assertGreaterEqual(len(first_ring), 4)
         self.assertTrue(all(sector.fill in DESCENDANT_FILLS for sector in first_ring))
+
+    def test_each_generation_lightens_the_central_child_color(self):
+        grandchild = branch("grandchild", 3)
+        child = branch(
+            "child",
+            2,
+            children_by_union=((grandchild,),),
+            spouses=("child-spouse",),
+        )
+        root = branch("root", 1, children_by_union=((child,),), spouses=("spouse",))
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=3,
+        )
+
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: handle,
+        )
+        sectors = [node for node in scene.children if isinstance(node, SceneSector)]
+        colors_by_generation = []
+        for depth in (1, 2, 3):
+            ring_inner, ring_outer = _descendant_ring_bounds(
+                canvas.descendant_inner_radius_mm,
+                canvas.descendant_outer_radius_mm,
+                3,
+                depth,
+            )
+            colors_by_generation.append({
+                sector.fill
+                for sector in sectors
+                if math.isclose(sector.inner_radius, ring_inner)
+                and math.isclose(sector.outer_radius, ring_outer)
+            })
+
+        self.assertEqual(colors_by_generation[0], {
+            generation_shade(DESCENDANT_FILLS[0], generation=0),
+        })
+        self.assertEqual(colors_by_generation[1], {
+            generation_shade(DESCENDANT_FILLS[0], generation=1),
+        })
+        self.assertEqual(colors_by_generation[2], {
+            generation_shade(DESCENDANT_FILLS[0], generation=2),
+        })
+        self.assertNotEqual(colors_by_generation[0], colors_by_generation[1])
+        self.assertNotEqual(colors_by_generation[1], colors_by_generation[2])
 
 
 if __name__ == "__main__":

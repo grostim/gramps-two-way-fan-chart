@@ -2208,6 +2208,92 @@ def _spouse_label(union, name_lookup) -> str | None:
     return name_lookup(union.spouse_handle)
 
 
+def _rebalance_descendant_widths(
+    total_depth: float,
+    generation_count: int,
+    *,
+    direct_floor_extra: float = 0.0,
+) -> list[float]:
+    """Allocate deep rings while preserving the direct-child medallion floor."""
+    weights = [1.0 + 0.35 * index for index in range(generation_count)]
+    total_weight = sum(weights)
+    widths = [total_depth * weight / total_weight for weight in weights]
+
+    # The extracted root branch is already a child of the central couple:
+    # ``depth=1`` is therefore the direct-child ring and ``depth=2`` is
+    # the grandchild ring. Transfer the extra depth needed to double the
+    # grandchild lane from later rings while retaining the direct-child floor.
+    grandchild_visible_width = max(widths[1] - _RING_GAP_MM, 0.0)
+    remaining_transfer = grandchild_visible_width
+    minimum_direct_visible_width = max(
+        8.0,
+        total_depth * 0.05,
+        _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM + direct_floor_extra,
+    )
+    minimum_later_visible_width = min(
+        _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
+        max(8.0, total_depth * 0.30),
+    )
+    direct_floor_deficit = max(
+        minimum_direct_visible_width - widths[0],
+        0.0,
+    )
+    for offset in range(len(widths) - 1, 1, -1):
+        reducible = max(
+            widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
+            0.0,
+        )
+        transfer = min(direct_floor_deficit, reducible)
+        widths[offset] -= transfer
+        widths[0] += transfer
+        direct_floor_deficit -= transfer
+        if direct_floor_deficit <= 0.0:
+            break
+    direct_donor_capacity = max(
+        widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
+        0.0,
+    )
+    later_ring_count = len(widths) - 2
+    needed_later_transfer = max(
+        remaining_transfer - direct_donor_capacity,
+        0.0,
+    )
+    if later_ring_count and needed_later_transfer > 0.0:
+        later_visible_budget = sum(
+            max(width - _RING_GAP_MM, 0.0)
+            for width in widths[2:]
+        )
+        scaled_later_floor = max(
+            _DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM,
+            (later_visible_budget - needed_later_transfer)
+            / later_ring_count,
+        )
+        minimum_later_visible_width = min(
+            minimum_later_visible_width,
+            scaled_later_floor,
+        )
+    for offset in range(len(widths) - 1, 1, -1):
+        reducible = max(
+            widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
+            0.0,
+        )
+        transfer = min(remaining_transfer, reducible)
+        widths[offset] -= transfer
+        widths[1] += transfer
+        remaining_transfer -= transfer
+        if remaining_transfer <= 0.0:
+            break
+    if remaining_transfer > 0.0:
+        reducible = max(
+            widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
+            0.0,
+        )
+        transfer = min(remaining_transfer, reducible)
+        widths[0] -= transfer
+        widths[1] += transfer
+    return widths
+
+
 def _descendant_ring_bounds(
     inner_radius: float,
     outer_radius: float,
@@ -2232,78 +2318,7 @@ def _descendant_ring_bounds(
             outer_radius * exact_outer[depth - 1],
         )
     else:
-        weights = [1.0 + 0.35 * index for index in range(generation_count)]
-        total_weight = sum(weights)
-        widths = [total_depth * weight / total_weight for weight in weights]
-
-        # The extracted root branch is already a child of the central couple:
-        # ``depth=1`` is therefore the direct-child ring and ``depth=2`` is
-        # the grandchild ring. Transfer the extra depth needed to double the
-        # grandchild lane from later rings so the full descendant composition
-        # remains contained within the original outer radius.
-        grandchild_visible_width = max(widths[1] - _RING_GAP_MM, 0.0)
-        remaining_transfer = grandchild_visible_width
-        minimum_direct_visible_width = max(
-            8.0,
-            total_depth * 0.05,
-            _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
-        )
-        minimum_later_visible_width = min(
-            _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
-            max(8.0, total_depth * 0.30),
-        )
-        # On smaller pages, the normal later-ring floor can consume the space
-        # needed to complete the target doubling. Scale that floor before
-        # taking more from the direct-child ring; the latter must retain its
-        # medallion capacity whenever the total radial budget allows it.
-        direct_donor_capacity = max(
-            widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
-            0.0,
-        )
-        later_ring_count = len(widths) - 2
-        needed_later_transfer = max(
-            remaining_transfer - direct_donor_capacity,
-            0.0,
-        )
-        if later_ring_count and needed_later_transfer > 0.0:
-            later_visible_budget = sum(
-                max(width - _RING_GAP_MM, 0.0)
-                for width in widths[2:]
-            )
-            scaled_later_floor = max(
-                _DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM,
-                (later_visible_budget - needed_later_transfer)
-                / later_ring_count,
-            )
-            minimum_later_visible_width = min(
-                minimum_later_visible_width,
-                scaled_later_floor,
-            )
-        # Preserve the generations immediately following the target whenever
-        # possible: the outermost rings are the least identity-dense and can
-        # donate their excess width without collapsing intermediate unions.
-        for offset in range(len(widths) - 1, 1, -1):
-            reducible = max(
-                widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
-                0.0,
-            )
-            transfer = min(remaining_transfer, reducible)
-            widths[offset] -= transfer
-            widths[1] += transfer
-            remaining_transfer -= transfer
-            if remaining_transfer <= 0.0:
-                break
-        if remaining_transfer > 0.0:
-            # A three-generation layout has only one later ring. Preserve a
-            # small direct-child lane as well, but use it as the final donor so
-            # the grandchild target remains exact whenever the page can hold it.
-            reducible = max(
-                widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
-                0.0,
-            )
-            transfer = min(remaining_transfer, reducible)
-            widths[0] -= transfer
-            widths[1] += transfer
+        widths = _rebalance_descendant_widths(total_depth, generation_count)
     ring_inner = inner_radius + sum(widths[: depth - 1])
     return ring_inner, ring_inner + widths[depth - 1] - _RING_GAP_MM
 
@@ -2342,13 +2357,17 @@ def _descendant_ring_layout(
     )
     person_depth = max(0.0, total_depth - generation_count * band_width)
     if generation_count == 1:
-        weights = [1.0]
+        widths = [person_depth]
     elif generation_count == 2:
         weights = [0.38, 0.62]
+        total_weight = sum(weights)
+        widths = [person_depth * weight / total_weight for weight in weights]
     else:
-        weights = [1.0 + 0.35 * index for index in range(generation_count)]
-    total_weight = sum(weights)
-    widths = [person_depth * weight / total_weight for weight in weights]
+        widths = _rebalance_descendant_widths(
+            person_depth,
+            generation_count,
+            direct_floor_extra=2 * _RING_GAP_MM,
+        )
 
     rings: list[tuple[float, float]] = []
     bands: list[tuple[float, float]] = []

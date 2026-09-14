@@ -287,6 +287,38 @@ class DescendantReadabilityTests(unittest.TestCase):
                     _DESCENDANT_FIRST_GEN_LINE_GAP_MM - 1e-3,
                 )
 
+    def test_descendant_marriage_bands_keep_deep_gen1_medallions(self):
+        deep_branch = branch("g5", 5)
+        for depth in range(4, 0, -1):
+            deep_branch = branch(
+                f"g{depth}",
+                depth,
+                children=(deep_branch,),
+                spouse=f"s{depth}",
+            )
+        labels = {
+            **{f"g{depth}": f"Generation {depth}" for depth in range(1, 6)},
+            **{f"s{depth}": f"Spouse {depth}" for depth in range(1, 5)},
+        }
+
+        scene = layout_descendants(
+            a0_canvas(descendant_generations=5),
+            (deep_branch,),
+            name_lookup=labels.__getitem__,
+            portrait_lookup=lambda _handle: "data:image/svg+xml;base64,PHN2Zy8+",
+            descendant_marriages={},
+            show_descendant_marriages=True,
+        )
+
+        self.assertEqual(
+            len([node for node in scene.children if isinstance(node, SceneCircle)]),
+            2,
+        )
+        self.assertEqual(
+            len([node for node in scene.children if isinstance(node, SceneImage)]),
+            2,
+        )
+
     def test_first_generation_fallback_avoids_overlapping_lines_on_small_pages(self):
         root = branch(
             "root",

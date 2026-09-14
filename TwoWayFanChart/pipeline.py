@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from TwoWayFanChart.config import ChartConfig, OutputFormat
+    from TwoWayFanChart.config import ChartConfig, OutputFormat, PrivacyMode
     from TwoWayFanChart.extract import extract_chart_graph
-    from TwoWayFanChart.facts import simple_name, simple_dates
+    from TwoWayFanChart.facts import extract_union, simple_name, simple_dates
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -40,9 +40,9 @@ try:
     from TwoWayFanChart.render_svg import render_svg
     from TwoWayFanChart.validate import validate_svg_output
 except ModuleNotFoundError:
-    from config import ChartConfig, OutputFormat  # type: ignore[no-redef]
+    from config import ChartConfig, OutputFormat, PrivacyMode  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
-    from facts import simple_name, simple_dates  # type: ignore[no-redef]
+    from facts import extract_union, simple_name, simple_dates  # type: ignore[no-redef]
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -173,6 +173,51 @@ def _public_dates(database, handle: str | None) -> str:
     if not handle:
         return ""
     return simple_dates(database, handle)
+
+
+def _ancestor_marriage_label(
+    database,
+    family_handle: str,
+    visibility_lookup,
+    *,
+    include_private: bool,
+) -> str:
+    """Return only a privacy-safe marriage year and place for one family."""
+    try:
+        family = database.get_family_from_handle(family_handle)
+    except Exception:
+        return ""
+    if family is None:
+        return ""
+
+    parent_handles = tuple(
+        handle
+        for handle in (
+            family.get_father_handle(),
+            family.get_mother_handle(),
+        )
+        if handle
+    )
+    if not parent_handles or any(
+        visibility_lookup(handle)[1] is not VisibilityState.VISIBLE
+        for handle in parent_handles
+    ):
+        return ""
+    try:
+        fact = extract_union(
+            database,
+            family,
+            "years",
+            "locality",
+            include_private=include_private,
+        )
+    except Exception:
+        return ""
+    if fact is None:
+        return ""
+    return " · ".join(
+        value for value in (fact.date_text, fact.place) if value
+    )
 
 
 def _center_portrait_data_uri(config: ChartConfig, db, handle: str | None) -> str | None:
@@ -413,10 +458,29 @@ def _build_scene(
                 ),
             )
         )
+    ancestor_marriages = tuple(
+        (
+            marriage.generation,
+            marriage.lineage,
+            marriage.index,
+            _ancestor_marriage_label(
+                db,
+                marriage.family_handle,
+                _person_visibility,
+                include_private=(
+                    config.include_private
+                    and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
+                ),
+            ),
+        )
+        for marriage in graph.ancestor_marriages
+    ) if config.show_ancestor_marriages else ()
     ancestors_node = layout_ancestors(
         canvas,
         ancestor_slots=tuple(ancestor_slots),
         show_highlight_markers=config.show_highlight_markers,
+        ancestor_marriages=ancestor_marriages,
+        show_ancestor_marriages=config.show_ancestor_marriages,
     )
 
     # --- Descendant branches with real person names ---

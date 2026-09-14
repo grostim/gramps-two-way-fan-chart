@@ -298,9 +298,16 @@ def extract_union(
     *,
     locale=glocale,
     displayer=place_displayer,
+    include_private: bool = True,
 ) -> EventFact | None:
-    """Extract the first marriage event in the family's Gramps order."""
+    """Extract the first permitted marriage event in the family's order."""
     events = _events_for(database, family, EventType.MARRIAGE)
+    if not include_private:
+        events = tuple(
+            event
+            for event in events
+            if not bool(getattr(event, "get_privacy", lambda: False)())
+        )
     if not events:
         return None
     selected = events[0]
@@ -583,6 +590,10 @@ def build_person_view(
     occupation_maximum = getattr(config, "occupation_maximum", 1)
     show_residence = bool(getattr(config, "show_residence", False))
     show_union = bool(getattr(config, "show_union", False))
+    privacy_mode = getattr(config, "privacy_mode", None)
+    private_facts_allowed = bool(getattr(config, "include_private", True)) and (
+        getattr(privacy_mode, "value", privacy_mode) != "publication_safe"
+    )
     show_sosa = bool(getattr(config, "show_sosa", False))
     show_daboville = bool(getattr(config, "show_daboville", False))
 
@@ -621,6 +632,7 @@ def build_person_view(
                 date_format,
                 place_strategy,
                 locale=locale,
+                include_private=private_facts_allowed,
             )
         if show_sosa and ancestor_slot is not None:
             number_label = f"Sosa {sosa_number(*ancestor_slot)}"

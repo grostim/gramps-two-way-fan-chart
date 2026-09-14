@@ -659,6 +659,7 @@ def _ancestor_content_geometry(
 # ---------------------------------------------------------------------------
 
 _ANCESTOR_HALF_SPAN_DEG = 86.0  # mockup: 172° total, 4° waist gap per side
+_ANCESTOR_MARRIAGE_BAND_MM = 8.0
 
 
 def layout_ancestors(
@@ -666,6 +667,8 @@ def layout_ancestors(
     ancestor_slots: tuple[tuple, ...],
     *,
     show_highlight_markers: bool = False,
+    ancestor_marriages: tuple = (),
+    show_ancestor_marriages: bool = False,
 ) -> SceneNode:
     """Place ancestor fan sectors in the upper half-circle.
 
@@ -726,6 +729,16 @@ def layout_ancestors(
             gen = 1
         parsed.append((pid, lineage, gen, label, dates_label, portrait, highlighted))
 
+    marriage_labels: dict[tuple[int, str, int], str] = {}
+    for marriage in ancestor_marriages:
+        if hasattr(marriage, "generation"):
+            key = (marriage.generation, marriage.lineage, marriage.index)
+            label = marriage.label
+        else:
+            generation, lineage, index, label = marriage[:4]
+            key = (generation, lineage, index)
+        marriage_labels[key] = label
+
     # Determine actual generations present
     max_gen = max(g for _, _, g, _, _, _, _ in parsed) if parsed else 1
     num_gens = max_gen
@@ -734,12 +747,18 @@ def layout_ancestors(
     # Mockup ancestor rings widen outwards: 113 px, 125 px, 148 px.
     # The formula reproduces those proportions for three generations and
     # degrades progressively for deeper configurations.
+    marriage_band_width = (
+        min(_ANCESTOR_MARRIAGE_BAND_MM, total_depth / max(num_gens * 3.0, 1.0))
+        if show_ancestor_marriages and num_gens > 0
+        else 0.0
+    )
+    person_depth = max(0.0, total_depth - num_gens * marriage_band_width)
     if num_gens > 0:
         weights = [1.0 + 0.105 * i + 0.05 * i * (i - 1) for i in range(num_gens)]
         total_weight = sum(weights)
-        ring_widths = [total_depth * weight / total_weight for weight in weights]
+        ring_widths = [person_depth * weight / total_weight for weight in weights]
     else:
-        ring_widths = [total_depth]
+        ring_widths = [person_depth]
 
     children: list = []
 
@@ -760,10 +779,16 @@ def layout_ancestors(
                 lineage_surnames.setdefault(lineage, surname)
 
     # Group slots by generation
+    radial_cursor = inner_r
     for gen in range(1, num_gens + 1):
-        gen_inner = inner_r + sum(ring_widths[:gen-1])
+        marriage_inner = radial_cursor
+        marriage_outer = marriage_inner + marriage_band_width
+        if show_ancestor_marriages and marriage_band_width > 0.0:
+            radial_cursor = marriage_outer
+        gen_inner = radial_cursor
         ring_width = ring_widths[gen - 1]
         gen_outer = gen_inner + ring_width - _RING_GAP_MM
+        radial_cursor = gen_inner + ring_width
 
         gen_slots = [
             (pid, lin, lbl, dt, portrait, highlighted)
@@ -785,6 +810,31 @@ def layout_ancestors(
 
         sweep_a = _ANCESTOR_HALF_SPAN_DEG / max(len(slots_a), 1) if slots_a else 0
         sweep_b = _ANCESTOR_HALF_SPAN_DEG / max(len(slots_b), 1) if slots_b else 0
+
+        if show_ancestor_marriages and marriage_band_width > 0.0:
+            for lineage, slot_count in (("a", len(slots_a)), ("b", len(slots_b))):
+                marriage_count = (slot_count + 1) // 2
+                if marriage_count == 0:
+                    continue
+                marriage_sweep = _ANCESTOR_HALF_SPAN_DEG / marriage_count
+                for marriage_index in range(marriage_count):
+                    start_angle = (
+                        -_ANCESTOR_HALF_SPAN_DEG + marriage_index * marriage_sweep
+                        if lineage == "a"
+                        else marriage_index * marriage_sweep
+                    )
+                    _emit_ancestor_marriage_sector(
+                        children,
+                        cx,
+                        cy,
+                        marriage_inner,
+                        marriage_outer,
+                        start_angle,
+                        marriage_sweep,
+                        gen,
+                        lineage,
+                        marriage_labels.get((gen, lineage, marriage_index), ""),
+                    )
 
         # One name size is shared by every visible label in a generation.
         # Measure the complete label against its own cell first, then use the
@@ -897,6 +947,59 @@ def layout_ancestors(
             )
 
     return SceneNode(children=tuple(children))
+
+
+def _emit_ancestor_marriage_sector(
+    children: list,
+    cx: float,
+    cy: float,
+    inner_r: float,
+    outer_r: float,
+    start_angle: float,
+    sweep: float,
+    generation: int,
+    lineage: str,
+    label: str,
+) -> None:
+    """Emit one optional inter-generation sector for a parent couple."""
+    children.append(SceneSector(
+        inner_radius=inner_r,
+        outer_radius=outer_r,
+        start_angle=start_angle,
+        sweep_angle=sweep,
+        fill=ancestor_fill(generation, lineage),
+        stroke=SECTOR_STROKE,
+        stroke_width=SECTOR_STROKE_WIDTH,
+        cx=cx,
+        cy=cy,
+    ))
+    if not label:
+        return
+
+    text_radius = (inner_r + outer_r) / 2.0
+    capacity = _ancestor_arc_text_capacity(
+        text_radius=text_radius,
+        sweep_angle=sweep,
+    )
+    font_size = _font_size_for_width(
+        label,
+        target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
+        max_width=capacity,
+    )
+    children.append(ScenePathText(
+        path=_arc_text_path(
+            cx,
+            cy,
+            text_radius,
+            start_angle,
+            start_angle + sweep,
+            lower=False,
+        ),
+        content=label,
+        font_size=font_size,
+        fill=TEXT_DARK,
+        max_width=capacity,
+    ))
 
 
 def _emit_ancestor_sector(

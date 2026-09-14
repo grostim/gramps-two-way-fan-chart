@@ -38,6 +38,7 @@ class DefaultConfigurationTests(unittest.TestCase):
         self.assertTrue(config.include_private)
         self.assertEqual(config.living_people_mode, 99)
         self.assertFalse(config.show_highlight_markers)
+        self.assertFalse(config.show_ancestor_marriages)
 
     def test_publication_preset_uses_the_same_requested_defaults(self):
         config = build_preset(PresetName.PUBLICATION)
@@ -71,6 +72,7 @@ class DefaultConfigurationTests(unittest.TestCase):
             'add_private_data_option(menu, _(CATEGORY_PRIVACY), default=True)',
             'mode=LivingProxyDb.MODE_INCLUDE_ALL',
             'BooleanOption(_("Show citation markers"), False)',
+            'BooleanOption(_("Show ancestor marriages"), False)',
         ):
             self.assertIn(expected, source)
 

@@ -82,6 +82,11 @@ No SSH key or GrampsWeb credential is stored in this repository. Keep
    the signal is cleared automatically for masked or excluded people.
 5. Choose SVG, PDF, or PNG output and generate the report.
 
+To include marriage information for each recorded ancestor couple, enable
+**Show ancestor marriages**. The report then inserts compact intermediate
+sectors in the ancestor fan and displays the recorded marriage year and place.
+The option is disabled by default and does not alter the standard fan layout.
+
 Headless example:
 
 ```bash
@@ -94,6 +99,7 @@ gramps -O "MyTree" -a report -p \
 - bidirectional ancestor/descendant fan layout;
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
 - complete given-name + surname labels for the center and ancestors, with usage-name labels for descendants; records without known life years have no date label;
+- optional intermediate ancestor-marriage sectors with marriage year and place;
 - privacy filtering before formatting and media loading;
 - optional exact-name tag highlighting with a grayscale-distinct marker;
 - circular portrait crops with neutral, gendered, or initials fallbacks;

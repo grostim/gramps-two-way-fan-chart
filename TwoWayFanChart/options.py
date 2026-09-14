@@ -202,6 +202,11 @@ class TwoWayFanChartOptions(MenuReportOptions):
             ),
         )
         menu.add_option(
+            _(CATEGORY_FAMILIES),
+            "show_ancestor_marriages",
+            BooleanOption(_("Show ancestor marriages"), False),
+        )
+        menu.add_option(
             _(CATEGORY_PORTRAITS),
             "show_portraits",
             BooleanOption(_("Show portraits"), True),
@@ -323,6 +328,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "descendant_generations": config.descendant_generations,
             "parent_family_policy": config.parent_family_policy,
             "descendant_family_policy": config.descendant_family_policy,
+            "show_ancestor_marriages": config.show_ancestor_marriages,
             "show_portraits": config.show_portraits,
             "portrait_source": config.portrait_source,
             "respect_media_crop": config.respect_media_crop,
@@ -449,6 +455,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 descendant_generations=value("descendant_generations"),
                 parent_family_policy=value("parent_family_policy"),
                 descendant_family_policy=value("descendant_family_policy"),
+                show_ancestor_marriages=value("show_ancestor_marriages"),
                 show_portraits=value("show_portraits"),
                 portrait_source=value("portrait_source"),
                 respect_media_crop=value("respect_media_crop"),

@@ -1,14 +1,19 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from gramps.gen.lib import Date, EventType
 
 from TwoWayFanChart.facts import (
+    VitalDates,
+    VitalFact,
+    build_person_view,
     extract_union,
     format_event_date,
     format_date,
     simple_dates,
 )
+from TwoWayFanChart.model import PersonViewSeed, VisibilityState
 
 
 class FakeEvent:
@@ -121,6 +126,54 @@ class DateSymbolTests(unittest.TestCase):
 
         self.assertIsNotNone(fact)
         self.assertEqual(fact.date_text, "x 1820")
+
+    def test_person_view_passes_marriage_occurrence_to_union_extraction(self):
+        seed = PersonViewSeed(
+            position_id="person-position",
+            visibility=VisibilityState.VISIBLE,
+            given_name="Person",
+            surname="Example",
+            details=(),
+            media_reference=None,
+        )
+        config = SimpleNamespace(
+            date_format="years",
+            place_strategy="locality",
+            show_places=False,
+            show_occupation=False,
+            show_residence=False,
+            show_union=True,
+            show_sosa=False,
+            show_daboville=False,
+        )
+        labels = SimpleNamespace(
+            short_label="Person Example",
+            full_label="Person Example",
+            name_case="Person Example",
+        )
+        vitals = VitalDates(
+            VitalFact("", None, False),
+            VitalFact("", None, False),
+        )
+
+        with patch("TwoWayFanChart.facts.NameFormatter.from_config"), patch(
+            "TwoWayFanChart.facts.derive_name_labels", return_value=labels
+        ), patch(
+            "TwoWayFanChart.facts.extract_vital_dates", return_value=vitals
+        ), patch(
+            "TwoWayFanChart.facts.extract_union", return_value=None
+        ) as extract_union_mock:
+            build_person_view(
+                seed,
+                object(),
+                object(),
+                config,
+                "central_couple",
+                family=object(),
+                marriage_occurrence=3,
+            )
+
+        self.assertEqual(extract_union_mock.call_args.kwargs["occurrence"], 3)
 
 
 if __name__ == "__main__":

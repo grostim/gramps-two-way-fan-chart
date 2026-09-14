@@ -634,6 +634,7 @@ def build_person_view(
     ancestor_slot: tuple[int, int] | None = None,
     descendant_path: tuple[int, ...] | None = None,
     union_year: int | None = None,
+    marriage_occurrence: int = 1,
     locale=glocale,
     name_formats=None,
 ) -> PersonView:
@@ -700,6 +701,7 @@ def build_person_view(
                 date_format,
                 place_strategy,
                 locale=locale,
+                occurrence=marriage_occurrence,
             )
         if show_sosa and ancestor_slot is not None:
             number_label = f"Sosa {sosa_number(*ancestor_slot)}"

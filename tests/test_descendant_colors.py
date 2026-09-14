@@ -61,9 +61,9 @@ class DescendantColorTests(unittest.TestCase):
 
     def test_each_generation_step_is_perceptually_visible(self):
         # A ~8% per-generation step moved these pastel fills by only 3-4 RGB
-        # units per ring, and by only ~12 units across four generations —
-        # below the visual threshold. The lightening must remain monotone and
-        # the full progression must shift at least one channel by a clearly
+        # units per ring, and only ~12 units across four generations — below
+        # the visual threshold. The lightening must remain monotone and the
+        # full progression must shift at least one channel by a clearly
         # perceptible amount so the gradient reads across the whole fan.
         for base in DESCENDANT_FILLS:
             previous = base
@@ -95,6 +95,23 @@ class DescendantColorTests(unittest.TestCase):
                     f"{base} -> {final}"
                 ),
             )
+
+    def test_deepest_generation_stays_distinct_from_background(self):
+        # The supported maximum is five descendant generations, i.e. a
+        # generation parameter of 4 here. An uncapped lightening pushed the
+        # outer-ring fills into the page background (amber reached #FEFBF6
+        # against #FAF9F5), so the deepest ring must keep a clearly visible
+        # distance from the default background color.
+        from TwoWayFanChart.styles import PaletteName, get_palette
+
+        background = get_palette(PaletteName.MOCKUP).background
+        bg = tuple(int(background[index:index + 2], 16) for index in (1, 3, 5))
+        deepest = generation_shade(DESCENDANT_FILLS[0], generation=4)
+        distance = math.sqrt(sum(
+            (int(deepest[offset:offset + 2], 16) - bg[position]) ** 2
+            for position, offset in enumerate((1, 3, 5))
+        ))
+        self.assertGreater(distance, 10)
 
     def test_each_central_child_keeps_its_branch_hue_across_generations(self):
         a_grandchild = branch("a-grandchild", 3)

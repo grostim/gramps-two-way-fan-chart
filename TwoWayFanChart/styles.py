@@ -108,10 +108,11 @@ def generation_shade(base_color: str, *, generation: int) -> str:
     """
     if generation <= 0:
         return base_color
-    # Each generation lightens by ~22%, capped at white. The former ~8% step
-    # moved pastel fills by only 3-4 RGB units per ring, which is below the
-    # perceptual threshold: keep the progression visible on light pastels.
-    factor = min(generation * 0.22, 1.0)
+    # ~18% per generation, capped at 60% toward white. An uncapped step washed
+    # the deepest-ring fills into the page background (amber reached #FEFBF6
+    # against #FAF9F5, a 4/2/1 RGB delta at generation 5): keep the progression
+    # visible on light pastels AND keep the deepest supported ring distinct.
+    factor = min(generation * 0.18, 0.6)
     return _lighten(base_color, factor)
 
 

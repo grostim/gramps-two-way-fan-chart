@@ -179,7 +179,7 @@ class NicknameFormattingTests(unittest.TestCase):
             "Alexandre Roche",
         )
 
-    def test_without_call_name_or_nickname_uses_last_given_name(self):
+    def test_without_call_name_or_nickname_uses_first_given_name(self):
         database = FakeDatabase(
             FakePerson(
                 FakeName(
@@ -191,7 +191,23 @@ class NicknameFormattingTests(unittest.TestCase):
 
         self.assertEqual(
             _mockup_name_order(simple_name(database, "person-1")),
-            "Marie Roque",
+            "Louis Roque",
+        )
+
+    def test_issue52_first_recorded_given_name_is_the_display_name(self):
+        database = FakeDatabase(
+            FakePerson(
+                FakeName(
+                    first_name="Yvette Julie",
+                    nick_name="Candy",
+                    surnames=("Camet",),
+                )
+            )
+        )
+
+        self.assertEqual(
+            _mockup_name_order(simple_name(database, "person-1")),
+            'Yvette "Candy" Camet',
         )
 
     def test_missing_nickname_keeps_existing_label(self):

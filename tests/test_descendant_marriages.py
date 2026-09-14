@@ -50,6 +50,80 @@ class DescendantMarriageTests(unittest.TestCase):
             descendant_marriages=labels or {},
         )
 
+    def test_marriage_cap_preserves_the_measured_year_fallback(self):
+        # Issue #56 follow-up: when the shared marriage size is capped by a
+        # dense generation's name size, the render pass must keep the label
+        # choice made during measurement (year-only) instead of re-selecting
+        # the full date-and-place string at the tiny capped size.
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A5, Orientation.LANDSCAPE),
+            ancestor_generations=0,
+            descendant_generations=2,
+        )
+        labels = {"child": "Child", "spouse": "Spouse"}
+        children = []
+        marriage_labels = {}
+        for index in range(6):
+            labels[f"c{index}"] = f"Alexandre Guillaume De La Rochefoucauld {index}"
+            labels[f"c{index}-sp"] = f"Bernadette Charlotte De La Rochefoucauld {index}"
+            children.append(branch(f"c{index}", 2, spouse=f"c{index}-sp"))
+            marriage_labels[f"family-c{index}"] = (
+                f"x 19{index:02d} · Saint-Germain-en-Laye, Île-de-France, France",
+                f"x 19{index:02d}",
+            )
+        root = branch("child", 1, spouse="spouse", children=tuple(children))
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=labels.__getitem__,
+            dates_lookup=lambda _handle: "",
+            show_descendant_marriages=True,
+            descendant_marriages=marriage_labels,
+        )
+        marriage_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+            and node.content.startswith("x 19")
+        ]
+        self.assertEqual(len(marriage_nodes), 6)
+        self.assertTrue(
+            all(node.content in {f"x 19{i:02d}" for i in range(6)} for node in marriage_nodes),
+            msg="the capped render must keep the measured year-only labels",
+        )
+
+    def test_marriage_bands_emit_sectors_even_without_any_label(self):
+        # P2 follow-up on issue #56: a lineage whose families carry no
+        # marriage label must still get its colored sectors; the band width
+        # is reserved and an unlabeled band is a transparent hole otherwise.
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=0,
+            descendant_generations=2,
+        )
+        labels = {"child": "Child", "spouse": "Spouse"}
+        children = []
+        marriage_labels = {}
+        for index in range(4):
+            labels[f"c{index}"] = f"Child {index}"
+            labels[f"c{index}-sp"] = f"Spouse {index}"
+            children.append(branch(f"c{index}", 2, spouse=f"c{index}-sp"))
+            marriage_labels[f"family-c{index}"] = ("", "")
+        root = branch("child", 1, spouse="spouse", children=tuple(children))
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=labels.__getitem__,
+            dates_lookup=lambda _handle: "",
+            show_descendant_marriages=True,
+            descendant_marriages=marriage_labels,
+        )
+        self.assertGreaterEqual(
+            sum(isinstance(node, SceneSector) for node in scene.children),
+            5,
+            msg="unlabeled marriage bands must still emit their sectors",
+        )
+
     def test_option_defaults_to_disabled(self):
         self.assertFalse(ChartConfig().show_descendant_marriages)
 

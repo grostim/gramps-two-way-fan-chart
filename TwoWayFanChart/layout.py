@@ -902,7 +902,9 @@ def layout_ancestors(
         # Marriage sectors are emitted after the shared name size is known so
         # their labels stay at or below the individuals they concern (issue
         # #56): the smallest marriage fit of the ring and the shared name size
-        # both cap the single font used for this generation's band.
+        # both cap the single font used for this generation's band. Sectors are
+        # always emitted — an unlabeled lineage keeps its colored band instead
+        # of leaving a transparent radial hole where the width was reserved.
         if show_ancestor_marriages and marriage_band_width > 0.0:
             marriage_name_cap = generation_name_sizes.get(gen)
             for lineage, slot_count in (("a", len(slots_a)), ("b", len(slots_b))):
@@ -910,9 +912,12 @@ def layout_ancestors(
                 if marriage_count == 0:
                     continue
                 marriage_sweep = _ANCESTOR_HALF_SPAN_DEG / marriage_count
+                labels = [
+                    marriage_labels.get((gen, lineage, marriage_index), "")
+                    for marriage_index in range(marriage_count)
+                ]
                 marriage_sizes: list[float] = []
-                for marriage_index in range(marriage_count):
-                    label = marriage_labels.get((gen, lineage, marriage_index), "")
+                for label in labels:
                     if not label:
                         continue
                     text_radius = (marriage_inner + marriage_outer) / 2.0
@@ -928,11 +933,11 @@ def layout_ancestors(
                         ),
                         max_width=capacity,
                     ))
-                if not marriage_sizes:
-                    continue
-                shared_size = min(marriage_sizes)
-                if marriage_name_cap is not None:
-                    shared_size = min(shared_size, marriage_name_cap)
+                shared_size = None
+                if marriage_sizes:
+                    shared_size = min(marriage_sizes)
+                    if marriage_name_cap is not None:
+                        shared_size = min(shared_size, marriage_name_cap)
                 for marriage_index in range(marriage_count):
                     start_angle = (
                         -_ANCESTOR_HALF_SPAN_DEG + marriage_index * marriage_sweep
@@ -949,7 +954,7 @@ def layout_ancestors(
                         marriage_sweep,
                         gen,
                         lineage,
-                        marriage_labels.get((gen, lineage, marriage_index), ""),
+                        labels[marriage_index],
                         font_size=shared_size,
                     )
 
@@ -2477,26 +2482,24 @@ def _descendant_marriage_label_and_size(
     With a common generation size (measured over every marriage of the ring),
     the label degrades to the year when the full label does not fit at that
     shared size; every marriage of a generation then shares the same font.
+
+    The label choice is made against a readability floor of 1.8 mm: when the
+    shared size is capped far below it (issue #56), the full date-and-place
+    string is not re-selected at an unreadable size — the year-only label
+    chosen during measurement is kept, and only the font size follows the cap.
     """
     if common_size is not None:
-        full_at_common = estimate_text_width(full_label, common_size)
-        if full_label and full_at_common <= capacity:
-            return full_label, common_size
-        if not year_label:
-            return "", 0.0
-        # Keep the year even when the shared minimum size is still wider than
-        # this narrow sector: the renderer compresses the label through its
-        # max_width lane, preserving the pre-common-size fallback instead of
-        # dropping dense marriage rings entirely.
-        return year_label, common_size
-    label = full_label
-    if (
-        year_label
-        and estimate_text_width(full_label, 1.8) > capacity
-    ):
-        label = year_label
-    if not label:
+        threshold = max(common_size, 1.8)
+    else:
+        threshold = 1.8
+    if full_label and estimate_text_width(full_label, threshold) <= capacity:
+        label = full_label
+    elif not year_label:
         return "", 0.0
+    else:
+        label = year_label
+    if common_size is not None:
+        return label, common_size
     font_size = _font_size_for_width(
         label,
         target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),

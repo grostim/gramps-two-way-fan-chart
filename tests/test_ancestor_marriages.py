@@ -212,6 +212,48 @@ class AncestorMarriageTests(unittest.TestCase):
                 ),
             )
 
+    def test_marriage_bands_emit_sectors_even_without_any_label(self):
+        # P2 follow-up on issue #56: a lineage whose families carry no
+        # marriage label must still get its colored sectors; the band width
+        # is reserved and an unlabeled band is a transparent hole otherwise.
+        paper = PaperRegion(PaperSize.A0, Orientation.LANDSCAPE)
+        from TwoWayFanChart.layout import calculate_canvas
+
+        canvas = calculate_canvas(
+            paper,
+            ancestor_generations=1,
+            descendant_generations=0,
+        )
+        slots = (
+            ("ancestor-a-1-0", "Father A", "1800–1860", None, False),
+            ("ancestor-a-1-1", "Mother A", "1805–1870", None, False),
+            ("ancestor-b-1-0", "Father B", "1810–1870", None, False),
+            ("ancestor-b-1-1", "Mother B", "1815–1880", None, False),
+        )
+        scene = layout_ancestors(
+            canvas,
+            slots,
+            ancestor_marriages=(
+                AncestorMarriage(1, "a", 0, "family-a", ""),
+                AncestorMarriage(1, "b", 0, "family-b", "1850 · Paris"),
+            ),
+            show_ancestor_marriages=True,
+        )
+        labeled = layout_ancestors(
+            canvas,
+            slots,
+            ancestor_marriages=(
+                AncestorMarriage(1, "a", 0, "family-a", "1840 · Lyon"),
+                AncestorMarriage(1, "b", 0, "family-b", "1850 · Paris"),
+            ),
+            show_ancestor_marriages=True,
+        )
+        self.assertEqual(
+            sum(isinstance(node, SceneSector) for node in scene.children),
+            sum(isinstance(node, SceneSector) for node in labeled.children),
+            msg="an unlabeled lineage must keep the same colored sectors",
+        )
+
     def test_marriage_option_defaults_to_disabled(self):
         self.assertFalse(ChartConfig().show_ancestor_marriages)
 

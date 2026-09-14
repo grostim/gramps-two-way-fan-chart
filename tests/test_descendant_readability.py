@@ -320,7 +320,7 @@ class DescendantReadabilityTests(unittest.TestCase):
             2,
         )
 
-    def test_first_generation_fallback_avoids_overlapping_lines_on_small_pages(self):
+    def test_first_generation_lines_never_overlap_on_small_pages(self):
         root = branch(
             "root",
             1,
@@ -382,14 +382,47 @@ class DescendantReadabilityTests(unittest.TestCase):
                 and "GEN1" in node.content
             ]
 
-            self.assertEqual(
-                len(paths),
+            ring_inner, ring_outer = _descendant_ring_bounds(
+                canvas.descendant_inner_radius_mm,
+                canvas.descendant_outer_radius_mm,
+                4,
                 1,
-                msg=f"{name} kept overlapping first-generation lines",
             )
-            self.assertIn("GEN1 Root", paths[0].content)
-            self.assertIn("GEN1 Spouse", paths[0].content)
-            self.assertNotIn("1908", paths[0].content)
+            path_radii = sorted(
+                _path_radius(
+                    node.path,
+                    canvas.center_cx_mm,
+                    canvas.center_cy_mm,
+                )
+                for node in paths
+            )
+            # No identity lane may leave its direct-child ring…
+            for radius in path_radii:
+                self.assertGreaterEqual(
+                    radius,
+                    ring_inner - 1e-3,
+                    msg=f"{name} first-generation line leaves the direct ring",
+                )
+                self.assertLessEqual(
+                    radius,
+                    ring_outer + 1e-3,
+                    msg=f"{name} first-generation line leaves the direct ring",
+                )
+            if len(paths) == 1:
+                # Compact pages that cannot hold two readable lanes merge the
+                # identities into one combined lane instead of overlapping.
+                self.assertIn("GEN1 Root", paths[0].content)
+                self.assertIn("GEN1 Spouse", paths[0].content)
+                self.assertNotIn("1908", paths[0].content)
+            else:
+                # Larger direct rings (issue #57 ratio ×1.2) keep two lanes
+                # spaced by at least the readable baseline gap.
+                self.assertEqual(len(paths), 2)
+                self.assertGreaterEqual(
+                    path_radii[1] - path_radii[0],
+                    _DESCENDANT_FIRST_GEN_LINE_GAP_MM - 1e-3,
+                    msg=f"{name} kept overlapping first-generation lines",
+                )
 
     def test_descendant_arc_labels_are_foreground_of_later_generation_sectors(self):
         root = branch(
@@ -725,7 +758,7 @@ class DescendantReadabilityTests(unittest.TestCase):
             )
         )
 
-    def test_disabled_marriages_keep_legacy_deep_ring_allocation(self):
+    def test_disabled_marriages_keep_issue57_ratio_allocation(self):
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A4, Orientation.LANDSCAPE),
             ancestor_generations=5,
@@ -743,12 +776,12 @@ class DescendantReadabilityTests(unittest.TestCase):
                 for depth in range(1, 4)
             )
         ]
-        # The pre-marriage-band allocation left the grandchild lane about
-        # 20.6 mm wide on A4 and never donated ring space to a direct-child
-        # floor; the disabled path must keep that exact contract.
-        self.assertAlmostEqual(widths[0], 9.2694, places=3)
-        self.assertAlmostEqual(widths[1], 20.5868, places=3)
-        self.assertAlmostEqual(widths[2], 8.0, places=3)
+        # Issue #57 fixes the descendant ring profile to the normalized
+        # ×1.2 / ×0.8 / ×1.5 multipliers; the marriage-disabled path must
+        # keep that pure profile (no direct-floor transfer).
+        self.assertAlmostEqual(widths[0], 12.9878, places=3)
+        self.assertAlmostEqual(widths[1], 8.5586, places=3)
+        self.assertAlmostEqual(widths[2], 16.3098, places=3)
 
     def test_continuation_dots_clear_emitted_marriage_band(self):
         root = DescendantBranch(

@@ -8,6 +8,7 @@ from TwoWayFanChart.model import (
     PersonNode,
     ScenePathText,
     SceneSector,
+    SceneText,
     UnionBranch,
 )
 
@@ -227,6 +228,61 @@ class DescendantMarriageTests(unittest.TestCase):
             all(node.content == year for node in marriage_texts),
             msg="dense marriage sectors must keep the year label",
         )
+
+    def test_marriage_font_never_exceeds_the_concerned_names(self):
+        # Issue #56: the marriage label must stay at or below the font size
+        # of the individuals it concerns. With six crowded second-generation
+        # branches carrying long names, the shared generation name size
+        # collapses while the marriage band could still fit a much larger
+        # label; the band must follow the names instead.
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A5, Orientation.LANDSCAPE),
+            ancestor_generations=0,
+            descendant_generations=2,
+        )
+        labels = {"child": "Child", "spouse": "Spouse"}
+        children = []
+        marriage_labels = {}
+        for index in range(6):
+            labels[f"c{index}"] = f"Alexandre Guillaume De La Rochefoucauld {index}"
+            labels[f"c{index}-sp"] = f"Bernadette Charlotte De La Rochefoucauld {index}"
+            children.append(branch(f"c{index}", 2, spouse=f"c{index}-sp"))
+            marriage_labels[f"family-c{index}"] = (
+                f"x 19{index:02d} · Lyon",
+                f"x 19{index:02d}",
+            )
+        root = branch("child", 1, spouse="spouse", children=tuple(children))
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=labels.__getitem__,
+            dates_lookup=lambda _handle: "",
+            show_descendant_marriages=True,
+            descendant_marriages=marriage_labels,
+        )
+        name_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, (SceneText, ScenePathText))
+            and "Rochefoucauld" in node.content
+        ]
+        marriage_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText) and node.content.startswith("x 19")
+        ]
+        self.assertTrue(name_nodes)
+        self.assertEqual(len(marriage_nodes), 6)
+        shared_name_size = min(node.font_size for node in name_nodes)
+        for node in marriage_nodes:
+            self.assertLessEqual(
+                node.font_size,
+                shared_name_size,
+                msg=(
+                    "marriage font must not exceed the concerned names' font "
+                    f"(marriage {node.font_size:.3f}, name {shared_name_size:.3f})"
+                ),
+            )
 
     def test_each_recorded_union_gets_its_own_sector(self):
         canvas = calculate_canvas(

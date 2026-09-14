@@ -811,31 +811,6 @@ def layout_ancestors(
         sweep_a = _ANCESTOR_HALF_SPAN_DEG / max(len(slots_a), 1) if slots_a else 0
         sweep_b = _ANCESTOR_HALF_SPAN_DEG / max(len(slots_b), 1) if slots_b else 0
 
-        if show_ancestor_marriages and marriage_band_width > 0.0:
-            for lineage, slot_count in (("a", len(slots_a)), ("b", len(slots_b))):
-                marriage_count = (slot_count + 1) // 2
-                if marriage_count == 0:
-                    continue
-                marriage_sweep = _ANCESTOR_HALF_SPAN_DEG / marriage_count
-                for marriage_index in range(marriage_count):
-                    start_angle = (
-                        -_ANCESTOR_HALF_SPAN_DEG + marriage_index * marriage_sweep
-                        if lineage == "a"
-                        else marriage_index * marriage_sweep
-                    )
-                    _emit_ancestor_marriage_sector(
-                        children,
-                        cx,
-                        cy,
-                        marriage_inner,
-                        marriage_outer,
-                        start_angle,
-                        marriage_sweep,
-                        gen,
-                        lineage,
-                        marriage_labels.get((gen, lineage, marriage_index), ""),
-                    )
-
         # One name size is shared by every visible label in a generation.
         # Measure the complete label against its own cell first, then use the
         # most constrained result for the whole generation. This makes the
@@ -924,6 +899,65 @@ def layout_ancestors(
             generation_name_sizes[gen] = min(generation_candidates)
             generation_date_sizes[gen] = _date_font_size(generation_name_sizes[gen])
 
+        # Marriage sectors are emitted after the shared name size is known so
+        # their labels stay at or below the individuals they concern (issue
+        # #56): the smallest marriage fit of the ring and the shared name size
+        # both cap the single font used for this generation's band. Sectors are
+        # always emitted — an unlabeled lineage keeps its colored band instead
+        # of leaving a transparent radial hole where the width was reserved.
+        if show_ancestor_marriages and marriage_band_width > 0.0:
+            marriage_name_cap = generation_name_sizes.get(gen)
+            for lineage, slot_count in (("a", len(slots_a)), ("b", len(slots_b))):
+                marriage_count = (slot_count + 1) // 2
+                if marriage_count == 0:
+                    continue
+                marriage_sweep = _ANCESTOR_HALF_SPAN_DEG / marriage_count
+                labels = [
+                    marriage_labels.get((gen, lineage, marriage_index), "")
+                    for marriage_index in range(marriage_count)
+                ]
+                marriage_sizes: list[float] = []
+                for label in labels:
+                    if not label:
+                        continue
+                    text_radius = (marriage_inner + marriage_outer) / 2.0
+                    capacity = _ancestor_arc_text_capacity(
+                        text_radius=text_radius,
+                        sweep_angle=marriage_sweep,
+                    )
+                    marriage_sizes.append(_font_size_for_width(
+                        label,
+                        target_size=min(
+                            2.8,
+                            max(0.8, (marriage_outer - marriage_inner) * 0.42),
+                        ),
+                        max_width=capacity,
+                    ))
+                shared_size = None
+                if marriage_sizes:
+                    shared_size = min(marriage_sizes)
+                    if marriage_name_cap is not None:
+                        shared_size = min(shared_size, marriage_name_cap)
+                for marriage_index in range(marriage_count):
+                    start_angle = (
+                        -_ANCESTOR_HALF_SPAN_DEG + marriage_index * marriage_sweep
+                        if lineage == "a"
+                        else marriage_index * marriage_sweep
+                    )
+                    _emit_ancestor_marriage_sector(
+                        children,
+                        cx,
+                        cy,
+                        marriage_inner,
+                        marriage_outer,
+                        start_angle,
+                        marriage_sweep,
+                        gen,
+                        lineage,
+                        labels[marriage_index],
+                        font_size=shared_size,
+                    )
+
         # Place lineage a (paternal, left side: -90° to 0°)
         for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_a):
             start_angle = -_ANCESTOR_HALF_SPAN_DEG + i * sweep_a
@@ -960,8 +994,14 @@ def _emit_ancestor_marriage_sector(
     generation: int,
     lineage: str,
     label: str,
+    font_size: float | None = None,
 ) -> None:
-    """Emit one optional inter-generation sector for a parent couple."""
+    """Emit one optional inter-generation sector for a parent couple.
+
+    ``font_size`` carries the generation-wide shared size (capped by the
+    generation name size, issue #56); when omitted the sector falls back to
+    its local fit.
+    """
     children.append(SceneSector(
         inner_radius=inner_r,
         outer_radius=outer_r,
@@ -981,11 +1021,12 @@ def _emit_ancestor_marriage_sector(
         text_radius=text_radius,
         sweep_angle=sweep,
     )
-    font_size = _font_size_for_width(
-        label,
-        target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
-        max_width=capacity,
-    )
+    if font_size is None:
+        font_size = _font_size_for_width(
+            label,
+            target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
+            max_width=capacity,
+        )
     children.append(ScenePathText(
         path=_arc_text_path(
             cx,
@@ -2441,26 +2482,24 @@ def _descendant_marriage_label_and_size(
     With a common generation size (measured over every marriage of the ring),
     the label degrades to the year when the full label does not fit at that
     shared size; every marriage of a generation then shares the same font.
+
+    The label choice is made against a readability floor of 1.8 mm: when the
+    shared size is capped far below it (issue #56), the full date-and-place
+    string is not re-selected at an unreadable size — the year-only label
+    chosen during measurement is kept, and only the font size follows the cap.
     """
     if common_size is not None:
-        full_at_common = estimate_text_width(full_label, common_size)
-        if full_label and full_at_common <= capacity:
-            return full_label, common_size
-        if not year_label:
-            return "", 0.0
-        # Keep the year even when the shared minimum size is still wider than
-        # this narrow sector: the renderer compresses the label through its
-        # max_width lane, preserving the pre-common-size fallback instead of
-        # dropping dense marriage rings entirely.
-        return year_label, common_size
-    label = full_label
-    if (
-        year_label
-        and estimate_text_width(full_label, 1.8) > capacity
-    ):
-        label = year_label
-    if not label:
+        threshold = max(common_size, 1.8)
+    else:
+        threshold = 1.8
+    if full_label and estimate_text_width(full_label, threshold) <= capacity:
+        label = full_label
+    elif not year_label:
         return "", 0.0
+    else:
+        label = year_label
+    if common_size is not None:
+        return label, common_size
     font_size = _font_size_for_width(
         label,
         target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
@@ -4229,9 +4268,15 @@ def layout_descendants(
         for depth, name_size in generation_name_sizes.items()
     }
     # One marriage font size per generation: the smallest measured sector fit
-    # becomes the shared render size for every marriage of that ring.
+    # becomes the shared render size for every marriage of that ring. Issue
+    # #56: a marriage label must never be larger than the individuals it
+    # concerns, so the shared size is also capped by the generation's name
+    # size — dense name rings no longer let the marriage band outshine them.
     generation_marriage_sizes = {
-        depth: min(sizes)
+        depth: min(
+            min(sizes),
+            generation_name_sizes.get(depth, min(sizes)),
+        )
         for depth, sizes in marriage_size_candidates.items()
         if sizes
     }

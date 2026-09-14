@@ -2446,11 +2446,13 @@ def _descendant_marriage_label_and_size(
         full_at_common = estimate_text_width(full_label, common_size)
         if full_label and full_at_common <= capacity:
             return full_label, common_size
-        if year_label:
-            year_at_common = estimate_text_width(year_label, common_size)
-            if year_at_common <= capacity:
-                return year_label, common_size
-        return "", 0.0
+        if not year_label:
+            return "", 0.0
+        # Keep the year even when the shared minimum size is still wider than
+        # this narrow sector: the renderer compresses the label through its
+        # max_width lane, preserving the pre-common-size fallback instead of
+        # dropping dense marriage rings entirely.
+        return year_label, common_size
     label = full_label
     if (
         year_label

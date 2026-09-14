@@ -184,6 +184,50 @@ class DescendantMarriageTests(unittest.TestCase):
             msg=f"marriage fonts differ: {[n.font_size for n in marriage_paths]}",
         )
 
+    def test_dense_marriage_rings_keep_year_fallback_at_shared_minimum(self):
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A5, Orientation.LANDSCAPE),
+            ancestor_generations=0,
+            descendant_generations=1,
+        )
+        year = "1920-1922"
+        long_label = "1920-1922 · Un lieu extrêmement long pour ce secteur étroit"
+        unions = tuple(
+            UnionBranch(f"family-{index}", f"spouse-{index}", (), ())
+            for index in range(100)
+        )
+        root = DescendantBranch(
+            position_id="desc-root",
+            person=PersonNode("root", "ROOT"),
+            generation=1,
+            unions=unions,
+            children=(),
+        )
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=(
+                {"root": "Root Person"} | {f"spouse-{index}": f"Spouse {index}" for index in range(100)}
+            ).__getitem__,
+            show_descendant_marriages=True,
+            descendant_marriages={
+                f"family-{index}": (long_label, year)
+                for index in range(100)
+            },
+        )
+        marriage_texts = [
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText) and node.content.startswith("19")
+        ]
+        # The shared minimum size is wider than these 1.8° sectors; the year
+        # fallback must still be emitted and let the renderer compress it.
+        self.assertGreaterEqual(len(marriage_texts), 100)
+        self.assertTrue(
+            all(node.content == year for node in marriage_texts),
+            msg="dense marriage sectors must keep the year label",
+        )
+
     def test_each_recorded_union_gets_its_own_sector(self):
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),

@@ -87,18 +87,14 @@ class DescendantReadabilityTests(unittest.TestCase):
         self.assertEqual(CONTINUATION_DOT_FILL, TEXT_DARK)
         self.assertEqual(CONTINUATION_DOT_FILL, "#4A4A4A")
 
-    def test_descendant_quarter_is_compact_relative_to_ancestor_fan(self):
+    def test_descendant_fan_shares_the_ancestor_outer_radius(self):
         canvas = a0_canvas(descendant_generations=1)
 
+        self.assertAlmostEqual(_DESCENDANT_OUTER_RADIUS_RATIO, 1.0, places=6)
         self.assertAlmostEqual(
             canvas.descendant_outer_radius_mm,
-            canvas.ancestor_outer_radius_mm * 0.76,
-            places=6,
-        )
-        self.assertAlmostEqual(_DESCENDANT_OUTER_RADIUS_RATIO, 0.76, places=6)
-        self.assertLess(
-            canvas.descendant_outer_radius_mm,
             canvas.ancestor_outer_radius_mm,
+            places=6,
         )
 
     def test_section_titles_are_not_rendered(self):
@@ -158,7 +154,10 @@ class DescendantReadabilityTests(unittest.TestCase):
 
         self.assertEqual(len(circles), 2)
         self.assertGreater(min(circle_distances), canvas.descendant_outer_radius_mm * 0.9)
-        self.assertGreater(max(path_distances), canvas.descendant_outer_radius_mm * 0.81)
+        # The outermost radial lane sits at ~0.81 of the compact outer radius;
+        # on the full-size fan the scaled medallion target pushes it to ~0.806.
+        # Keep the guard inside the outer fifth of the ring either way.
+        self.assertGreater(max(path_distances), canvas.descendant_outer_radius_mm * 0.80)
         self.assertGreater(
             max(path_distances) - min(path_distances),
             canvas.descendant_outer_radius_mm * 0.30,
@@ -881,10 +880,11 @@ class DescendantReadabilityTests(unittest.TestCase):
         ]
         # Issue #57 fixes the descendant ring profile to the normalized
         # ×1.2 / ×0.8 / ×1.5 multipliers; the marriage-disabled path must
-        # keep that pure profile (no direct-floor transfer).
-        self.assertAlmostEqual(widths[0], 12.9878, places=3)
-        self.assertAlmostEqual(widths[1], 8.5586, places=3)
-        self.assertAlmostEqual(widths[2], 16.3098, places=3)
+        # keep that pure profile (no direct-floor transfer). The absolute
+        # values follow the full-size outer radius (ratio 1.0, issue #71).
+        self.assertAlmostEqual(widths[0], 20.1813, places=3)
+        self.assertAlmostEqual(widths[1], 13.3542, places=3)
+        self.assertAlmostEqual(widths[2], 25.3016, places=3)
 
     def test_continuation_dots_clear_emitted_marriage_band(self):
         root = DescendantBranch(

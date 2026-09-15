@@ -78,10 +78,10 @@ _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
 # rings for their identity labels before asking the direct-child ring to donate
 # any remaining space. The value scales down on smaller paper sizes.
 _DESCENDANT_LATER_RING_MIN_WIDTH_MM = 30.0
-# The publication composition gives the descendant quarter a smaller visual
-# footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
-# and its regression probes share one geometric contract.
-_DESCENDANT_OUTER_RADIUS_RATIO = 0.76
+# The descendant fan fills the same publication radius as the ancestor fan,
+# so both halves share one geometric contract and one visual weight. Keep the
+# ratio explicit so the A0 maquette and its regression probes stay in sync.
+_DESCENDANT_OUTER_RADIUS_RATIO = 1.0
 # Issue #57: explicit radial multipliers for the descendant generation rings
 # (direct child ×1.2, grandchild ×0.8, great-grandchild ×1.5, fourth ×1.2).
 # The fifth ring reuses the fourth multiplier until a finer profile exists.
@@ -130,8 +130,8 @@ def calculate_canvas(
     """Calculate all page regions from paper size, margins, and generation counts.
 
     The layout fills the page: the center medallion occupies ~18% of the
-    available radius, while the descendant quarter intentionally uses a
-    compact outer radius so it does not visually compete with the ancestor fan.
+    available radius, and both the ancestor and descendant halves extend to
+    the same outer radius.
     """
     content_w = paper.content_width_mm
     content_h = paper.content_height_mm
@@ -153,10 +153,8 @@ def calculate_canvas(
     # The ancestor/descendant rings start at this radius.
     center_radius = max(_MIN_CENTER_RADIUS_MM, max_radius * (190.0 / 600.0))
 
-    # Ancestor generations use the full publication radius. Descendants remain
-    # anchored on the same center ring but use a compact outer quarter; this
-    # leaves useful breathing room below the chart and keeps the lower visual
-    # mass subordinate to the accepted A0 ancestor composition.
+    # Both halves share the full publication radius: the ancestor fan above
+    # and the descendant fan below stay anchored on the same center ring.
     ancestor_outer = max_radius if ancestor_generations > 0 else center_radius
     descendant_outer = (
         max_radius * _DESCENDANT_OUTER_RADIUS_RATIO
@@ -166,10 +164,8 @@ def calculate_canvas(
 
     cx = paper.effective_margin_left_mm + content_w / 2
 
-    # The two halves do not have the same visual height: the descendant fan
-    # is intentionally compact while the ancestor fan fills the publication
-    # radius. Center the visible composition bounds instead of the rosace
-    # itself, so the lower paper margin is not needlessly oversized.
+    # Center the visible composition bounds instead of the rosace itself, so
+    # the page margins stay balanced when the two halves differ in extent.
     top_extent = ancestor_outer
     bottom_extent = descendant_outer
     cy = paper.effective_margin_top_mm + (

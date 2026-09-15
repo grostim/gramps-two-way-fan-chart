@@ -36,9 +36,12 @@ class CenterLayoutTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(top_clearance, bottom_clearance, places=6)
-        self.assertGreater(
+        # With both halves sharing the same outer radius, the composition is
+        # symmetric: the rosace center sits at the exact content center.
+        self.assertAlmostEqual(
             canvas.center_cy_mm,
             paper.effective_margin_top_mm + paper.content_height_mm / 2,
+            places=6,
         )
 
     def _name_node(self, **kwargs):

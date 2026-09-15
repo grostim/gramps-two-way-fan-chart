@@ -2471,6 +2471,26 @@ def _descendant_ring_bounds(
 
 
 _DESCENDANT_MARRIAGE_BAND_MM = 8.0
+# The marriage label joins the recorded date and place with this separator, so
+# the band can split them onto two lines again (issue #86). The first value is
+# the date (with its marriage emblem), the second the place.
+_MARRIAGE_LABEL_SEPARATOR = " · "
+# Issue #86: from the second descendant generation the marriage band carries the
+# date on its first line and the place on its second, so a distant sector keeps
+# both facts instead of sacrificing the place. The direct-child band
+# (generation 1) keeps its single line: it closes the ring whose couple stack
+# already owns that radial room.
+_DESCENDANT_MARRIAGE_TWO_LINE_MIN_DEPTH = 2
+# Baseline separation of the two marriage lines as a fraction of the shared
+# font size: one em of leading keeps the ascenders and descenders apart.
+_DESCENDANT_MARRIAGE_LINE_LEADING_RATIO = 1.15
+# Radial envelope of the two-line stack, expressed in font sizes: the leading
+# plus one em of glyph height. Both lines must fit inside the band at the
+# readability floor, otherwise the band keeps its single line.
+_DESCENDANT_MARRIAGE_TWO_LINE_ENVELOPE_RATIO = (
+    _DESCENDANT_MARRIAGE_LINE_LEADING_RATIO + 1.0
+)
+_DESCENDANT_MARRIAGE_LABEL_READABILITY_FLOOR_MM = 1.8
 
 
 def _descendant_ring_layout(
@@ -2540,6 +2560,116 @@ def _descendant_ring_layout(
     return tuple(rings), tuple(bands)
 
 
+def _marriage_date_label(full_label: str, year_label: str) -> str:
+    """Return the date part of a ``date · place`` marriage label."""
+    if year_label:
+        return year_label
+    if _MARRIAGE_LABEL_SEPARATOR in full_label:
+        return full_label.split(_MARRIAGE_LABEL_SEPARATOR, 1)[0].strip()
+    return full_label.strip()
+
+
+def _marriage_place_label(full_label: str) -> str:
+    """Return the place part of a ``date · place`` marriage label."""
+    if _MARRIAGE_LABEL_SEPARATOR in full_label:
+        return full_label.split(_MARRIAGE_LABEL_SEPARATOR, 1)[1].strip()
+    return ""
+
+
+def _marriage_line_radii(text_radius: float, font_size: float) -> tuple[float, float]:
+    """Return the (date, place) line radii of the two-line marriage stack.
+
+    Shared by the measurement pass and the emitter, so the reserved band and
+    the rendered baselines can never drift apart.
+    """
+    half_leading = font_size * _DESCENDANT_MARRIAGE_LINE_LEADING_RATIO / 2.0
+    return text_radius - half_leading, text_radius + half_leading
+
+
+def _descendant_marriage_plan(
+    full_label: str,
+    year_label: str,
+    *,
+    inner_r: float,
+    outer_r: float,
+    sweep: float,
+    common_size: float | None = None,
+    depth: int = 1,
+) -> tuple[tuple[str, ...], float]:
+    """Return the marriage band's line contents and its one font size.
+
+    From the second descendant generation (issue #86) the band carries two
+    lines: the date on the first, the place on the second. The split is taken
+    only when both lines fit their own arc at a readable size and the two-line
+    stack fits the band's radial depth; otherwise the band keeps the
+    established single-line contract, whose complete ``date · place`` label
+    degrades to the year alone rather than to a truncated place.
+
+    Without a common size the call returns the sector-local fit; with the
+    generation's shared size it re-derives the same choice at that size, which
+    is stable because the shared size is the smallest local fit.
+    """
+    band_width = max(0.0, outer_r - inner_r)
+    text_radius = (inner_r + outer_r) / 2.0
+    capacity = _ancestor_arc_text_capacity(
+        text_radius=text_radius,
+        sweep_angle=sweep,
+    )
+    target_size = min(2.8, max(0.8, band_width * 0.42))
+    if depth >= _DESCENDANT_MARRIAGE_TWO_LINE_MIN_DEPTH:
+        date_label = _marriage_date_label(full_label, year_label)
+        place_label = _marriage_place_label(full_label)
+        if date_label and place_label:
+            # The two-line stack is bounded by the band's radial depth, and
+            # that bound is what guarantees each line also fits its own arc:
+            # the leading moves a line by only ~0.6 em against a text radius of
+            # hundreds of millimetres, so a size satisfying the envelope cannot
+            # overflow the arc its own radius offers. The arc capacity is
+            # therefore not a second binding constraint on this path -- each
+            # line still carries its own arc length as ``max_width`` so the
+            # renderer keeps the final physical guard.
+            envelope_cap = (
+                band_width / _DESCENDANT_MARRIAGE_TWO_LINE_ENVELOPE_RATIO
+            )
+            if common_size is None:
+                size = min(
+                    target_size,
+                    envelope_cap,
+                    _font_size_for_width(
+                        date_label,
+                        target_size=target_size,
+                        max_width=capacity,
+                    ),
+                    _font_size_for_width(
+                        place_label,
+                        target_size=target_size,
+                        max_width=capacity,
+                    ),
+                )
+            else:
+                # Re-derive the measurement-pass choice at the generation's
+                # shared size. The shared size is the smallest sector-local fit
+                # of the ring, so both branches agree for the ring's tightest
+                # marriage by construction; a much smaller cap means the ring
+                # is dominated by another constraint and the two-line split is
+                # not warranted at an unreadable size.
+                size = min(common_size, envelope_cap)
+            if size >= _DESCENDANT_MARRIAGE_LABEL_READABILITY_FLOOR_MM:
+                return (date_label, place_label), size
+
+    label, size = _descendant_marriage_label_and_size(
+        full_label,
+        year_label,
+        capacity,
+        inner_r=inner_r,
+        outer_r=outer_r,
+        common_size=common_size,
+    )
+    if not label:
+        return (), 0.0
+    return (label,), size
+
+
 def _descendant_marriage_label_and_size(
     full_label: str,
     year_label: str,
@@ -2549,7 +2679,7 @@ def _descendant_marriage_label_and_size(
     outer_r: float,
     common_size: float | None = None,
 ) -> tuple[str, float]:
-    """Return the best-fit label and its font size for one marriage sector.
+    """Return the best-fit single-line label and its font size.
 
     Without a common size the call computes the sector-local fit as before.
     With a common generation size (measured over every marriage of the ring),
@@ -2562,9 +2692,11 @@ def _descendant_marriage_label_and_size(
     chosen during measurement is kept, and only the font size follows the cap.
     """
     if common_size is not None:
-        threshold = max(common_size, 1.8)
+        threshold = max(
+            common_size, _DESCENDANT_MARRIAGE_LABEL_READABILITY_FLOOR_MM
+        )
     else:
-        threshold = 1.8
+        threshold = _DESCENDANT_MARRIAGE_LABEL_READABILITY_FLOOR_MM
     if full_label and (
         estimate_emblem_text_width(full_label, threshold) <= capacity
     ):
@@ -2595,8 +2727,9 @@ def _emit_descendant_marriage_sector(
     labels: dict[str, tuple[str, str]],
     family_handle: str,
     font_size: float | None = None,
+    depth: int = 1,
 ) -> None:
-    """Emit one optional descendant marriage sector and its best-fit label."""
+    """Emit one optional descendant marriage sector and its labelled lines."""
     children.append(SceneSector(
         inner_radius=inner_r,
         outer_radius=outer_r,
@@ -2611,38 +2744,46 @@ def _emit_descendant_marriage_sector(
     full_label, year_label = labels.get(family_handle, ("", ""))
     if not full_label and not year_label:
         return
-    text_radius = (inner_r + outer_r) / 2.0
-    capacity = _ancestor_arc_text_capacity(
-        text_radius=text_radius,
-        sweep_angle=sweep,
-    )
     # A place is retained only when it fits at the minimum practical label
-    # size. Distant generations therefore degrade to the year, never to a
-    # truncated place name.
-    label, size = _descendant_marriage_label_and_size(
+    # size: alone on its own line from the second generation (issue #86), or
+    # dropped in favour of the year when the band keeps a single line.
+    lines, size = _descendant_marriage_plan(
         full_label,
         year_label,
-        capacity,
         inner_r=inner_r,
         outer_r=outer_r,
+        sweep=sweep,
         common_size=font_size,
+        depth=depth,
     )
-    if not label:
+    if not lines or size <= 0.0:
         return
-    children.append(ScenePathText(
-        path=_arc_text_path(
-            cx,
-            cy,
-            text_radius,
-            start_angle,
-            start_angle + sweep,
-            lower=True,
-        ),
-        content=label,
-        font_size=size,
-        fill=TEXT_DARK,
-        max_width=capacity,
-    ))
+    text_radius = (inner_r + outer_r) / 2.0
+    if len(lines) == 1:
+        radii = (text_radius,)
+    else:
+        # The date is the first line, so it sits nearer the center; the place
+        # follows on the second line, further out. Both share the leading
+        # helper with the measurement pass so the two cannot drift apart.
+        radii = _marriage_line_radii(text_radius, size)
+    for content, line_radius in zip(lines, radii):
+        children.append(ScenePathText(
+            path=_arc_text_path(
+                cx,
+                cy,
+                line_radius,
+                start_angle,
+                start_angle + sweep,
+                lower=True,
+            ),
+            content=content,
+            font_size=size,
+            fill=TEXT_DARK,
+            max_width=_ancestor_arc_text_capacity(
+                text_radius=line_radius,
+                sweep_angle=sweep,
+            ),
+        ))
 
 
 def _collect_descendant_marriage_size(
@@ -2659,17 +2800,13 @@ def _collect_descendant_marriage_size(
     full_label, year_label = labels.get(family_handle, ("", ""))
     if not full_label and not year_label:
         return
-    text_radius = (inner_r + outer_r) / 2.0
-    capacity = _ancestor_arc_text_capacity(
-        text_radius=text_radius,
-        sweep_angle=sweep,
-    )
-    _label, size = _descendant_marriage_label_and_size(
+    _lines, size = _descendant_marriage_plan(
         full_label,
         year_label,
-        capacity,
         inner_r=inner_r,
         outer_r=outer_r,
+        sweep=sweep,
+        depth=depth,
     )
     if size > 0.0:
         candidates.setdefault(depth, []).append(size)
@@ -3140,6 +3277,7 @@ def layout_descendants(
                         descendant_marriages or {},
                         union.family_handle,
                         font_size=generation_marriage_sizes.get(depth),
+                        depth=depth,
                     )
 
         raw_label = _descendant_label(branch, _name_label)

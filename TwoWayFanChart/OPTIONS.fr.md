@@ -104,9 +104,12 @@ montrer le couple.
 
 Quand activée, des secteurs d'union sont insérés après chaque
 génération de descendants, affichant le symbole de mariage (⚭),
-l'année et le lieu enregistrés. Quand un secteur éloigné est trop
-étroit pour le libellé complet, il ne conserve que le symbole de
-mariage et l'année.
+l'année et le lieu enregistrés. À partir de la deuxième génération, la
+bande porte deux lignes — la date sur la première, le lieu sur la
+seconde — afin qu'un secteur éloigné conserve le lieu au lieu de
+l'abandonner. La bande des enfants directs reste sur une seule ligne.
+Quand un secteur est trop étroit pour deux lignes lisibles, la bande
+ne garde qu'une ligne, avec le symbole de mariage et l'année.
 
 ---
 

@@ -97,8 +97,11 @@ allow the couple to be shown.
 
 When enabled, union sectors are inserted after each descendant
 generation showing the recorded marriage symbol (⚭), year and place.
-When a distant sector is too narrow for the full label, it keeps the
-marriage symbol and year only.
+From the second generation onward the band carries two lines — the
+date on the first, the place on the second — so a distant sector keeps
+the place instead of dropping it. The direct-child band keeps a single
+line. When a sector is too narrow for the two readable lines, the band
+keeps one line and the marriage symbol with the year only.
 
 ---
 

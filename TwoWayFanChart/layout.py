@@ -96,6 +96,12 @@ _DIRECT_LABEL_MIN_FONT_SIZE_MM = 2.0
 _DATE_FONT_STEP_MM = 1.0
 _MIN_DATE_FONT_SIZE_MM = 0.25
 _MIN_NAME_FONT_SIZE_MM = _MIN_DATE_FONT_SIZE_MM + _DATE_FONT_STEP_MM
+# Issue #85: readable floor for a descendant name. A couple cell whose two rails
+# cannot both fit used to shrink the names until whole generations rendered
+# below a millimetre (unreadable at any print size). Names never go below this;
+# the renderer's horizontal compression absorbs the remaining overflow, exactly
+# as it does for the direct-generation labels that already share this floor.
+_DESCENDANT_NAME_FLOOR_MM = _DIRECT_LABEL_MIN_FONT_SIZE_MM
 # Layout font sizes are expressed in millimetres; one typographic point is
 # 25.4 / 72 mm. Descendant dates use this smaller step without changing the
 # established ancestor date sizing above.
@@ -402,19 +408,30 @@ def _font_size_for_width(
     *,
     target_size: float,
     max_width: float,
+    minimum_size: float | None = None,
 ) -> float:
     """Return the largest size that keeps complete content in its lane.
 
     A leading marriage emblem is measured at its scaled size so the
     enlarged symbol never overflows the sector capacity.
+
+    Issue #85: the returned size is floored by *minimum_size* when the caller
+    names one, and by the DATE floor only as a last resort. The single
+    ``_MIN_DATE_FONT_SIZE_MM`` floor used to apply to every kind of content, so
+    a NAME measured with a spent couple-rail budget (``target_size`` of 0) came
+    back at the date floor, fell below the declared name floor, and then became
+    the generation-wide size through ``min(sizes)``.
     """
+    floor = _MIN_DATE_FONT_SIZE_MM if minimum_size is None else max(
+        _MIN_DATE_FONT_SIZE_MM, minimum_size
+    )
     if not content or max_width <= 0.0:
-        return max(_MIN_DATE_FONT_SIZE_MM, target_size)
+        return max(floor, target_size)
     natural_at_one = estimate_emblem_text_width(content, 1.0)
     if natural_at_one <= 0.0:
-        return max(_MIN_DATE_FONT_SIZE_MM, target_size)
+        return max(floor, target_size)
     return max(
-        _MIN_DATE_FONT_SIZE_MM,
+        floor,
         min(target_size, max_width / natural_at_one),
     )
 
@@ -2969,10 +2986,17 @@ def layout_descendants(
         )
         if measure_only:
             if content:
+                # Issue #85: the measured size must respect the caller's own
+                # floor (`minimum_size`); without it a name whose couple-rail
+                # budget was spent came back at the DATE floor and then set the
+                # whole generation through `min(sizes)`.
                 measured_size = _font_size_for_width(
                     content,
                     target_size=target_size,
                     max_width=max_width,
+                    minimum_size=max(
+                        minimum_size, _DESCENDANT_NAME_FLOOR_MM
+                    ),
                 )
                 name_size_candidates.setdefault(depth, []).append(measured_size)
                 return content, measured_size, width_limit
@@ -3009,10 +3033,14 @@ def layout_descendants(
             allow_ellipsis=False,
         )
         if measure_only:
+            # Issue #85: floor a measured COUPLE label by the caller's floor as
+            # well; `minimum_size` used to be dropped here, so a merged couple
+            # name could come back below the name readability floor.
             measured_size = _font_size_for_width(
                 combined,
                 target_size=target_size,
                 max_width=max_width,
+                minimum_size=max(minimum_size, _DESCENDANT_NAME_FLOOR_MM),
             )
             name_size_candidates.setdefault(depth, []).append(measured_size)
             return combined, measured_size, width_limit
@@ -4092,10 +4120,16 @@ def layout_descendants(
                         rail_lane_width = max(text_width, angular_capacity * 0.92)
                         tangential_size = angular_capacity / _COUPLE_RAIL_TANGENTIAL_EM
                         rail_target = min(name_target, tangential_size)
+                        # Issue #85: the couple rail budget (`tangential_size`)
+                        # can be spent entirely on a narrow cell, which used to
+                        # let the names shrink past the readability floor. A name
+                        # never goes below that floor: the renderer's horizontal
+                        # compression absorbs what does not fit.
                         rail_minimum = min(
                             name_minimum,
                             max(tangential_size, name_minimum * 0.75),
                         )
+                        rail_minimum = max(rail_minimum, _DESCENDANT_NAME_FLOOR_MM)
                         if union_cells:
                             stack_size = _fit_generation_stacked_couple(
                                 depth,

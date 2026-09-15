@@ -103,6 +103,23 @@ _DESCENDANT_DATE_FONT_STEP_MM = 25.4 / 72.0
 _MIN_DESCENDANT_NAME_FONT_SIZE_MM = (
     _MIN_DATE_FONT_SIZE_MM + _DESCENDANT_DATE_FONT_STEP_MM
 )
+# Absolute name-size ceiling per descendant crown (mm). Crown 3 used to sit at
+# 3.6 mm, which the fully grown #71/#77 fan no longer justifies: on A0 its
+# radial lane is ~65 mm while the longest label only needs ~8.7 mm, so the
+# constant — not the geometry — decided the rendered size. The ladder is
+# raised while staying monotonic and below the ancestor caps
+# ({1: 7.0, 2: 6.0, 3: 5.0, 4: 4.2, 5: 3.5}) so both fans keep one visual
+# weight. Narrow paper still degrades through the measured lane capacity.
+_DESCENDANT_NAME_TARGETS_MM = {2: 5.4, 3: 4.9, 4: 4.4, 5: 4.0}
+_DESCENDANT_DENSE_FIRST_GEN_TARGET_MM = 5.4
+_DESCENDANT_DENSE_FIRST_GEN_MIN_FONT_MM = 3.2
+
+
+def _descendant_name_target(depth: int) -> float:
+    """Return the nominal name size for a descendant crown."""
+    return _DESCENDANT_NAME_TARGETS_MM.get(
+        depth, _DESCENDANT_NAME_TARGETS_MM[5]
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3249,8 +3266,8 @@ def layout_descendants(
                     fitted, fitted_size, width_limit = _fit_generation_name(
                         content,
                         depth,
-                        target_size=4.5,
-                        minimum_size=3.2,
+                        target_size=_DESCENDANT_DENSE_FIRST_GEN_TARGET_MM,
+                        minimum_size=_DESCENDANT_DENSE_FIRST_GEN_MIN_FONT_MM,
                         max_width=angular_width,
                     )
                 else:
@@ -3793,8 +3810,8 @@ def layout_descendants(
                             fitted, fitted_size, width_limit = _fit_generation_name(
                                 content,
                                 depth,
-                                target_size=4.5,
-                                minimum_size=3.2,
+                                target_size=_DESCENDANT_DENSE_FIRST_GEN_TARGET_MM,
+                                minimum_size=_DESCENDANT_DENSE_FIRST_GEN_MIN_FONT_MM,
                                 max_width=angular_width,
                             )
                         else:
@@ -3829,7 +3846,7 @@ def layout_descendants(
                 text_start = gen_inner + 2.0
                 text_end = med_text_inner - 2.0
                 text_width = max(0.0, text_end - text_start)
-                name_target = {2: 4.2, 3: 3.6, 4: 3.2, 5: 3.0}.get(depth, 3.0)
+                name_target = _descendant_name_target(depth)
                 name_minimum = 3.2 if depth == 2 else (1.8 if depth >= 3 else 2.8)
 
                 def _render_intermediate_block(

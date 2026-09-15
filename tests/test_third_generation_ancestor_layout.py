@@ -2,11 +2,80 @@ import math
 import unittest
 
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
-from TwoWayFanChart.layout import calculate_canvas, layout_ancestors
-from TwoWayFanChart.model import ScenePathText, SceneText, estimate_text_width
+from TwoWayFanChart.layout import (
+    _ancestor_ring_weights,
+    calculate_canvas,
+    layout_ancestors,
+)
+from TwoWayFanChart.model import (
+    ScenePathText,
+    SceneSector,
+    SceneText,
+    estimate_text_width,
+)
 
 
 class ThirdGenerationAncestorLayoutTests(unittest.TestCase):
+    def test_third_ring_weight_is_boosted_above_the_original_quadratic_value(
+        self,
+    ):
+        # Issue #67: G3's radial weight goes from ~1.31 to 1.55 while G1/G2
+        # keep the accepted mockup proportions and G4+ keep the original
+        # quadratic growth.
+        normalized = _ancestor_ring_weights(3)
+        self.assertEqual(normalized, [1.0, 1.105, 1.55])
+        self.assertGreater(normalized[2], 1.4)
+        self.assertLess(normalized[2], 1.6)
+        self.assertTrue(normalized[0] < normalized[1] < normalized[2])
+
+        five = _ancestor_ring_weights(5)
+        self.assertEqual(five[0], 1.0)
+        self.assertEqual(five[1], 1.105)
+        self.assertEqual(five[2], 1.55)
+        self.assertEqual(five[3], 1.0 + 0.105 * 3 + 0.05 * 3 * 2)
+        self.assertEqual(five[4], 1.0 + 0.105 * 4 + 0.05 * 4 * 3)
+        self.assertTrue(five[0] < five[1] < five[2] < five[3] < five[4])
+
+    def test_g3_sector_is_radially_wider_than_g2(self):
+        slots = (
+            ("ancestor-a-1-0", "Parent A", "1840–1900"),
+            ("ancestor-b-1-0", "Parent B", "1840–1900"),
+            ("ancestor-a-2-0", "Grandparent A1", "1800–1860"),
+            ("ancestor-a-2-1", "Grandparent A2", "1800–1860"),
+            ("ancestor-b-2-0", "Grandparent B1", "1800–1860"),
+            ("ancestor-b-2-1", "Grandparent B2", "1800–1860"),
+            ("ancestor-a-3-0", "Great-Grandparent A1", "1760–1820"),
+            ("ancestor-a-3-1", "Great-Grandparent A2", "1760–1820"),
+            ("ancestor-a-3-2", "Great-Grandparent A3", "1760–1820"),
+            ("ancestor-a-3-3", "Great-Grandparent A4", "1760–1820"),
+            ("ancestor-b-3-0", "Great-Grandparent B1", "1760–1820"),
+            ("ancestor-b-3-1", "Great-Grandparent B2", "1760–1820"),
+            ("ancestor-b-3-2", "Great-Grandparent B3", "1760–1820"),
+            ("ancestor-b-3-3", "Great-Grandparent B4", "1760–1820"),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=3,
+            descendant_generations=0,
+        )
+        sectors = [
+            node
+            for node in layout_ancestors(canvas, slots).children
+            if isinstance(node, SceneSector) and node.sweep_angle > 0.0
+        ]
+        # Classify rings by their sector sweep: G2 sectors span ~43° with two
+        # grandparents per lineage, G3 sectors ~21.5° with four per lineage.
+        g2 = [s for s in sectors if 30.0 <= s.sweep_angle < 60.0]
+        g3 = [s for s in sectors if 10.0 <= s.sweep_angle < 30.0]
+        self.assertEqual(len(g2), 4)
+        self.assertEqual(len(g3), 8)
+        # The boosted G3 ring must be at least 25% deeper than G2. The
+        # pre-issue-67 ratio was ~1.19 (1.31 / 1.105), the boosted one ~1.40.
+        self.assertGreater(
+            min(s.outer_radius - s.inner_radius for s in g3),
+            max(s.outer_radius - s.inner_radius for s in g2) * 1.25,
+        )
+
     def test_generation_three_names_are_radial_and_share_maximum_fitting_size(self):
         generation_three_labels = (
             "Alexandre Théodore de la Rochefoucauld",

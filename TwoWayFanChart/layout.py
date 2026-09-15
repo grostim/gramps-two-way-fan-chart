@@ -19,6 +19,7 @@ try:
         SceneSector,
         SceneText,
         ScenePathText,
+        estimate_emblem_text_width,
         estimate_text_width,
     )
     from TwoWayFanChart.styles import (
@@ -46,6 +47,7 @@ except ModuleNotFoundError:
         SceneSector,
         SceneText,
         ScenePathText,
+        estimate_emblem_text_width,
         estimate_text_width,
     )
     from styles import (  # type: ignore[no-redef]
@@ -378,10 +380,14 @@ def _font_size_for_width(
     target_size: float,
     max_width: float,
 ) -> float:
-    """Return the largest size that keeps complete content in its lane."""
+    """Return the largest size that keeps complete content in its lane.
+
+    A leading marriage emblem is measured at its scaled size so the
+    enlarged symbol never overflows the sector capacity.
+    """
     if not content or max_width <= 0.0:
         return max(_MIN_DATE_FONT_SIZE_MM, target_size)
-    natural_at_one = estimate_text_width(content, 1.0)
+    natural_at_one = estimate_emblem_text_width(content, 1.0)
     if natural_at_one <= 0.0:
         return max(_MIN_DATE_FONT_SIZE_MM, target_size)
     return max(
@@ -2494,7 +2500,9 @@ def _descendant_marriage_label_and_size(
         threshold = max(common_size, 1.8)
     else:
         threshold = 1.8
-    if full_label and estimate_text_width(full_label, threshold) <= capacity:
+    if full_label and (
+        estimate_emblem_text_width(full_label, threshold) <= capacity
+    ):
         label = full_label
     elif not year_label:
         return "", 0.0

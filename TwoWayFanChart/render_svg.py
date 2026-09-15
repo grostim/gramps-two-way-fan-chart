@@ -10,6 +10,7 @@ from xml.sax.saxutils import escape as _xml_escape
 try:
     from TwoWayFanChart.geometry import arc_path, mm_to_pt, AnnularSector
     from TwoWayFanChart.model import (
+        MARRIAGE_EMBLEM_SCALE,
         SceneCircle,
         SceneImage,
         SceneMarker,
@@ -21,10 +22,12 @@ try:
         SceneSector,
         SceneText,
         estimate_text_width,
+        split_marriage_emblem,
     )
 except ModuleNotFoundError:
     from geometry import arc_path, mm_to_pt, AnnularSector
     from model import (
+        MARRIAGE_EMBLEM_SCALE,
         SceneCircle,
         SceneImage,
         SceneMarker,
@@ -36,6 +39,7 @@ except ModuleNotFoundError:
         SceneSector,
         SceneText,
         estimate_text_width,
+        split_marriage_emblem,
     )
 
 _SVG_NS = "http://www.w3.org/2000/svg"
@@ -171,6 +175,24 @@ def _render_circle(circle: SceneCircle) -> str:
     return f"<circle {' '.join(attrs)} />"
 
 
+def _escape_content(content: str, font_size: float) -> str:
+    """Escape text content, scaling a leading marriage emblem by 1.5x.
+
+    The U+26AD glyph is drawn smaller than digits at the same point size;
+    wrapping it in a ``<tspan>`` enlarges it while the date keeps the
+    label size. ``textLength`` must not accompany an emblem, because SVG
+    enforces it by re-scaling every glyph and would cancel the enlargement.
+    """
+    emblem, rest = split_marriage_emblem(content)
+    if not emblem:
+        return xml_escape(content)
+    scaled = _fmt(font_size * MARRIAGE_EMBLEM_SCALE)
+    return (
+        f'<tspan font-size="{scaled}">{xml_escape(emblem)}</tspan>'
+        f"{xml_escape(rest)}"
+    )
+
+
 def _render_text(text: SceneText) -> str:
     """Render a text element with proper escaping."""
     attrs = [
@@ -194,7 +216,7 @@ def _render_text(text: SceneText) -> str:
         )
         attrs.append(f'textLength="{_fmt(fitted_width)}"')
         attrs.append('lengthAdjust="spacingAndGlyphs"')
-    content = xml_escape(text.content)
+    content = _escape_content(text.content, text.font_size)
     return f"<text {' '.join(attrs)}>{content}</text>"
 
 
@@ -256,7 +278,6 @@ def _render_path_text(pt: ScenePathText, _path_id: str) -> str:
     if anchor is None:
         raise ValueError("ScenePathText requires a generated circular arc path")
 
-    escaped = xml_escape(pt.content)
     x, y, rotation = anchor
     attrs = (
         f'x="{_fmt(x)}" y="{_fmt(y)}" '
@@ -264,7 +285,8 @@ def _render_path_text(pt: ScenePathText, _path_id: str) -> str:
         'text-anchor="middle" dominant-baseline="middle" '
         f'transform="rotate({_fmt(rotation)} {_fmt(x)} {_fmt(y)})"'
     )
-    if pt.max_width is not None and pt.max_width > 0:
+    has_emblem = split_marriage_emblem(pt.content)[0] != ""
+    if pt.max_width is not None and pt.max_width > 0 and not has_emblem:
         fitted_width = min(
             estimate_text_width(pt.content, pt.font_size),
             pt.max_width,
@@ -273,7 +295,10 @@ def _render_path_text(pt: ScenePathText, _path_id: str) -> str:
             f' textLength="{_fmt(fitted_width)}"'
             ' lengthAdjust="spacingAndGlyphs"'
         )
-    return f'<text {attrs} data-arc-label="true">{escaped}</text>'
+    return (
+        f'<text {attrs} data-arc-label="true">'
+        f'{_escape_content(pt.content, pt.font_size)}</text>'
+    )
 
 
 def _render_legend(legend: SceneLegend) -> str:

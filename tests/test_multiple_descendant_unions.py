@@ -575,7 +575,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             for index in range(10)
         )
 
-        self.assertAlmostEqual(_descendant_angle_demand(multi_union), 28.0)
+        self.assertAlmostEqual(_descendant_angle_demand(multi_union), 42.0)
 
         allocation = _allocate_descendant_branches_by_demand(
             (multi_union,) + siblings,
@@ -624,7 +624,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             for index in range(9)
         )
 
-        self.assertAlmostEqual(_descendant_angle_demand(parent), 35.0)
+        self.assertAlmostEqual(_descendant_angle_demand(parent), 52.5)
         allocation = _allocate_descendant_branches_by_demand(
             (parent,) + siblings,
             start_angle=96.0,
@@ -694,7 +694,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertAlmostEqual(
             _descendant_group_angle_demand((nested,)),
-            2.0,
+            3.0,
         )
         parent_groups = _allocate_descendant_union_groups(
             parent,
@@ -1631,7 +1631,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             for index in range(10)
         )
 
-        self.assertAlmostEqual(_descendant_angle_demand(multi_union), 28.0)
+        self.assertAlmostEqual(_descendant_angle_demand(multi_union), 42.0)
 
         allocation = _allocate_descendant_branches_by_demand(
             (multi_union,) + siblings,
@@ -1680,7 +1680,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             for index in range(9)
         )
 
-        self.assertAlmostEqual(_descendant_angle_demand(parent), 35.0)
+        self.assertAlmostEqual(_descendant_angle_demand(parent), 52.5)
         allocation = _allocate_descendant_branches_by_demand(
             (parent,) + siblings,
             start_angle=96.0,
@@ -1750,7 +1750,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertAlmostEqual(
             _descendant_group_angle_demand((nested,)),
-            2.0,
+            3.0,
         )
         parent_groups = _allocate_descendant_union_groups(
             parent,

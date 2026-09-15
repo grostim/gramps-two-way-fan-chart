@@ -100,9 +100,39 @@ jobs:
               ;;
           esac
 
+  pr_version:
+    name: pr version claim
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      # Step-level condition: on push to main the job must succeed (and
+      # pass its gate to `distribution`); only pull requests check claims.
+      - name: Reject release versions claimed by another open PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python ci/check_pr_version.py \
+            --repo "${{ github.repository }}" \
+            --base "${{ github.event.pull_request.base.ref }}" \
+            --current-pr "${{ github.event.pull_request.number }}"
+
   distribution:
     name: distribution
-    needs: test
+    needs: [test, pr_version]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 

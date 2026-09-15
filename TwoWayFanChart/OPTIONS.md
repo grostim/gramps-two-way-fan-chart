@@ -23,7 +23,7 @@ Applies a full configuration profile in one click.
 
 - `publication` — the publication mockup profile: A0 landscape paper,
   5 ancestor + 4 descendant generations, all privacy options fully
-  open, portraits and highlight markers disabled-safe.
+  open, portraits enabled, highlight markers disabled.
 - `compact` — A4 paper, 2 ancestor + 1 descendant generation, for a
   quick family-sheet look.
 - `custom` — the profile is no longer a preset; the chart uses exactly
@@ -84,20 +84,21 @@ Which families to expand when a person has several unions.
 
 ### show_ancestor_marriages
 - Type: boolean
-- Default: `false`
+- Default: `true`
 
 When enabled, each ancestor generation ring gains compact intermediate
-sectors showing the recorded marriage year and place of each parent
-couple. The label is omitted when privacy rules do not allow the couple
-to be shown.
+sectors showing the recorded marriage symbol (⚭), year and place of
+each parent couple. The label is omitted when privacy rules do not
+allow the couple to be shown.
 
 ### show_descendant_marriages
 - Type: boolean
-- Default: `false`
+- Default: `true`
 
 When enabled, union sectors are inserted after each descendant
-generation showing the recorded year and place. When a distant sector
-is too narrow for the full label, it keeps the marriage year only.
+generation showing the recorded marriage symbol (⚭), year and place.
+When a distant sector is too narrow for the full label, it keeps the
+marriage symbol and year only.
 
 ---
 

@@ -99,6 +99,26 @@ class _ExplicitOptionsDict(dict[str, object]):
             self.explicit_keys.add(key)
 
 
+# Values removed from the option menu must still map to their closest
+# supported equivalent so persisted settings from older releases never
+# block report generation nor silently change privacy protection.
+_LEGACY_VALUE_ALIASES: dict[str, dict[str, str]] = {
+    "preset": {"family": "publication"},
+    "orientation": {"automatic": "landscape"},
+    "privacy_mode": {
+        "surname_only": "full_name_only",
+    },
+}
+
+
+def _normalize_legacy_value(key: str, value: object) -> object:
+    """Map a persisted removed option value to its supported equivalent."""
+    aliases = _LEGACY_VALUE_ALIASES.get(key)
+    if aliases is None or not isinstance(value, str):
+        return value
+    return aliases.get(value, value)
+
+
 class TwoWayFanChartOptions(MenuReportOptions):
     """Expose stable, headless-safe report options through Gramps."""
 
@@ -114,6 +134,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
         self.options_dict.tracking_enabled = False
         try:
             super().load_previous_values()
+            self._normalize_loaded_values()
         finally:
             self.options_dict.explicit_keys.clear()
             self.options_dict.tracking_enabled = True
@@ -143,6 +164,26 @@ class TwoWayFanChartOptions(MenuReportOptions):
             )
         center_option.set_value(family.get_gramps_id())
         self.refresh_dependencies()
+
+    def _normalize_loaded_values(self) -> None:
+        """Rewrite persisted values that no longer exist to supported ones.
+
+        Older releases stored ``preset=family``, ``orientation=automatic``
+        and ``privacy_mode=surname_only``. Those enum members were removed;
+        without this mapping, a stale persisted value would leave the menu
+        option on its default (``privacy_mode=surname_only`` would silently
+        weaken to ``include_all``) while ``build_chart_config()`` would
+        raise on the unknown enum member.
+        """
+        for key, aliases in _LEGACY_VALUE_ALIASES.items():
+            raw = self.options_dict.get(key)
+            if not isinstance(raw, str) or raw not in aliases:
+                continue
+            mapped = aliases[raw]
+            menu_option = self.menu.get_option_by_name(key)
+            if menu_option is not None:
+                menu_option.set_value(mapped)
+            self.options_dict[key] = mapped
 
     def add_menu_options(self, menu) -> None:
         """Build the supported option categories without GTK widgets."""
@@ -428,6 +469,21 @@ class TwoWayFanChartOptions(MenuReportOptions):
         def value(name: str):
             return menu.get_option_by_name(name).get_value()
 
+        def normalized(name: str):
+            """Menu value with removed legacy enum members mapped forward.
+
+            The menu already rejected a stale persisted member on load, so
+            also consult ``options_dict`` (the same object the CLI/WebAPI
+            handler writes) as the last recorded source of truth.
+            """
+            raw = value(name)
+            mapped = _normalize_legacy_value(name, raw)
+            if mapped == raw:
+                mapped = _normalize_legacy_value(
+                    name, self.options_dict.get(name, raw)
+                )
+            return mapped
+
         center_family = value("center_family")
         if not center_family or not self._database.get_family_from_gramps_id(
             center_family
@@ -445,7 +501,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
         try:
             return ChartConfig(
                 center_family=center_family,
-                preset=PresetName(value("preset")),
+                preset=PresetName(normalized("preset")),
                 ancestor_generations=value("ancestor_generations"),
                 descendant_generations=value("descendant_generations"),
                 parent_family_policy=value("parent_family_policy"),
@@ -457,12 +513,12 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 respect_media_crop=value("respect_media_crop"),
                 portrait_treatment=value("portrait_treatment"),
                 paper_size=paper_size,
-                orientation=Orientation(value("orientation")),
+                orientation=Orientation(normalized("orientation")),
                 margin_mm=value("margin_mm"),
                 custom_width_mm=custom_width,
                 custom_height_mm=custom_height,
                 background_color=value("background_color"),
-                privacy_mode=PrivacyMode(value("privacy_mode")),
+                privacy_mode=PrivacyMode(normalized("privacy_mode")),
                 include_private=value("incl_private"),
                 living_people_mode=value("living_people"),
                 years_past_death=value("years_past_death"),

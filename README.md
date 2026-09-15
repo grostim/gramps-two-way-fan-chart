@@ -95,15 +95,15 @@ When the selected center family has a recorded marriage event, the chart
 displays its marriage date and place below the central couple's life dates.
 The information follows the same privacy rules as the rest of the chart.
 
-To include marriage information for each recorded ancestor couple, enable
-**Show ancestor marriages**. The report then inserts compact intermediate
-sectors in the ancestor fan and displays the recorded marriage year and place.
-The option is disabled by default and does not alter the standard fan layout.
+To include marriage information for each recorded ancestor couple, use
+**Show ancestor marriages** (enabled by default). The report then inserts
+compact intermediate sectors in the ancestor fan and displays the recorded
+marriage year and place, without altering the standard fan layout.
 
-To include the same information for descendant couples, enable
-**Show descendant marriages**. Intermediate sectors are inserted after each
-descendant generation; when a distant sector cannot carry the place legibly,
-the label keeps the marriage year only. This option is also disabled by default.
+To include the same information for descendant couples, use
+**Show descendant marriages** (enabled by default). Intermediate sectors
+are inserted after each descendant generation; when a distant sector
+cannot carry the place legibly, the label keeps the marriage year only.
 
 Each descendant generation is drawn in a progressively lighter shade of its
 direct-child branch color, so a branch remains recognizable across the whole

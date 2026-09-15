@@ -25,8 +25,7 @@ Applique un profil complet de configuration en un clic.
 
 - `publication` — le profil maquette public : papier A0 paysage,
   5 générations d'ancêtres + 4 de descendants, options de
-  confidentialité ouvertes, portraits et marqueurs désactivés par
-  défaut.
+  confidentialité ouvertes, portraits actifs, marqueurs désactivés.
 - `compact` — papier A4, 2 générations d'ancêtres + 1 de descendants,
   pour un aperçu rapide de type fiche familiale.
 - `custom` — le profil n'est plus un préréglage ; le graphique utilise
@@ -91,22 +90,23 @@ Quelles familles développer quand une personne a plusieurs unions.
 
 ### show_ancestor_marriages
 - Type : booléen
-- Défaut : `false`
+- Défaut : `true`
 
 Quand activée, chaque anneau de génération d'ancêtres gagne des
-secteurs intermédiaires compacts affichant l'année et le lieu de
-mariage enregistrés de chaque couple parental. Le libellé est omis
-quand les règles de confidentialité ne permettent pas de montrer le
-couple.
+secteurs intermédiaires compacts affichant le symbole de mariage (⚭),
+l'année et le lieu enregistrés de chaque couple parental. Le libellé
+est omis quand les règles de confidentialité ne permettent pas de
+montrer le couple.
 
 ### show_descendant_marriages
 - Type : booléen
-- Défaut : `false`
+- Défaut : `true`
 
 Quand activée, des secteurs d'union sont insérés après chaque
-génération de descendants, affichant l'année et le lieu enregistrés.
-Quand un secteur éloigné est trop étroit pour le libellé complet, il ne
-conserve que l'année de mariage.
+génération de descendants, affichant le symbole de mariage (⚭),
+l'année et le lieu enregistrés. Quand un secteur éloigné est trop
+étroit pour le libellé complet, il ne conserve que le symbole de
+mariage et l'année.
 
 ---
 

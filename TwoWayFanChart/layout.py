@@ -667,15 +667,21 @@ _ANCESTOR_MARRIAGE_BAND_MM = 8.0
 def _ancestor_ring_weights(num_gens: int) -> list[float]:
     """Progressive radial weights for ``num_gens`` ancestor rings.
 
-    Issue #67 gives the fourth ring an explicit bump (1.90 instead of the
-    original 1.615) so G4 names and medallions get noticeably more radial
-    depth. The first three weights keep the original formula and mockup
-    proportions (1.0 / 1.105 / 1.31), and deeper rings keep the original
-    quadratic growth (0.05 * i * (i - 1)) so G5+ do not inflate.
+    Issue #67 tuning: G3 is reduced 10% below its original weight
+    (1.31 -> 1.179) while G4 is boosted 10% above the first correction
+    (1.90 -> 2.09), giving the fourth ring even more radial depth.
+    G1/G2 keep the original formula and mockup proportions. G5 carries
+    the original G5/G4 ratio (2.02 / 1.90) above the tuned G4 so the
+    monotonic ring hierarchy survives in five-generation layouts, and
+    deeper rings keep the original quadratic growth.
     """
     weights = [1.0 + 0.105 * i + 0.05 * i * (i - 1) for i in range(num_gens)]
+    if num_gens >= 3:
+        weights[2] = 1.31 * 0.9
     if num_gens >= 4:
-        weights[3] = 1.90
+        weights[3] = 1.90 * 1.1
+    if num_gens >= 5:
+        weights[4] = (1.90 * 1.1) * (2.02 / 1.90)
     return weights
 
 

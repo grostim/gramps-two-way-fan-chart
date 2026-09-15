@@ -512,6 +512,109 @@ class DescendantReadabilityTests(unittest.TestCase):
         )
         self.assertAlmostEqual(allocations[1].start_angle, allocations[0].start_angle + allocations[0].sweep_angle)
 
+    def _georgette_crowd(self):
+        """Five deep branches plus one narrow leaf (issue #60 shape).
+
+        The leaf's 14° generation-1 floor is far below the deep branches'
+        demands; a pure proportional allocation crushes it to a sliver and,
+        because every generation shares one font size, drags the whole
+        generation down with it.
+        """
+        deep = tuple(
+            branch(
+                f"deep-{index}",
+                1,
+                children=tuple(
+                    branch(
+                        f"deep-{index}-{mid}",
+                        2,
+                        children=tuple(
+                            branch(
+                                f"deep-{index}-{mid}-{grand}",
+                                3,
+                                children=tuple(
+                                    branch(f"deep-{index}-{mid}-{grand}-{leaf}", 4)
+                                    for leaf in range(4)
+                                ),
+                            )
+                            for grand in range(4)
+                        ),
+                    )
+                    for mid in range(4)
+                ),
+            )
+            for index in range(5)
+        )
+        return deep + (branch("georgette-berloty", 1),)
+
+    def test_gen1_sector_keeps_hard_minimum_sweep_under_demand_pressure(self):
+        branches = self._georgette_crowd()
+        allocations = _allocate_descendant_branches_by_demand(
+            branches,
+            start_angle=96.0,
+            total_sweep=_DESC_TOTAL_SWEEP,
+        )
+
+        # The sparse leaf must not collapse below its generation floor when
+        # the fan has room for it.
+        self.assertGreaterEqual(
+            min(allocation.sweep_angle for allocation in allocations),
+            14.0 - 1e-6,
+        )
+        self.assertAlmostEqual(
+            sum(allocation.sweep_angle for allocation in allocations),
+            _DESC_TOTAL_SWEEP,
+            places=6,
+        )
+        # Deep branches still keep the lion's share of the extra sweep.
+        self.assertGreater(allocations[0].sweep_angle, allocations[-1].sweep_angle)
+
+    def test_overflowing_floor_budget_still_fills_the_fan(self):
+        # Fourteen branches with grandchildren demand far more than the
+        # 168° fan: the allocator must still tile the fan exactly.
+        crowded = tuple(
+            branch(
+                f"crowded-{index}",
+                1,
+                children=tuple(
+                    branch(f"crowded-{index}-{child}", 2) for child in range(4)
+                ),
+            )
+            for index in range(14)
+        )
+        allocations = _allocate_descendant_branches_by_demand(
+            crowded,
+            start_angle=96.0,
+            total_sweep=_DESC_TOTAL_SWEEP,
+        )
+        self.assertAlmostEqual(
+            sum(allocation.sweep_angle for allocation in allocations),
+            _DESC_TOTAL_SWEEP,
+            places=6,
+        )
+
+    def test_narrow_gen1_sector_keeps_generation_font_readable(self):
+        branches = self._georgette_crowd()
+        scene = layout_descendants(
+            a0_canvas(descendant_generations=4),
+            branches,
+            name_lookup=lambda handle: {
+                "georgette-berloty": "Georgette Berloty",
+            }.get(handle, f"Charles {handle}"),
+            dates_lookup=lambda _handle: "",
+        )
+
+        names = [
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText) and node.content
+        ]
+        self.assertTrue(names)
+        # The narrowest sector used to cap the whole generation around 1 mm;
+        # the hard sweep floor keeps every first-generation name readable.
+        self.assertGreaterEqual(min(node.font_size for node in names), 2.5)
+        self.assertIn("Georgette Berloty", {node.content for node in names})
+
     def test_dense_layout_never_emits_point_sized_medallions(self):
         leaves = tuple(branch(f"leaf-{index}", 4) for index in range(36))
         grandchildren = tuple(

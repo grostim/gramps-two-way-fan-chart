@@ -15,6 +15,7 @@ import cairo
 try:
     from TwoWayFanChart.geometry import mm_to_pt, mm_to_px, deg2rad
     from TwoWayFanChart.model import (
+        MARRIAGE_EMBLEM_SCALE,
         SceneCircle,
         SceneImage,
         SceneMarker,
@@ -24,10 +25,12 @@ try:
         ScenePathText,
         SceneSector,
         SceneText,
+        split_marriage_emblem,
     )
 except ModuleNotFoundError:
     from geometry import mm_to_pt, mm_to_px, deg2rad
     from model import (
+        MARRIAGE_EMBLEM_SCALE,
         SceneCircle,
         SceneImage,
         SceneMarker,
@@ -37,6 +40,7 @@ except ModuleNotFoundError:
         ScenePathText,
         SceneSector,
         SceneText,
+        split_marriage_emblem,
     )
 
 
@@ -105,6 +109,22 @@ def _render_circle(ctx: cairo.Context, circle: SceneCircle) -> None:
         ctx.stroke()
 
 
+def _measure_scaled(ctx: cairo.Context, text: SceneText) -> float:
+    """Advance width of *text* with its leading marriage emblem at 1.5x.
+
+    Uses glyph advances, matching the segmented rendering: the emblem is
+    drawn at the scaled point size and the remainder advances from the
+    emblem's scaled advance.
+    """
+    emblem, rest = split_marriage_emblem(text.content)
+    base_size = text.font_size
+    ctx.set_font_size(base_size * MARRIAGE_EMBLEM_SCALE)
+    emblem_advance = ctx.text_extents(emblem).x_advance
+    ctx.set_font_size(base_size)
+    rest_advance = ctx.text_extents(rest).x_advance
+    return emblem_advance + rest_advance
+
+
 def _render_text(ctx: cairo.Context, text: SceneText) -> None:
     """Render anchored, rotated text with a measured width constraint."""
     ctx.save()
@@ -112,8 +132,16 @@ def _render_text(ctx: cairo.Context, text: SceneText) -> None:
         r, g, b = _parse_hex_color(text.fill)
         ctx.set_source_rgb(r, g, b)
     ctx.set_font_size(text.font_size)
-    extents = ctx.text_extents(text.content)
-    width = extents.width
+    emblem, rest = split_marriage_emblem(text.content)
+    if emblem:
+        # Widen the emblem by 1.5x like the SVG backend: measure the full
+        # string with the emblem at scale so anchoring uses the same width.
+        width = _measure_scaled(ctx, text)
+        bearing = 0.0
+    else:
+        extents = ctx.text_extents(text.content)
+        width = extents.width
+        bearing = extents.x_bearing
     scale_x = 1.0
     if text.max_width is not None and text.max_width > 0 and width > text.max_width:
         scale_x = text.max_width / width
@@ -123,9 +151,22 @@ def _render_text(ctx: cairo.Context, text: SceneText) -> None:
     ctx.scale(scale_x, 1.0)
     x = 0.0
     if text.anchor == "middle":
-        x = -(extents.x_bearing + width / 2.0)
+        x = -(bearing + width / 2.0)
     elif text.anchor == "end":
-        x = -(extents.x_bearing + width)
+        x = -(bearing + width)
+    if emblem:
+        # Draw the emblem at 1.5x, then advance by its scaled advance so
+        # the remainder starts exactly where the larger glyph ends.
+        emblem_extents = ctx.text_extents(emblem)
+        ctx.set_font_size(text.font_size * MARRIAGE_EMBLEM_SCALE)
+        ctx.move_to(x, 0.0)
+        ctx.show_text(emblem)
+        emblem_advance = emblem_extents.x_advance * MARRIAGE_EMBLEM_SCALE
+        ctx.set_font_size(text.font_size)
+        ctx.move_to(x + emblem_advance, 0.0)
+        ctx.show_text(rest)
+        ctx.restore()
+        return
     ctx.move_to(x, 0.0)
     ctx.show_text(text.content)
     ctx.restore()
@@ -193,10 +234,13 @@ def _render_path_text(ctx: cairo.Context, text: ScenePathText) -> None:
     ctx.set_font_size(text.font_size)
     glyphs = []
     natural_width = 0.0
-    for character in text.content:
+    emblem, rest = split_marriage_emblem(text.content)
+    emblem_end = len(emblem)
+    for index, character in enumerate(text.content):
+        char_scale = MARRIAGE_EMBLEM_SCALE if index < emblem_end else 1.0
         extents = ctx.text_extents(character)
-        advance = max(extents.x_advance, extents.width, 0.0)
-        glyphs.append((character, extents, advance))
+        advance = max(extents.x_advance, extents.width, 0.0) * char_scale
+        glyphs.append((character, extents, advance, char_scale))
         natural_width += advance
     if natural_width <= 1e-9:
         ctx.restore()
@@ -209,7 +253,7 @@ def _render_path_text(ctx: cairo.Context, text: ScenePathText) -> None:
     distance = (arc_length - rendered_width) / 2.0
     direction = 1.0 if delta_angle > 0 else -1.0
 
-    for character, extents, advance in glyphs:
+    for character, extents, advance, char_scale in glyphs:
         rendered_advance = advance * scale_x
         glyph_midpoint = distance + rendered_advance / 2.0
         angle = start_angle + direction * glyph_midpoint / radius
@@ -221,7 +265,12 @@ def _render_path_text(ctx: cairo.Context, text: ScenePathText) -> None:
         ctx.translate(x, y)
         ctx.rotate(tangent)
         ctx.scale(scale_x, 1.0)
-        ctx.move_to(-(extents.x_bearing + extents.width / 2.0), 0.0)
+        ctx.set_font_size(text.font_size * char_scale)
+        render_extents = ctx.text_extents(character)
+        ctx.move_to(
+            -(render_extents.x_bearing + render_extents.width / 2.0),
+            0.0,
+        )
         ctx.show_text(character)
         ctx.restore()
         distance += rendered_advance

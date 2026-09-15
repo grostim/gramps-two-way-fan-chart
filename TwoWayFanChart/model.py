@@ -357,6 +357,42 @@ class SceneLegend:
     items: tuple[tuple[str, str], ...]
 
 
+MARRIAGE_EMBLEM_SCALE = 1.5
+
+
+def split_marriage_emblem(content: str) -> tuple[str, str]:
+    """Return ``(emblem, remainder)`` when *content* starts with the
+    marriage emblem ``⚭`` followed by an optional occurrence number.
+
+    Marriage labels are prefixed with the U+26AD glyph (``⚭ 1900``,
+    ``⚭2 1902``). The glyph is drawn smaller than digits at the same
+    point size, so renderers enlarge it while keeping the date at the
+    natural size. The emblem run is the glyph plus any trailing digits
+    (successive-marriage occurrence), so ``⚭2 1902`` enlarges only the
+    emblem and keeps ``1902`` readable at the label size.
+    """
+    if not content or content[0] != "⚭":
+        return "", content
+    index = 1
+    while index < len(content) and content[index].isdigit():
+        index += 1
+    return content[:index], content[index:]
+
+
+def estimate_emblem_text_width(content: str, font_size: float) -> float:
+    """Width of *content* when its leading marriage emblem is scaled up.
+
+    The scaled emblem contributes ``MARRIAGE_EMBLEM_SCALE`` times its own
+    natural width; the remainder is measured at the base size. The space
+    after the emblem keeps its natural width so the date does not drift.
+    """
+    emblem, remainder = split_marriage_emblem(content)
+    if not emblem:
+        return estimate_text_width(content, font_size)
+    scaled = estimate_text_width(emblem, font_size) * MARRIAGE_EMBLEM_SCALE
+    return scaled + estimate_text_width(remainder, font_size)
+
+
 @dataclass(frozen=True, slots=True)
 class SceneRect:
     """A rectangle (background card, border box)."""

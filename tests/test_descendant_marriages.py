@@ -68,8 +68,8 @@ class DescendantMarriageTests(unittest.TestCase):
             labels[f"c{index}-sp"] = f"Bernadette Charlotte De La Rochefoucauld {index}"
             children.append(branch(f"c{index}", 2, spouse=f"c{index}-sp"))
             marriage_labels[f"family-c{index}"] = (
-                f"x 19{index:02d} · Saint-Germain-en-Laye, Île-de-France, France",
-                f"x 19{index:02d}",
+                f"⚭ 19{index:02d} · Saint-Germain-en-Laye, Île-de-France, France",
+                f"⚭ 19{index:02d}",
             )
         root = branch("child", 1, spouse="spouse", children=tuple(children))
         scene = layout_descendants(
@@ -84,11 +84,11 @@ class DescendantMarriageTests(unittest.TestCase):
             node
             for node in scene.children
             if isinstance(node, (SceneText, ScenePathText))
-            and node.content.startswith("x 19")
+            and node.content.startswith("⚭ 19")
         ]
         self.assertEqual(len(marriage_nodes), 6)
         self.assertTrue(
-            all(node.content in {f"x 19{i:02d}" for i in range(6)} for node in marriage_nodes),
+            all(node.content in {f"⚭ 19{i:02d}" for i in range(6)} for node in marriage_nodes),
             msg="the capped render must keep the measured year-only labels",
         )
 
@@ -128,7 +128,7 @@ class DescendantMarriageTests(unittest.TestCase):
         self.assertTrue(ChartConfig().show_descendant_marriages)
 
     def test_descendant_marriage_sectors_are_opt_in(self):
-        labels = {"family-child": ("x 1900 · Lyon", "x 1900")}
+        labels = {"family-child": ("⚭ 1900 · Lyon", "⚭ 1900")}
         disabled = self._scene(enabled=False, labels=labels)
         self.assertFalse(
             any(
@@ -141,7 +141,7 @@ class DescendantMarriageTests(unittest.TestCase):
         contents = [
             node.content for node in enabled.children if isinstance(node, ScenePathText)
         ]
-        self.assertIn("x 1900 · Lyon", contents)
+        self.assertIn("⚭ 1900 · Lyon", contents)
         self.assertGreaterEqual(
             sum(isinstance(node, SceneSector) for node in enabled.children),
             2,
@@ -151,17 +151,17 @@ class DescendantMarriageTests(unittest.TestCase):
         long_place = "Saint-Germain-en-Laye, Île-de-France, France " * 8
         labels = {
             "family-child": (
-                f"x 1900 · {long_place}",
-                "x 1900",
+                f"⚭ 1900 · {long_place}",
+                "⚭ 1900",
             )
         }
         scene = self._scene(paper=PaperSize.A5, enabled=True, labels=labels)
         contents = [
             node.content for node in scene.children if isinstance(node, ScenePathText)
         ]
-        self.assertIn("x 1900", contents)
+        self.assertIn("⚭ 1900", contents)
         self.assertNotIn(
-            f"x 1900 · {long_place}",
+            f"⚭ 1900 · {long_place}",
             contents,
         )
 
@@ -188,7 +188,7 @@ class DescendantMarriageTests(unittest.TestCase):
             }.__getitem__,
             dates_lookup=lambda _handle: "1950-2000",
             show_descendant_marriages=True,
-            descendant_marriages={"family-child": ("x 1900 · Lyon", "x 1900")},
+            descendant_marriages={"family-child": ("⚭ 1900 · Lyon", "⚭ 1900")},
         )
         contents = [
             node.content for node in scene.children if isinstance(node, ScenePathText)
@@ -322,8 +322,8 @@ class DescendantMarriageTests(unittest.TestCase):
             labels[f"c{index}-sp"] = f"Bernadette Charlotte De La Rochefoucauld {index}"
             children.append(branch(f"c{index}", 2, spouse=f"c{index}-sp"))
             marriage_labels[f"family-c{index}"] = (
-                f"x 19{index:02d} · Lyon",
-                f"x 19{index:02d}",
+                f"⚭ 19{index:02d} · Lyon",
+                f"⚭ 19{index:02d}",
             )
         root = branch("child", 1, spouse="spouse", children=tuple(children))
         scene = layout_descendants(
@@ -343,7 +343,7 @@ class DescendantMarriageTests(unittest.TestCase):
         marriage_nodes = [
             node
             for node in scene.children
-            if isinstance(node, ScenePathText) and node.content.startswith("x 19")
+            if isinstance(node, ScenePathText) and node.content.startswith("⚭ 19")
         ]
         self.assertTrue(name_nodes)
         self.assertEqual(len(marriage_nodes), 6)
@@ -384,15 +384,15 @@ class DescendantMarriageTests(unittest.TestCase):
             }.__getitem__,
             show_descendant_marriages=True,
             descendant_marriages={
-                "family-first": ("x 1900 · Lyon", "x 1900"),
-                "family-second": ("x 1920 · Paris", "x 1920"),
+                "family-first": ("⚭ 1900 · Lyon", "⚭ 1900"),
+                "family-second": ("⚭ 1920 · Paris", "⚭ 1920"),
             },
         )
         contents = [
             node.content for node in scene.children if isinstance(node, ScenePathText)
         ]
-        self.assertIn("x 1900 · Lyon", contents)
-        self.assertIn("x 1920 · Paris", contents)
+        self.assertIn("⚭ 1900 · Lyon", contents)
+        self.assertIn("⚭ 1920 · Paris", contents)
         self.assertGreaterEqual(
             sum(isinstance(node, SceneSector) for node in scene.children),
             3,

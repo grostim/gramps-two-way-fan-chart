@@ -88,13 +88,13 @@ class CenterLayoutTests(unittest.TestCase):
             right_label="Lucie Roque",
             left_dates="° 1800 – † 1860",
             right_dates="° 1805 – † 1870",
-            marriage_label="x 1825 · Lyon",
+            marriage_label="⚭ 1825 · Lyon",
         )
 
         marriage = next(
             node
             for node in scene.children
-            if isinstance(node, SceneText) and node.content == "x 1825 · Lyon"
+            if isinstance(node, SceneText) and node.content == "⚭ 1825 · Lyon"
         )
         life_dates = [
             node

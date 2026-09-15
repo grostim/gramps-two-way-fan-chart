@@ -95,14 +95,14 @@ class DateSymbolTests(unittest.TestCase):
 
         self.assertEqual(format_event_date(date, "years", EventType.BIRTH), "° 1820")
         self.assertEqual(format_event_date(date, "years", EventType.DEATH), "† 1820")
-        self.assertEqual(format_event_date(date, "years", EventType.MARRIAGE), "x 1820")
+        self.assertEqual(format_event_date(date, "years", EventType.MARRIAGE), "⚭ 1820")
         self.assertEqual(
             format_event_date(date, "years", EventType.MARRIAGE, occurrence=2),
-            "x2 1820",
+            "⚭2 1820",
         )
         self.assertEqual(
             format_event_date(date, "years", EventType.MARRIAGE, occurrence=3),
-            "x3 1820",
+            "⚭3 1820",
         )
 
     def test_simple_dates_prefixes_each_vital_date(self):
@@ -125,7 +125,7 @@ class DateSymbolTests(unittest.TestCase):
             fact = extract_union(database, family, "years", "gramps")
 
         self.assertIsNotNone(fact)
-        self.assertEqual(fact.date_text, "x 1820")
+        self.assertEqual(fact.date_text, "⚭ 1820")
 
     def test_person_view_passes_marriage_occurrence_to_union_extraction(self):
         seed = PersonViewSeed(

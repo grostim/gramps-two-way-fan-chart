@@ -67,7 +67,7 @@ def event_date_symbol(event_type: int, occurrence: int = 1) -> str:
     if event_type == EventType.DEATH:
         return "†"
     if event_type == EventType.MARRIAGE:
-        return "x" if occurrence == 1 else f"x{occurrence}"
+        return "⚭" if occurrence == 1 else f"⚭{occurrence}"
     return ""
 
 

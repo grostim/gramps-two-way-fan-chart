@@ -228,7 +228,7 @@ class PrivateMarriageTests(unittest.TestCase):
             include_private=False,
         )
 
-        self.assertEqual(label, "x 1899")
+        self.assertEqual(label, "⚭ 1899")
 
 
 if __name__ == "__main__":

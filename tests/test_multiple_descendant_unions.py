@@ -340,7 +340,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         ]
         self.assertEqual(len(first_generation_sectors), 2)
 
-    def test_two_ring_union_medallions_stay_inside_fixed_label_lanes(self):
+    def test_two_ring_union_medallions_stay_inside_label_lanes(self):
         child_a = DescendantBranch(
             "inner-lane-child-a",
             PersonNode("inner-lane-child-a", "I1001"),
@@ -380,7 +380,20 @@ class MultipleDescendantUnionTests(unittest.TestCase):
         self.assertEqual(len(circles), 4)
         first_ring_inner = _ring_bounds(canvas, 1)[0]
         first_ring_outer = _ring_bounds(canvas, 1)[1]
-        spouse_label_radius = canvas.descendant_outer_radius_mm * (317 / 600)
+        # The couple label occupies the outer half of the direct-child ring;
+        # union-cell medallions must stay in the inner section below it.
+        couple_labels = [
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText)
+            and "inner-lane-person" in node.content
+        ]
+        self.assertTrue(couple_labels)
+        label_move, label_x, label_y, *_rest = couple_labels[0].path.split()
+        label_radius = math.hypot(
+            float(label_x) - canvas.center_cx_mm,
+            float(label_y) - canvas.center_cy_mm,
+        )
         for circle in circles:
             radial_distance = math.hypot(
                 circle.cx - canvas.center_cx_mm,
@@ -396,7 +409,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             )
             self.assertLess(
                 radial_distance + circle.r,
-                spouse_label_radius,
+                label_radius,
             )
 
     def test_layout_labels_each_nonempty_union_block(self):

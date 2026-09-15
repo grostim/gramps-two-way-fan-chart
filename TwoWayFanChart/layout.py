@@ -76,14 +76,14 @@ _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
 # rings for their identity labels before asking the direct-child ring to donate
 # any remaining space. The value scales down on smaller paper sizes.
 _DESCENDANT_LATER_RING_MIN_WIDTH_MM = 30.0
-# Absolute lower bound for a later-generation identity lane after the
-# grandchild transfer. The nominal floor above is allowed to scale down, but
-# never below this amount, or the radial text capacity becomes zero.
-_DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM = 8.0
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
 # and its regression probes share one geometric contract.
 _DESCENDANT_OUTER_RADIUS_RATIO = 0.76
+# Issue #57: explicit radial multipliers for the descendant generation rings
+# (direct child ×1.2, grandchild ×0.8, great-grandchild ×1.5, fourth ×1.2).
+# The fifth ring reuses the fourth multiplier until a finer profile exists.
+_DESCENDANT_RING_RATIOS = (1.2, 0.8, 1.5, 1.2, 1.2)
 _DESCENDANT_MEDALLION_TARGET_RATIO = 28 / 600
 _MEDALLION_EDGE_CLEARANCE_MM = 1.6
 _MEDALLION_TEXT_RESERVE_RATIO = 0.58
@@ -2270,23 +2270,38 @@ def _spouse_label(union, name_lookup) -> str | None:
     return name_lookup(union.spouse_handle)
 
 
-def _rebalance_descendant_widths(
+def _descendant_ring_ratios(generation_count: int) -> tuple[float, ...]:
+    """Normalized radial weights for the first ``generation_count`` rings.
+
+    Issue #57 fixes the descendant ring sizes to explicit multipliers
+    (×1.2 / ×0.8 / ×1.5 / ×1.2): the direct-child ring and the
+    great-grandchild ring dominate while the grandchild ring is compact.
+    Fewer displayed generations take the leading prefix of the ratio table,
+    and the fifth ring reuses the fourth ring's multiplier.
+    """
+    if generation_count < 1:
+        raise ValueError("descendant generation count must be positive")
+    weights = _DESCENDANT_RING_RATIOS[:generation_count]
+    total_weight = sum(weights)
+    return tuple(weight / total_weight for weight in weights)
+
+
+def _allocate_descendant_ring_widths(
     total_depth: float,
     generation_count: int,
     *,
     direct_floor_extra: float = 0.0,
 ) -> list[float]:
-    """Allocate deep rings while preserving the direct-child medallion floor."""
-    weights = [1.0 + 0.35 * index for index in range(generation_count)]
-    total_weight = sum(weights)
-    widths = [total_depth * weight / total_weight for weight in weights]
+    """Allocate ring widths from the issue #57 radial ratios.
 
-    # The extracted root branch is already a child of the central couple:
-    # ``depth=1`` is therefore the direct-child ring and ``depth=2`` is
-    # the grandchild ring. Transfer the extra depth needed to double the
-    # grandchild lane from later rings while retaining the direct-child floor.
-    grandchild_visible_width = max(widths[1] - _RING_GAP_MM, 0.0)
-    remaining_transfer = grandchild_visible_width
+    Readability floors are kept: the direct-child ring never drops below its
+    medallion/text-stack lane (the marriage-enabled path passes a legacy
+    extra so the four-line first-generation stack survives the bands), and
+    later rings keep a visible identity lane. On large paper the floors are
+    inert and the nominal ratios apply exactly.
+    """
+    ratios = _descendant_ring_ratios(generation_count)
+    widths = [total_depth * ratio for ratio in ratios]
     minimum_direct_visible_width = max(
         8.0,
         total_depth * 0.05,
@@ -2296,16 +2311,16 @@ def _rebalance_descendant_widths(
         _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
         max(8.0, total_depth * 0.30),
     )
-    # The direct-floor deficit transfer only runs on the marriage-enabled
-    # path, where the ring budget is real and the rebalance must protect the
-    # direct-child medallions; the disabled path keeps the legacy allocation
-    # exactly.
+    # The direct-floor transfer runs only on the marriage-enabled path, where
+    # carving the bands reduces the person budget and the rebalance must
+    # protect the direct-child medallions; the disabled path keeps the pure
+    # issue-57 profile exactly.
     if direct_floor_extra > 0.0:
         direct_floor_deficit = max(
             minimum_direct_visible_width - widths[0],
             0.0,
         )
-        for offset in range(len(widths) - 1, 1, -1):
+        for offset in range(len(widths) - 1, 0, -1):
             reducible = max(
                 widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
                 0.0,
@@ -2316,48 +2331,6 @@ def _rebalance_descendant_widths(
             direct_floor_deficit -= transfer
             if direct_floor_deficit <= 0.0:
                 break
-    direct_donor_capacity = max(
-        widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
-        0.0,
-    )
-    later_ring_count = len(widths) - 2
-    needed_later_transfer = max(
-        remaining_transfer - direct_donor_capacity,
-        0.0,
-    )
-    if later_ring_count and needed_later_transfer > 0.0:
-        later_visible_budget = sum(
-            max(width - _RING_GAP_MM, 0.0)
-            for width in widths[2:]
-        )
-        scaled_later_floor = max(
-            _DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM,
-            (later_visible_budget - needed_later_transfer)
-            / later_ring_count,
-        )
-        minimum_later_visible_width = min(
-            minimum_later_visible_width,
-            scaled_later_floor,
-        )
-    for offset in range(len(widths) - 1, 1, -1):
-        reducible = max(
-            widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
-            0.0,
-        )
-        transfer = min(remaining_transfer, reducible)
-        widths[offset] -= transfer
-        widths[1] += transfer
-        remaining_transfer -= transfer
-        if remaining_transfer <= 0.0:
-            break
-    if remaining_transfer > 0.0:
-        reducible = max(
-            widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
-            0.0,
-        )
-        transfer = min(remaining_transfer, reducible)
-        widths[0] -= transfer
-        widths[1] += transfer
     return widths
 
 
@@ -2371,21 +2344,7 @@ def _descendant_ring_bounds(
     if generation_count < 1 or depth < 1 or depth > generation_count:
         raise ValueError("descendant depth must be inside the configured generation range")
     total_depth = outer_radius - inner_radius
-    if generation_count == 1:
-        widths = [total_depth]
-    elif generation_count == 2:
-        # ``depth=1`` is the direct child of the central couple and
-        # ``depth=2`` is the grandchild. Keep the direct-child lane compact,
-        # and give the grandchild lane the requested 2x radial depth while
-        # preserving the fixed outer boundary of the descendant fan.
-        exact_inner = (202 / 600, 302 / 600)
-        exact_outer = (297 / 600, 598 / 600)
-        return (
-            outer_radius * exact_inner[depth - 1],
-            outer_radius * exact_outer[depth - 1],
-        )
-    else:
-        widths = _rebalance_descendant_widths(total_depth, generation_count)
+    widths = _allocate_descendant_ring_widths(total_depth, generation_count)
     ring_inner = inner_radius + sum(widths[: depth - 1])
     return ring_inner, ring_inner + widths[depth - 1] - _RING_GAP_MM
 
@@ -2423,35 +2382,28 @@ def _descendant_ring_layout(
         total_depth / max(generation_count * 4.0, 1.0),
     )
     person_depth = max(0.0, total_depth - generation_count * band_width)
-    if generation_count == 1:
-        widths = [person_depth]
-    elif generation_count == 2:
-        weights = [0.38, 0.62]
-        total_weight = sum(weights)
-        widths = [person_depth * weight / total_weight for weight in weights]
-    else:
-        # The direct-child ring must keep the radial depth it would have had
-        # without marriage bands: that depth is what sustains the four-line
-        # first-generation stack (name, dates, spouse, spouse dates) through
-        # _first_generation_line_layout. Carving bands out of a shallower
-        # direct ring makes the layout drop the life-date lanes.
-        legacy_ring = _descendant_ring_bounds(
-            inner_radius,
-            outer_radius,
-            generation_count,
-            1,
-        )
-        legacy_ring1_visible = legacy_ring[1] - legacy_ring[0]
-        floor_extra = max(
-            2 * _RING_GAP_MM,
-            legacy_ring1_visible
-            - _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
-        )
-        widths = _rebalance_descendant_widths(
-            person_depth,
-            generation_count,
-            direct_floor_extra=floor_extra,
-        )
+    # The direct-child ring must keep the radial depth it would have had
+    # without marriage bands: that depth is what sustains the four-line
+    # first-generation stack (name, dates, spouse, spouse dates) through
+    # _first_generation_line_layout. Carving bands out of a shallower
+    # direct ring makes the layout drop the life-date lanes.
+    legacy_ring = _descendant_ring_bounds(
+        inner_radius,
+        outer_radius,
+        generation_count,
+        1,
+    )
+    legacy_ring1_visible = legacy_ring[1] - legacy_ring[0]
+    floor_extra = max(
+        2 * _RING_GAP_MM,
+        legacy_ring1_visible
+        - _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
+    )
+    widths = _allocate_descendant_ring_widths(
+        person_depth,
+        generation_count,
+        direct_floor_extra=floor_extra,
+    )
 
     rings: list[tuple[float, float]] = []
     bands: list[tuple[float, float]] = []
@@ -2678,16 +2630,8 @@ def layout_descendants(
         max_gen,
         show_marriages=show_descendant_marriages,
     )
-    if max_gen <= 1:
-        ring_widths = [total_depth]
-    elif max_gen == 2:
-        # Match the mockup: children ring narrower, grandchildren ring wider.
-        ring_widths = [total_depth * 0.38, total_depth * 0.62]
-    else:
-        # Grow outer descendant rings progressively when deeper trees appear.
-        weights = [1.0 + 0.35 * i for i in range(max_gen)]
-        total_w = sum(weights)
-        ring_widths = [total_depth * w / total_w for w in weights]
+    rings = _descendant_ring_ratios(max_gen)
+    ring_widths = [total_depth * ratio for ratio in rings]
 
     cx = canvas.center_cx_mm
     cy = canvas.center_cy_mm
@@ -3374,7 +3318,10 @@ def layout_descendants(
                 med_r_pos = gen_outer
         elif show_medallion:
             med_border_r = outer_r * ((20 / 600) if depth == 1 else (14 / 600))
-            med_r_pos = outer_r * ((245 / 600) if depth == 1 else (397 / 600))
+            # The fixed mockup rails (245/600, 397/600) were anchored to the
+            # pre-#57 two-ring geometry. Anchor the medallions to the actual
+            # ring bounds instead so they stay inside the new radial profile.
+            med_r_pos = gen_inner + ring_width * (0.30 if depth == 1 else 0.45)
             pair_offset = outer_r * (20 / 600)
             med_text_inner = med_r_pos - med_border_r
 
@@ -3526,11 +3473,11 @@ def layout_descendants(
                     )
                     if cell_border_r > 0:
                         if max_gen == 2:
-                            # The fixed two-ring label rails occupy the outer
-                            # lane (317/600 and 337/600). Keep union-cell
-                            # medallions in the original inner lane instead of
+                            # The couple labels occupy the outer half of the
+                            # direct-child ring; keep union-cell medallions in
+                            # the inner section of that ring instead of
                             # placing them through those labels.
-                            cell_med_r_pos = outer_r * (245 / 600)
+                            cell_med_r_pos = gen_inner + ring_width * 0.30
                             cell_text_inner = min(
                                 gen_outer,
                                 cell_med_r_pos + cell_border_r + 1.0,

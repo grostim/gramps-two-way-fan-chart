@@ -721,6 +721,8 @@ class DescendantReadabilityTests(unittest.TestCase):
         )
 
     def test_narrow_couple_label_keeps_both_names_dark(self):
+        # Issue #83: a narrow couple keeps two rails, one person per rail, and
+        # never merges both identities into a single shared line.
         roots = tuple(
             branch(
                 f"root-{index}",
@@ -748,9 +750,29 @@ class DescendantReadabilityTests(unittest.TestCase):
             for node in scene.children
             if isinstance(node, SceneText) and " × " in node.content
         ]
+        names = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and node.content.startswith("child-")
+            and "spouse" not in node.content
+        ]
 
-        self.assertTrue(compact)
-        self.assertTrue(all(node.fill == TEXT_DARK for node in compact))
+        self.assertFalse(
+            compact,
+            msg="couple identities must stay on separate rails, not one merged line",
+        )
+        self.assertTrue(names)
+        rails = [
+            node
+            for node in (*names, *(
+                candidate
+                for candidate in scene.children
+                if isinstance(candidate, SceneText)
+                and candidate.content.startswith("× child-spouse-")
+            ))
+        ]
+        self.assertTrue(all(node.fill == TEXT_DARK for node in rails))
 
     def test_pipeline_preserves_full_descendant_name_for_layout(self):
         source = Path("TwoWayFanChart/pipeline.py").read_text(encoding="utf-8")

@@ -571,6 +571,7 @@ def _ancestor_content_geometry(
     outer_radius: float,
     fan_outer_radius: float,
     sweep_angle: float,
+    max_image_r: float | None = None,
 ) -> tuple[float, float, float, float, float, float, bool, bool]:
     """Return ring-relative placement and density-aware ancestor styling.
 
@@ -618,6 +619,13 @@ def _ancestor_content_geometry(
         portrait_r = inner_radius + 0.8 + image_r
     else:
         image_r = min(base_image_r, ring_depth * 0.24, angular_lane * 0.22)
+    # A relative cap keeps the visual hierarchy monotonic: deeper rings may
+    # never render a medallion larger than the previous generation's, even
+    # when their sector (deepest ring, still sparse sweep) could hold one.
+    # The cap is a min(), never a replacement, so genuinely narrow dense
+    # sectors keep the tangent solution from the edge="inner" path.
+    if max_image_r is not None:
+        image_r = min(image_r, max_image_r)
     name_size = min(base_name_size, ring_depth * 0.12, angular_lane * 0.36)
     life_size = min(base_life_size, ring_depth * 0.10, angular_lane * 0.30)
     # Per-generation caps ensure a monotonic font hierarchy: deeper
@@ -786,6 +794,12 @@ def layout_ancestors(
 
     children: list = []
 
+    # Relative medallion cap for monotonic generations (issue #76): the
+    # smallest portrait radius of the previous generation bounds this one.
+    # Deeper rings may fit a wider medallion in their sparse sectors; the
+    # cap keeps the visual hierarchy strictly non-increasing outwards.
+    previous_min_image_r: float | None = None
+
     # Collect the gen-1 surname per lineage for the LIGNÉE labels.
     lineage_surnames: dict[str, str] = {}
     for pid, lineage, gen, label, _dates, _portrait, _highlighted in parsed:
@@ -871,6 +885,7 @@ def layout_ancestors(
                     outer_radius=gen_outer,
                     fan_outer_radius=outer_r,
                     sweep_angle=candidate_sweep,
+                    max_image_r=previous_min_image_r,
                 )
                 if not candidate_show_text:
                     continue
@@ -983,26 +998,39 @@ def layout_ancestors(
                     )
 
         # Place lineage a (paternal, left side: -90° to 0°)
+        gen_medallion_radii: list[float] = []
         for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_a):
             start_angle = -_ANCESTOR_HALF_SPAN_DEG + i * sweep_a
-            _emit_ancestor_sector(
+            emitted = _emit_ancestor_sector(
                 children, cx, cy, gen_inner, gen_outer,
                 start_angle, sweep_a, outer_r,
                 gen, "a", label, dates_label, portrait, highlighted,
                 name_font_size=generation_name_sizes.get(gen),
                 date_font_size=generation_date_sizes.get(gen),
+                max_image_r=previous_min_image_r,
             )
+            if emitted is not None:
+                gen_medallion_radii.append(emitted)
 
         # Place lineage b (maternal, right side: 0° to 90°)
         for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_b):
             start_angle = 0.0 + i * sweep_b
-            _emit_ancestor_sector(
+            emitted = _emit_ancestor_sector(
                 children, cx, cy, gen_inner, gen_outer,
                 start_angle, sweep_b, outer_r,
                 gen, "b", label, dates_label, portrait, highlighted,
                 name_font_size=generation_name_sizes.get(gen),
                 date_font_size=generation_date_sizes.get(gen),
+                max_image_r=previous_min_image_r,
             )
+            if emitted is not None:
+                gen_medallion_radii.append(emitted)
+        # Chain the cap only from generation three onward: G1-G3 keep their
+        # established mockup proportions exactly (issue #76 regression
+        # contract), and every deeper ring is bounded by the smallest
+        # medallion actually drawn in the previous generation.
+        if gen >= 3 and gen_medallion_radii:
+            previous_min_image_r = min(gen_medallion_radii)
 
     return SceneNode(children=tuple(children))
 
@@ -1080,8 +1108,15 @@ def _emit_ancestor_sector(
     highlighted: bool = False,
     name_font_size: float | None = None,
     date_font_size: float | None = None,
-) -> None:
-    """Emit one ancestor sector with fill, curved label, dates, and medallion."""
+    max_image_r: float | None = None,
+) -> float | None:
+    """Emit one ancestor sector with fill, curved label, dates, and medallion.
+
+    Returns the content image radius (``image_r``) when a medallion circle
+    was emitted, ``None`` otherwise — the caller chains these into the
+    per-generation cap that keeps the visual hierarchy monotonic in the
+    ``image_r`` space across all rings (issue #76).
+    """
     end_angle = start_angle + sweep
     mid_angle = start_angle + sweep / 2.0
 
@@ -1120,6 +1155,7 @@ def _emit_ancestor_sector(
         outer_radius=outer_r,
         fan_outer_radius=fan_outer_r,
         sweep_angle=sweep,
+        max_image_r=max_image_r,
     )
     # Narrow sectors need true radial text; broad sectors retain curved labels.
     use_radial = sweep < 15.0
@@ -1413,6 +1449,8 @@ def _emit_ancestor_sector(
             cy=marker_y,
             radius=marker_radius,
         ))
+
+    return image_r if show_medallion and med_r > 0.5 else None
 
 
 # ---------------------------------------------------------------------------

@@ -128,11 +128,21 @@ def _descendant_name_target(depth: int) -> float:
     )
 
 
-# Issue #83: a descendant couple always keeps two parallel radial rails. The
-# tangent budget below is the historical width two rails need (in em of the
-# rail font size); a narrower sector reduces the rail size rather than merging
-# both identities onto a single line.
-_COUPLE_RAIL_TANGENTIAL_EM = 2.35
+# Issue #83: a descendant couple always keeps two parallel radial rails, and a
+# narrower sector reduces the rail size rather than merging both identities onto
+# one line. Issue #85: the tangent offset of each rail is derived from the font's
+# real glyph box — the layout's font renders a 1.3625 em box (measured on a size
+# sweep in Chromium, constant from 20 to 160 px), so a pair separated by only
+# 2 * 0.68 = 1.36 em put the two rails' ink in contact at EVERY size. The 0.68
+# was calibrated to "just touch", which reads as overlapping text. Keep a real
+# gap between the two rails, and use the same factor for the tangential budget so
+# the fit and the placement can never disagree.
+_COUPLE_GLYPH_BOX_EM = 1.3625
+_COUPLE_RAIL_GAP_EM = 0.30
+_COUPLE_RAIL_OFFSET_EM = (_COUPLE_GLYPH_BOX_EM + _COUPLE_RAIL_GAP_EM) / 2.0
+# Narrowest lane the renderer still draws a rail in (mm). Below this the label
+# keeps its size and the renderer's physical compression takes over instead.
+_COUPLE_RAIL_MIN_LANE_MM = 2.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -3063,9 +3073,13 @@ def layout_descendants(
             * math.radians(max(sweep_angle, 0.0))
             / 2.0
         )
+        # Issue #85: the stacked pair is placed with the same rail separation as
+        # every other couple, so its capacity must be derived from that same
+        # separation. The old literal 1.12 estimated a *narrower* pair than the
+        # layout draws, which let a stacked G4 couple overflow its cell.
         local_size = min(
             target_size,
-            (half_arc - 0.3) / 1.12,
+            max(0.0, half_arc - 0.3) / _COUPLE_RAIL_OFFSET_EM,
         )
         local_size = min(
             local_size,
@@ -4117,8 +4131,24 @@ def layout_descendants(
                         # name). Two rails must fit side by side inside the
                         # cell, so a narrow sector reduces the rail size
                         # instead of merging both identities onto one line.
-                        rail_lane_width = max(text_width, angular_capacity * 0.92)
-                        tangential_size = angular_capacity / _COUPLE_RAIL_TANGENTIAL_EM
+                        # Issue #85: a rail's `max_width` is the TANGENTIAL budget
+                        # its cell can give that rail, not the radial text depth.
+                        # Both rails of a couple run along the radius, so
+                        # `text_width` (the radial depth, tens of millimetres) is
+                        # the wrong axis entirely: taking `max(text_width, ...)`
+                        # let every rail claim 60-75 mm of `textLength` inside a
+                        # cell whose half-arc was a few millimetres, and the
+                        # stretched label ran over the white separator into the
+                        # neighbouring branch. Bound the lane by the arc available
+                        # at the rail's own radius, never below the narrowest lane
+                        # the renderer still draws.
+                        rail_arc = text_r * math.radians(max(block_sweep, 0.0))
+                        rail_lane_width = max(
+                            rail_arc / 2.0 - 1.0, _COUPLE_RAIL_MIN_LANE_MM
+                        )
+                        tangential_size = angular_capacity / (
+                            2.0 * _COUPLE_RAIL_OFFSET_EM
+                        )
                         rail_target = min(name_target, tangential_size)
                         # Issue #85: the couple rail budget (`tangential_size`)
                         # can be spent entirely on a narrow cell, which used to
@@ -4165,9 +4195,26 @@ def layout_descendants(
                                 )
                             )
                         rail_size = max(child_size, spouse_size)
+                        # Issue #85 follow-up: the pair must fit across the cell's
+                        # arc once the rail separation is the real glyph box plus
+                        # a gap. Cap the rail size so both rails stay inside the
+                        # cell instead of spilling over the white separators.
+                        pair_capacity = angular_capacity / (2.0 * _COUPLE_RAIL_OFFSET_EM)
+                        if rail_size > pair_capacity > 0.0:
+                            rail_size = pair_capacity
+                            child_size = min(child_size, rail_size)
+                            spouse_size = min(spouse_size, rail_size)
+                        # Never shrink below the readable floor: a cell that cannot
+                        # hold two readable rails degrades by compression (the
+                        # renderer's max_width), not by unreadable type.
+                        if rail_size < _DESCENDANT_NAME_FLOOR_MM:
+                            child_size = spouse_size = max(
+                                rail_size, _DESCENDANT_NAME_FLOOR_MM
+                            )
+                            rail_size = child_size
                         child_offset, spouse_offset = _couple_line_offsets(
                             block_mid_angle,
-                            max(rail_size, name_minimum) * 0.68,
+                            rail_size * _COUPLE_RAIL_OFFSET_EM,
                         )
                         child_x, child_y = _tangent_offset(
                             base_x, base_y, block_mid_angle, child_offset

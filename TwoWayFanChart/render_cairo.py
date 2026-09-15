@@ -15,6 +15,7 @@ import cairo
 try:
     from TwoWayFanChart.geometry import mm_to_pt, mm_to_px, deg2rad
     from TwoWayFanChart.model import (
+        MARRIAGE_EMBLEM_DY_RATIO,
         MARRIAGE_EMBLEM_SCALE,
         SceneCircle,
         SceneImage,
@@ -30,6 +31,7 @@ try:
 except ModuleNotFoundError:
     from geometry import mm_to_pt, mm_to_px, deg2rad
     from model import (
+        MARRIAGE_EMBLEM_DY_RATIO,
         MARRIAGE_EMBLEM_SCALE,
         SceneCircle,
         SceneImage,
@@ -157,9 +159,12 @@ def _render_text(ctx: cairo.Context, text: SceneText) -> None:
     if emblem:
         # Draw the emblem at 1.5x, then advance by its scaled advance so
         # the remainder starts exactly where the larger glyph ends.
+        # The U+26AD glyph sits high in the font; lower it so its ink
+        # center aligns with the digits' axis (mirrors the SVG dy).
         emblem_extents = ctx.text_extents(emblem)
         ctx.set_font_size(text.font_size * MARRIAGE_EMBLEM_SCALE)
-        ctx.move_to(x, 0.0)
+        dy = text.font_size * MARRIAGE_EMBLEM_SCALE * MARRIAGE_EMBLEM_DY_RATIO
+        ctx.move_to(x, dy)
         ctx.show_text(emblem)
         emblem_advance = emblem_extents.x_advance * MARRIAGE_EMBLEM_SCALE
         ctx.set_font_size(text.font_size)
@@ -267,9 +272,16 @@ def _render_path_text(ctx: cairo.Context, text: ScenePathText) -> None:
         ctx.scale(scale_x, 1.0)
         ctx.set_font_size(text.font_size * char_scale)
         render_extents = ctx.text_extents(character)
+        # The enlarged emblem glyph sits high in the font; lower it in the
+        # local text-baseline frame so its ink center joins the digits.
+        glyph_dy = (
+            text.font_size * char_scale * MARRIAGE_EMBLEM_DY_RATIO
+            if char_scale > 1.0
+            else 0.0
+        )
         ctx.move_to(
             -(render_extents.x_bearing + render_extents.width / 2.0),
-            0.0,
+            glyph_dy,
         )
         ctx.show_text(character)
         ctx.restore()

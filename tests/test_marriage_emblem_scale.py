@@ -1,10 +1,13 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from TwoWayFanChart.layout import (
     _descendant_marriage_label_and_size,
     _font_size_for_width,
 )
 from TwoWayFanChart.model import (
+    MARRIAGE_EMBLEM_DY_RATIO,
     MARRIAGE_EMBLEM_SCALE,
     SceneNode,
     ScenePage,
@@ -79,8 +82,9 @@ class SvgEmblemRenderingTests(unittest.TestCase):
             ),
         )
         scaled = 3.0 * MARRIAGE_EMBLEM_SCALE
-        self.assertIn(f'<tspan font-size="{scaled:g}">⚭</tspan>', svg)
-        self.assertIn(" 1900 · Lyon", svg)
+        dy = scaled * MARRIAGE_EMBLEM_DY_RATIO
+        self.assertIn(f'<tspan font-size="{scaled:g}" dy="{dy:g}">⚭</tspan>', svg)
+        self.assertIn(f'<tspan dy="{-dy:g}"> 1900 · Lyon</tspan>', svg)
         self.assertNotIn("textLength", svg)
 
     def test_scene_text_without_emblem_stays_plain(self):
@@ -106,8 +110,9 @@ class SvgEmblemRenderingTests(unittest.TestCase):
             ),
         )
         scaled = 3.0 * MARRIAGE_EMBLEM_SCALE
-        self.assertIn(f'<tspan font-size="{scaled:g}">⚭</tspan>', svg)
-        self.assertIn(" 1620 · Paris", svg)
+        dy = scaled * MARRIAGE_EMBLEM_DY_RATIO
+        self.assertIn(f'<tspan font-size="{scaled:g}" dy="{dy:g}">⚭</tspan>', svg)
+        self.assertIn(f'<tspan dy="{-dy:g}"> 1620 · Paris</tspan>', svg)
         self.assertNotIn("textLength", svg)
 
     def test_arc_label_without_emblem_keeps_text_length(self):
@@ -126,6 +131,154 @@ class SvgEmblemRenderingTests(unittest.TestCase):
         )
         self.assertNotIn("tspan", svg)
         self.assertIn("textLength", svg)
+
+
+class EmblemVerticalAlignmentTests(unittest.TestCase):
+    """The enlarged U+26AD glyph floats above the digits' axis at the same
+    baseline; the renderers lower it so its ink center aligns with the
+    digits (issue #43, reopened for vertical centering)."""
+
+    def _render_cairo_text(self, dpi: int = 150) -> "tuple[int, int]":
+        try:
+            from TwoWayFanChart.render_cairo import render_cairo_png
+        except ModuleNotFoundError as error:
+            if error.name == "cairo":
+                self.skipTest("pycairo is not installed")
+            raise
+        import cairo
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "emblem.png"
+            render_cairo_png(
+                path,
+                ScenePage(100, 40),
+                SceneNode(
+                    (
+                        SceneText(
+                            x=30,
+                            y=20,
+                            content="⚭ 1900",
+                            font_size=10.0,
+                            anchor="start",
+                        ),
+                    )
+                ),
+                dpi=dpi,
+            )
+            surface = cairo.ImageSurface.create_from_png(str(path))
+            buf = surface.get_data()
+            width = surface.get_width()
+            height = surface.get_height()
+            stride = surface.get_stride()
+            # ARGB32 little-endian: byte order B,G,R,A per pixel.
+            columns: dict[int, list[int]] = {}
+            for row in range(height):
+                for col in range(width):
+                    offset = row * stride + col * 4
+                    alpha = buf[offset + 3]
+                    blue = buf[offset]
+                    if alpha > 200 and blue < 200:
+                        columns.setdefault(col, []).append(row)
+            if not columns:
+                self.fail("no dark pixels rendered by the cairo backend")
+            runs = []
+            previous_col = None
+            for col in sorted(columns):
+                if previous_col is None or col - previous_col > 4:
+                    runs.append([col, col])
+                else:
+                    runs[-1][1] = col
+                previous_col = col
+            emblem = runs[0]
+            emblem_rows = [
+                row
+                for col in range(emblem[0], emblem[1])
+                for row in columns.get(col, [])
+            ]
+            digits_rows: list[int] = []
+            for run in runs[1:]:
+                for col in range(run[0], run[1]):
+                    digits_rows.extend(columns.get(col, []))
+                break
+            if not emblem_rows or not digits_rows:
+                self.fail("emblem or digits not rendered")
+            emblem_center = (min(emblem_rows) + max(emblem_rows)) / 2
+            digits_center = (min(digits_rows) + max(digits_rows)) / 2
+            return emblem_center, digits_center
+
+    def test_cairo_emblem_center_matches_digit_axis(self):
+        emblem_center, digits_center = self._render_cairo_text()
+        # The emblem ink center must sit within 0.05em of the digits'
+        # centerline, expressed in rendered pixels (dpi=150, em=10mm).
+        em_px = 10.0 * 150 / 25.4
+        self.assertAlmostEqual(emblem_center, digits_center, delta=0.05 * em_px)
+
+    def test_cairo_arc_emblem_center_matches_digit_axis(self):
+        try:
+            from TwoWayFanChart.render_cairo import render_cairo_png
+        except ModuleNotFoundError as error:
+            if error.name == "cairo":
+                self.skipTest("pycairo is not installed")
+            raise
+        import cairo
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "emblem_arc.png"
+            render_cairo_png(
+                path,
+                ScenePage(100, 100),
+                SceneNode(
+                    (
+                        ScenePathText(
+                            path="M 10 50 A 400 400 0 0 1 90 50",
+                            content="⚭ 1900",
+                            font_size=10.0,
+                            fill="#141413",
+                        ),
+                    )
+                ),
+                dpi=150,
+            )
+            surface = cairo.ImageSurface.create_from_png(str(path))
+            buf = surface.get_data()
+            width = surface.get_width()
+            height = surface.get_height()
+            stride = surface.get_stride()
+            columns: dict[int, list[int]] = {}
+            for row in range(height):
+                for col in range(width):
+                    offset = row * stride + col * 4
+                    alpha = buf[offset + 3]
+                    blue = buf[offset]
+                    if alpha > 200 and blue < 200:
+                        columns.setdefault(col, []).append(row)
+            if not columns:
+                self.fail("no dark pixels rendered by the cairo arc backend")
+            runs = []
+            previous_col = None
+            for col in sorted(columns):
+                if previous_col is None or col - previous_col > 4:
+                    runs.append([col, col])
+                else:
+                    runs[-1][1] = col
+                previous_col = col
+            emblem = runs[0]
+            emblem_rows = [
+                row
+                for col in range(emblem[0], emblem[1])
+                for row in columns.get(col, [])
+            ]
+            digits_rows: list[int] = []
+            for run in runs[1:]:
+                for col in range(run[0], run[1]):
+                    digits_rows.extend(columns.get(col, []))
+                break
+            if not emblem_rows or not digits_rows:
+                self.fail("emblem or digits not rendered on the arc")
+            emblem_center = (min(emblem_rows) + max(emblem_rows)) / 2
+            digits_center = (min(digits_rows) + max(digits_rows)) / 2
+        em_px = 10.0 * 150 / 25.4
+        self.assertAlmostEqual(emblem_center, digits_center, delta=0.05 * em_px)
 
 
 class MarriageLabelFittingTests(unittest.TestCase):

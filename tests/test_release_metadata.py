@@ -15,9 +15,9 @@ class ReleaseMetadataTests(unittest.TestCase):
         metadata = read_release_metadata(Path(__file__).resolve().parents[1])
 
         self.assertEqual(metadata.addon, "TwoWayFanChart")
-        self.assertEqual(metadata.version, "1.2.65")
+        self.assertEqual(metadata.version, "1.2.68")
         self.assertEqual(metadata.gramps_version, "6.0")
-        self.assertEqual(metadata.tag, "v1.2.65")
+        self.assertEqual(metadata.tag, "v1.2.68")
         self.assertEqual(metadata.archive_name, "TwoWayFanChart.addon.tgz")
 
     def test_version_must_be_a_plain_semver_patch_version(self):
@@ -48,8 +48,8 @@ class ReleaseMetadataTests(unittest.TestCase):
 
         self.assertEqual(
             output,
-            "version=1.2.65\n"
-            "tag=v1.2.65\n"
+            "version=1.2.68\n"
+            "tag=v1.2.68\n"
             "archive_name=TwoWayFanChart.addon.tgz\n",
         )
 

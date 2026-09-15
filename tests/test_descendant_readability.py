@@ -414,10 +414,10 @@ class DescendantReadabilityTests(unittest.TestCase):
                 self.assertIn("GEN1 Spouse", paths[0].content)
                 self.assertNotIn("1908", paths[0].content)
             else:
-                # Wider direct rings keep two lanes (issue #77: the direct
-                # ring still receives the same depth as the later rings, and
-                # the readability floors keep it above the label floor)
-                # spaced by at least the readable baseline gap.
+                # Wider direct rings keep two lanes (issue #77 revised: the
+                # direct ring is the compact ×0.8 lane, and the readability
+                # floors keep it above the label floor) spaced by at least
+                # the readable baseline gap.
                 self.assertEqual(len(paths), 2)
                 self.assertGreaterEqual(
                     path_radii[1] - path_radii[0],
@@ -862,7 +862,7 @@ class DescendantReadabilityTests(unittest.TestCase):
             )
         )
 
-    def test_disabled_marriages_keep_uniform_ratio_allocation(self):
+    def test_disabled_marriages_keep_revised77_ratio_allocation(self):
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A4, Orientation.LANDSCAPE),
             ancestor_generations=5,
@@ -880,17 +880,18 @@ class DescendantReadabilityTests(unittest.TestCase):
                 for depth in range(1, 4)
             )
         ]
-        # Issue #77 fixes the descendant ring profile to uniform normalized
-        # multipliers (equal ring depths); the marriage-disabled path must
-        # keep that pure profile (no direct-floor transfer). The absolute
-        # values follow the full-size outer radius (ratio 1.0, issue #71).
-        self.assertAlmostEqual(widths[0], 19.612, places=3)
+        # Issue #77 (revised) fixes the descendant ring profile to the
+        # normalized ×0.8 / ×1 / ×1.2 multipliers (compact direct child,
+        # dominant great-grandchild); the marriage-disabled path must keep
+        # that pure profile (no direct-floor transfer). The absolute values
+        # follow the full-size outer radius (ratio 1.0, issue #71).
+        self.assertAlmostEqual(widths[0], 15.63, places=3)
         self.assertAlmostEqual(widths[1], 19.612, places=3)
-        self.assertAlmostEqual(widths[2], 19.612, places=3)
-        # All three rings receive the same radial depth (1/3 of the total
-        # descendant depth minus the ring gap on each boundary).
-        self.assertAlmostEqual(widths[0], widths[1], places=6)
-        self.assertAlmostEqual(widths[1], widths[2], places=6)
+        self.assertAlmostEqual(widths[2], 23.595, places=3)
+        # The direct-child ring is the compact ×0.8 lane; the great-grandchild
+        # ring the ×1.2 dominant lane; the grandchild stays neutral.
+        self.assertLess(widths[0], widths[1])
+        self.assertLess(widths[1], widths[2])
 
     def test_continuation_dots_clear_emitted_marriage_band(self):
         root = DescendantBranch(

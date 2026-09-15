@@ -65,7 +65,7 @@ def path_radius(path: str, cx: float, cy: float) -> float:
 
 
 class SecondGenerationLayoutTests(unittest.TestCase):
-    def test_descendant_rings_share_the_uniform_ratio_profile(self):
+    def test_descendant_rings_follow_the_revised77_ratio_profile(self):
         fourth = branch("fourth", 4)
         third = branch("third", 3, children=(fourth,))
         second = branch("second", 2, children=(third,))
@@ -110,25 +110,31 @@ class SecondGenerationLayoutTests(unittest.TestCase):
         total_depth = (
             chart.descendant_outer_radius_mm - chart.descendant_inner_radius_mm
         )
-        baseline_ring_depth = total_depth * ratios[0] - _RING_GAP_MM
+        baseline_direct_depth = total_depth * ratios[0] - _RING_GAP_MM
+        baseline_grandchild_depth = total_depth * ratios[1] - _RING_GAP_MM
 
-        # Issue #77: every descendant ring receives the same radial depth —
-        # the direct-child and grandchild lanes are equal, each 1/4 of the
-        # descendant depth minus the ring gap.
+        # Issue #77 (revised, after visualizing the uniform profile): the
+        # direct-child lane is compact (×0.8), and the great-grandchild lane
+        # dominates (×1.2) — both siblings (grandchild and fourth) stay
+        # neutral (×1) and equal.
         self.assertAlmostEqual(
             direct_child_ring.outer_radius - direct_child_ring.inner_radius,
-            baseline_ring_depth,
+            baseline_direct_depth,
             places=6,
         )
         self.assertAlmostEqual(
             grandchild_ring.outer_radius - grandchild_ring.inner_radius,
-            baseline_ring_depth,
+            baseline_grandchild_depth,
             places=6,
         )
         self.assertAlmostEqual(
-            baseline_ring_depth,
-            total_depth / 4 - _RING_GAP_MM,
+            baseline_grandchild_depth,
+            total_depth * ratios[3] - _RING_GAP_MM,
             places=6,
+        )
+        self.assertGreater(
+            baseline_grandchild_depth,
+            baseline_direct_depth,
         )
         for depth in (1, 2, 3, 4):
             _inner, ring_outer = _descendant_ring_bounds(
@@ -196,7 +202,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                 _MIN_INITIALS_MEDALLION_RADIUS_MM,
             )
 
-    def test_a1_and_a2_keep_the_uniform_ring_profile(self):
+    def test_a1_and_a2_keep_the_revised77_ring_profile(self):
         for paper_size in (PaperSize.A1, PaperSize.A2):
             for generations in (3, 4):
                 chart = calculate_canvas(
@@ -345,7 +351,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                     msg=f"{paper_size.value} label crosses a direct-child portrait",
                 )
 
-    def test_two_generation_chart_uses_uniform_ring_profile(self):
+    def test_two_generation_chart_uses_revised77_ring_profile(self):
         grandchild = branch("grandchild", 2)
         direct_child = branch("child", 1, children=(grandchild,))
         chart = canvas(2)
@@ -376,7 +382,9 @@ class SecondGenerationLayoutTests(unittest.TestCase):
         total_depth = (
             chart.descendant_outer_radius_mm - chart.descendant_inner_radius_mm
         )
-        # Issue #77: both lanes share the same radial depth (1/2 each).
+        # Issue #77 (revised): on a two-generation prefix the direct-child
+        # lane is the compact ×0.8 share and the grandchild the neutral ×1
+        # share (0.444 / 0.556 after normalization).
         self.assertAlmostEqual(
             rings[0].outer_radius - rings[0].inner_radius,
             total_depth * ratios[0] - _RING_GAP_MM,

@@ -23,6 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Make the repository root importable when executed directly as
+# `python ci/check_pr_version.py` (sys.path[0] is ci/ then).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from ci.release_metadata import read_release_metadata
 
 _VERSION_RE = re.compile(r"^VERSION\s*=\s*\"([0-9]+\.[0-9]+\.[0-9]+)\"", re.MULTILINE)

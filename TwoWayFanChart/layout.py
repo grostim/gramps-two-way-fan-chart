@@ -2226,7 +2226,18 @@ def _allocate_descendant_branches_by_demand(
     start_angle: float,
     total_sweep: float,
 ) -> tuple[DescendantBranchAllocation, ...]:
-    """Allocate siblings in proportion to their deepest-generation demand."""
+    """Allocate siblings by deepest-generation demand with a hard minimum.
+
+    Every branch keeps at least its generation's minimum useful sweep
+    (``_DESC_MIN_SWEEP_BY_GENERATION``) whenever the fan can afford it: the
+    floors are granted first and the remaining sweep is distributed over the
+    demand surplus. Without this, one sparse branch shrinks to a sliver and
+    drags the whole generation's shared font size down with it, because the
+    generation-wide size is the minimum measured across all sectors
+    (issue #60). Only when the summed floors overflow the fan itself does
+    allocation degrade to the old pure-proportional squeeze, keeping the fan
+    shape intact at the cost of uniform shrinking.
+    """
     if not branches:
         return ()
     demands = [_descendant_angle_demand(branch) for branch in branches]
@@ -2235,19 +2246,43 @@ def _allocate_descendant_branches_by_demand(
         demands = [1.0] * len(branches)
         total_demand = float(len(branches))
 
+    floors = [
+        min(_DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8), total_sweep)
+        for branch in branches
+    ]
+    if sum(floors) <= total_sweep:
+        extras = [
+            max(0.0, demand - floor)
+            for demand, floor in zip(demands, floors)
+        ]
+        extra_total = sum(extras)
+        if extra_total > 0:
+            remaining = total_sweep - sum(floors)
+            widths = [
+                floor + remaining * extra / extra_total
+                for floor, extra in zip(floors, extras)
+            ]
+        else:
+            # Every branch sits exactly at its floor: split evenly instead
+            # of dumping the whole surplus onto the last branch.
+            widths = [total_sweep / len(branches)] * len(branches)
+    else:
+        # The floor budget overflows the fan: proportional squeeze keeps the
+        # shape intact and every branch shrinks uniformly.
+        widths = [total_sweep * demand / total_demand for demand in demands]
+
     allocations: list[DescendantBranchAllocation] = []
     angle = start_angle
-    for index, (branch, demand) in enumerate(zip(branches, demands)):
+    for index, (branch, width) in enumerate(zip(branches, widths)):
         if index == len(branches) - 1:
-            sweep = start_angle + total_sweep - angle
-        else:
-            sweep = total_sweep * demand / total_demand
+            # Absorb any float remainder so the fan always sums exactly.
+            width = start_angle + total_sweep - angle
         allocations.append(DescendantBranchAllocation(
             start_angle=angle,
-            sweep_angle=sweep,
+            sweep_angle=width,
             leaf_count=_count_leaves(branch),
         ))
-        angle += sweep
+        angle += width
     return tuple(allocations)
 
 

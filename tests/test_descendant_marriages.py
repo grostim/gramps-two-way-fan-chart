@@ -124,8 +124,8 @@ class DescendantMarriageTests(unittest.TestCase):
             msg="unlabeled marriage bands must still emit their sectors",
         )
 
-    def test_option_defaults_to_disabled(self):
-        self.assertFalse(ChartConfig().show_descendant_marriages)
+    def test_option_defaults_to_enabled(self):
+        self.assertTrue(ChartConfig().show_descendant_marriages)
 
     def test_descendant_marriage_sectors_are_opt_in(self):
         labels = {"family-child": ("x 1900 · Lyon", "x 1900")}

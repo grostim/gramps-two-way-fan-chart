@@ -254,8 +254,8 @@ class AncestorMarriageTests(unittest.TestCase):
             msg="an unlabeled lineage must keep the same colored sectors",
         )
 
-    def test_marriage_option_defaults_to_disabled(self):
-        self.assertFalse(ChartConfig().show_ancestor_marriages)
+    def test_marriage_option_defaults_to_enabled(self):
+        self.assertTrue(ChartConfig().show_ancestor_marriages)
 
 
 if __name__ == "__main__":

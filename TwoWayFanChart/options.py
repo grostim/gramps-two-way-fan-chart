@@ -204,12 +204,12 @@ class TwoWayFanChartOptions(MenuReportOptions):
         menu.add_option(
             _(CATEGORY_FAMILIES),
             "show_ancestor_marriages",
-            BooleanOption(_("Show ancestor marriages"), False),
+            BooleanOption(_("Show ancestor marriages"), True),
         )
         menu.add_option(
             _(CATEGORY_FAMILIES),
             "show_descendant_marriages",
-            BooleanOption(_("Show descendant marriages"), False),
+            BooleanOption(_("Show descendant marriages"), True),
         )
         menu.add_option(
             _(CATEGORY_PORTRAITS),

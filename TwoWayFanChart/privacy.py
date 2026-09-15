@@ -106,7 +106,6 @@ _DECISIONS = {
 _PROTECTED_POLICY_STATES = {
     PrivacyMode.INCLUDE_ALL: VisibilityState.VISIBLE,
     PrivacyMode.FULL_NAME_ONLY: VisibilityState.NAME_ONLY,
-    PrivacyMode.SURNAME_ONLY: VisibilityState.NAME_ONLY,
     PrivacyMode.REPLACE_IDENTITY: VisibilityState.MASKED,
     PrivacyMode.EXCLUDE: VisibilityState.EXCLUDED,
     PrivacyMode.PUBLICATION_SAFE: VisibilityState.MASKED,
@@ -307,17 +306,12 @@ def sanitize_person_for_rendering(
         include_private=include_private,
         living_people_mode=living_people_mode,
     )
-    private_surname_only = (
-        facts.is_private
-        and (not include_private or privacy_mode is PrivacyMode.PUBLICATION_SAFE)
-        and privacy_mode is PrivacyMode.SURNAME_ONLY
-    )
     living_surname_only = facts.is_living and living_people_mode == 1
     return project_person_seed(
         position_id,
         source,
         state,
         living_people_mode=living_people_mode,
-        surname_only=private_surname_only or living_surname_only,
+        surname_only=living_surname_only,
         highlighted=highlighted,
     )

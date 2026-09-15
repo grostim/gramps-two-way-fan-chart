@@ -359,6 +359,13 @@ class SceneLegend:
 
 MARRIAGE_EMBLEM_SCALE = 1.5
 
+# Vertical adjustment for the enlarged marriage emblem, as a fraction of the
+# scaled span size. The U+26AD glyph sits high in most fonts (its ink center
+# is well above the digits' axis); enlarging it 1.5x widens that gap, so the
+# emblem visibly floats above the date. Lowering it by this fraction of the
+# enlarged size re-aligns the emblem's ink center with the digits.
+MARRIAGE_EMBLEM_DY_RATIO = 0.12
+
 
 def split_marriage_emblem(content: str) -> tuple[str, str]:
     """Return ``(emblem, remainder)`` when *content* starts with the

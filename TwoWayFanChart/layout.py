@@ -668,6 +668,21 @@ _ANCESTOR_HALF_SPAN_DEG = 86.0  # mockup: 172° total, 4° waist gap per side
 _ANCESTOR_MARRIAGE_BAND_MM = 8.0
 
 
+def _ancestor_ring_weights(num_gens: int) -> list[float]:
+    """Progressive radial weights for ``num_gens`` ancestor rings.
+
+    Issue #67 gives the third ring an explicit bump (1.55 instead of the
+    original 1.31) so G3 names and medallions get noticeably more radial
+    depth. The first two weights keep the accepted mockup proportions
+    (1.0 / 1.105), and deeper rings keep the original quadratic growth
+    (0.05 * i * (i - 1)) so G4/G5 do not inflate.
+    """
+    weights = [1.0 + 0.105 * i + 0.05 * i * (i - 1) for i in range(num_gens)]
+    if num_gens >= 3:
+        weights[2] = 1.55
+    return weights
+
+
 def layout_ancestors(
     canvas: ChartCanvas,
     ancestor_slots: tuple[tuple, ...],
@@ -760,7 +775,7 @@ def layout_ancestors(
     )
     person_depth = max(0.0, total_depth - num_gens * marriage_band_width)
     if num_gens > 0:
-        weights = [1.0 + 0.105 * i + 0.05 * i * (i - 1) for i in range(num_gens)]
+        weights = _ancestor_ring_weights(num_gens)
         total_weight = sum(weights)
         ring_widths = [person_depth * weight / total_weight for weight in weights]
     else:

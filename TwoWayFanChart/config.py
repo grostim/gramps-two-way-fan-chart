@@ -15,7 +15,6 @@ except ImportError:  # Gramps loads add-ons as top-level modules.
 
 class PresetName(StrEnum):
     PUBLICATION = "publication"
-    FAMILY = "family"
     COMPACT = "compact"
     CUSTOM = "custom"
 
@@ -36,18 +35,11 @@ class PaperSize(StrEnum):
 class Orientation(StrEnum):
     PORTRAIT = "portrait"
     LANDSCAPE = "landscape"
-    AUTOMATIC = "automatic"
-
-
-class OutputFormat(StrEnum):
-    SVG = "svg"
-    PDF = "pdf"
 
 
 class PrivacyMode(StrEnum):
     INCLUDE_ALL = "include_all"
     FULL_NAME_ONLY = "full_name_only"
-    SURNAME_ONLY = "surname_only"
     REPLACE_IDENTITY = "replace_identity"
     EXCLUDE = "exclude"
     PUBLICATION_SAFE = "publication_safe"
@@ -66,7 +58,6 @@ class ChartConfig:
     margin_mm: float = 12.0
     custom_width_mm: float | None = None
     custom_height_mm: float | None = None
-    output_format: OutputFormat = OutputFormat.SVG
     privacy_mode: PrivacyMode = PrivacyMode.INCLUDE_ALL
     background_color: str = "#FAF9F5"
     parent_family_policy: str = "primary"
@@ -88,7 +79,6 @@ class ChartConfig:
             ("preset", self.preset, PresetName),
             ("paper size", self.paper_size, PaperSize),
             ("orientation", self.orientation, Orientation),
-            ("output format", self.output_format, OutputFormat),
             ("privacy mode", self.privacy_mode, PrivacyMode),
         )
         for label, value, enum_type in enum_fields:
@@ -133,12 +123,6 @@ def build_preset(preset: PresetName) -> ChartConfig:
         raise ValueError("Custom is a state, not a resettable preset")
     if preset is PresetName.PUBLICATION:
         return ChartConfig(preset=preset)
-    if preset is PresetName.FAMILY:
-        return ChartConfig(
-            preset=preset,
-            privacy_mode=PrivacyMode.INCLUDE_ALL,
-            living_people_mode=99,
-        )
     if preset is PresetName.COMPACT:
         return ChartConfig(
             preset=preset,

@@ -1,10 +1,20 @@
-# Two-Way Fan Chart 1.2.57
+# Two-Way Fan Chart 1.2.58
 
 Graphical report add-on for Gramps 6.0.x: ancestors above a central couple, descendants below, portrait medallions, and publication-safe privacy filtering.
 
 When recorded, the central couple's marriage date and place appear below
 their life dates. The label is omitted when privacy rules do not permit the
 underlying family or partners to be shown.
+
+## Options reference
+
+Every option of the report menu is documented with its exact effect on
+the rendered chart in [`OPTIONS.md`](OPTIONS.md) (English) and
+[`OPTIONS.fr.md`](OPTIONS.fr.md) (French). The menu and the
+documentation are kept in sync by an automated test
+(`tests/test_option_contract.py` covers the menu, `tests/test_options_documentation.py`
+covers the documentation), so any change to an option must update the
+documentation in the same change.
 
 ## Recommended installation
 

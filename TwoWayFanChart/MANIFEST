@@ -21,6 +21,8 @@ TwoWayFanChart/validate.py
 TwoWayFanChart/warnings.py
 TwoWayFanChart/LICENSE
 TwoWayFanChart/README.md
+TwoWayFanChart/OPTIONS.md
+TwoWayFanChart/OPTIONS.fr.md
 TwoWayFanChart/assets/silhouette-female.svg
 TwoWayFanChart/assets/silhouette-male.svg
 TwoWayFanChart/assets/silhouette-neutral.svg

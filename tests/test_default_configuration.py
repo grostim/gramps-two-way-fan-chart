@@ -5,7 +5,6 @@ from pathlib import Path
 from TwoWayFanChart.config import (
     ChartConfig,
     Orientation,
-    OutputFormat,
     PaperSize,
     PresetName,
     PrivacyMode,
@@ -22,14 +21,13 @@ class DefaultConfigurationTests(unittest.TestCase):
         )
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
-        self.assertIn('version="1.2.57"', registration)
-        self.assertIn('VERSION = "1.2.57"', builder)
+        self.assertIn('version="1.2.58"', registration)
+        self.assertIn('VERSION = "1.2.58"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
 
         self.assertEqual(config.center_family, "F0055")
-        self.assertEqual(config.output_format, OutputFormat.SVG)
         self.assertEqual(config.paper_size, PaperSize.A0)
         self.assertEqual(config.ancestor_generations, 5)
         self.assertEqual(config.descendant_generations, 4)
@@ -67,7 +65,6 @@ class DefaultConfigurationTests(unittest.TestCase):
             'NumberOption(_("Descendant generations"), 4, 0, 5)',
             'default_center = ChartConfig().center_family',
             '"Orientation",\n                "landscape"',
-            '_enum("Output format", "svg"',
             '"Paper size",\n                "A0"',
             '"Privacy mode",\n                "include_all"',
             'add_private_data_option(menu, _(CATEGORY_PRIVACY), default=True)',

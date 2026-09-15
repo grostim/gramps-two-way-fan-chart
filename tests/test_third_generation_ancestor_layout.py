@@ -16,28 +16,34 @@ from TwoWayFanChart.model import (
 
 
 class ThirdGenerationAncestorLayoutTests(unittest.TestCase):
-    def test_fourth_ring_weight_is_boosted_above_the_original_quadratic_value(
-        self,
-    ):
-        # Issue #67: G4's radial weight goes from ~1.615 to 1.90 while
-        # G1–G3 keep the original formula and mockup proportions, and G5+
-        # keep the original quadratic growth.
+    def test_issue67_tuned_weights_reduce_g3_and_boost_g4(self):
+        # Issue #67 tuning: G3 drops 10% below its original weight
+        # (1.31 -> 1.179) and G4 rises 10% above the first correction
+        # (1.90 -> 2.09). G1/G2 keep the original mockup proportions and
+        # G5+ keep the original quadratic growth.
         three = _ancestor_ring_weights(3)
-        self.assertEqual(three, [1.0, 1.105, 1.31])
+        self.assertEqual(three, [1.0, 1.105, 1.31 * 0.9])
+        self.assertAlmostEqual(three[2], 1.179, places=3)
         self.assertTrue(three[0] < three[1] < three[2])
 
         four = _ancestor_ring_weights(4)
-        self.assertEqual(four, [1.0, 1.105, 1.31, 1.90])
-        self.assertGreater(four[3], 1.8)
-        self.assertLess(four[3], 2.0)
+        self.assertEqual(four, [1.0, 1.105, 1.31 * 0.9, 1.90 * 1.1])
+        self.assertAlmostEqual(four[2], 1.179, places=3)
+        self.assertAlmostEqual(four[3], 2.09, places=3)
         self.assertTrue(four[0] < four[1] < four[2] < four[3])
+        # The G4 boost must outpace the G3 reduction: with the tuning the
+        # G4/G3 weight ratio (~1.77) exceeds the ratio from the first
+        # fix (~1.45) and the original (~1.23).
+        self.assertGreater(four[3] / four[2], 1.6)
 
         five = _ancestor_ring_weights(5)
         self.assertEqual(five[0], 1.0)
         self.assertEqual(five[1], 1.105)
-        self.assertEqual(five[2], 1.31)
-        self.assertEqual(five[3], 1.90)
-        self.assertEqual(five[4], 1.0 + 0.105 * 4 + 0.05 * 4 * 3)
+        self.assertAlmostEqual(five[2], 1.179, places=3)
+        self.assertAlmostEqual(five[3], 2.09, places=3)
+        # G5 carries the original G5/G4 ratio above the tuned G4 so the
+        # monotonic hierarchy holds in five-generation layouts.
+        self.assertAlmostEqual(five[4], 2.09 * (2.02 / 1.90), places=3)
         self.assertTrue(five[0] < five[1] < five[2] < five[3] < five[4])
 
     def test_g4_sector_is_radially_wider_than_g3(self):
@@ -81,11 +87,12 @@ class ThirdGenerationAncestorLayoutTests(unittest.TestCase):
         g4 = [s for s in sectors if 8.0 <= s.sweep_angle < 15.0]
         self.assertEqual(len(g3), 8)
         self.assertEqual(len(g4), 16)
-        # The boosted G4 ring must be at least 25% deeper than G3. The
-        # pre-issue-67 ratio was ~1.23 (1.615 / 1.31), the boosted ~1.45.
+        # The tuned G4 ring is at least 60% deeper than G3: the weight
+        # ratio is ~1.77 (2.09 / 1.179) versus ~1.45 before the tuning
+        # (1.90 / 1.31) and ~1.23 originally (1.615 / 1.31).
         self.assertGreater(
             min(s.outer_radius - s.inner_radius for s in g4),
-            max(s.outer_radius - s.inner_radius for s in g3) * 1.25,
+            max(s.outer_radius - s.inner_radius for s in g3) * 1.6,
         )
 
     def test_generation_three_names_are_radial_and_share_maximum_fitting_size(self):

@@ -7,6 +7,7 @@ from typing import Any
 
 try:
     from .model import (
+        AncestorMarriage,
         AncestorSlot,
         ChartGraph,
         DescendantBranch,
@@ -16,6 +17,7 @@ try:
     )
 except ImportError:  # Gramps top-level add-on loading.
     from model import (  # type: ignore[no-redef]
+        AncestorMarriage,
         AncestorSlot,
         ChartGraph,
         DescendantBranch,
@@ -105,14 +107,18 @@ def _select_parent_family(
     )
 
 
-def extract_ancestor_slots(
+def extract_ancestor_data(
     database: Any,
     center_people: tuple[PersonNode | None, PersonNode | None],
     generations: int,
     *,
     parent_family_policy: str = "primary",
-) -> tuple[tuple[AncestorSlot, ...], tuple[Diagnostic, ...]]:
-    """Build complete deterministic slots while retaining unknown positions."""
+) -> tuple[
+    tuple[AncestorSlot, ...],
+    tuple[Diagnostic, ...],
+    tuple[AncestorMarriage, ...],
+]:
+    """Build ancestor slots and the family records behind each parent couple."""
     if not 0 <= generations <= 8:
         raise ValueError("ancestor generations must be between 0 and 8")
     if parent_family_policy not in {"primary", "biological", "first"}:
@@ -120,6 +126,7 @@ def extract_ancestor_slots(
 
     slots: list[AncestorSlot] = []
     diagnostics: list[Diagnostic] = []
+    marriages: list[AncestorMarriage] = []
     seen: set[str] = set()
     for lineage_index, root in enumerate(center_people):
         lineage = ("a", "b")[lineage_index]
@@ -146,6 +153,19 @@ def extract_ancestor_slots(
                             family.get_father_handle(),
                             family.get_mother_handle(),
                         )
+                        family_handle_getter = getattr(family, "get_handle", None)
+                        family_handle = (
+                            family_handle_getter() if callable(family_handle_getter) else ""
+                        )
+                        if family_handle:
+                            marriages.append(
+                                AncestorMarriage(
+                                    generation=generation,
+                                    lineage=lineage,
+                                    index=len(next_generation) // 2,
+                                    family_handle=family_handle,
+                                )
+                            )
 
                 for parent_handle, relation in zip(parent_handles, parent_relations):
                     index = len(next_generation)
@@ -195,7 +215,41 @@ def extract_ancestor_slots(
                         )
                     )
             current = next_generation
-    return tuple(slots), tuple(diagnostics)
+    return tuple(slots), tuple(diagnostics), tuple(marriages)
+
+
+def extract_ancestor_slots(
+    database: Any,
+    center_people: tuple[PersonNode | None, PersonNode | None],
+    generations: int,
+    *,
+    parent_family_policy: str = "primary",
+) -> tuple[tuple[AncestorSlot, ...], tuple[Diagnostic, ...]]:
+    """Build complete deterministic slots while retaining unknown positions."""
+    slots, diagnostics, _marriages = extract_ancestor_data(
+        database,
+        center_people,
+        generations,
+        parent_family_policy=parent_family_policy,
+    )
+    return slots, diagnostics
+
+
+def extract_ancestor_marriages(
+    database: Any,
+    center_people: tuple[PersonNode | None, PersonNode | None],
+    generations: int,
+    *,
+    parent_family_policy: str = "primary",
+) -> tuple[AncestorMarriage, ...]:
+    """Return the family record associated with every extracted ancestor pair."""
+    _slots, _diagnostics, marriages = extract_ancestor_data(
+        database,
+        center_people,
+        generations,
+        parent_family_policy=parent_family_policy,
+    )
+    return marriages
 
 
 def _select_descendant_families(database: Any, person: Any, policy: str) -> list[Any]:
@@ -421,7 +475,7 @@ def extract_chart_graph(database: Any, config: Any) -> ChartGraph:
     center_handle, center_people = extract_center_family(
         database, config.center_family
     )
-    ancestor_slots, ancestor_diagnostics = extract_ancestor_slots(
+    ancestor_slots, ancestor_diagnostics, ancestor_marriages = extract_ancestor_data(
         database,
         center_people,
         config.ancestor_generations,
@@ -439,4 +493,5 @@ def extract_chart_graph(database: Any, config: Any) -> ChartGraph:
         ancestor_slots,
         descendants,
         ancestor_diagnostics + descendant_diagnostics,
+        ancestor_marriages,
     )

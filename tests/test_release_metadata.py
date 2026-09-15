@@ -15,28 +15,28 @@ class ReleaseMetadataTests(unittest.TestCase):
         metadata = read_release_metadata(Path(__file__).resolve().parents[1])
 
         self.assertEqual(metadata.addon, "TwoWayFanChart")
-        self.assertEqual(metadata.version, "1.2.43")
+        self.assertEqual(metadata.version, "1.2.55")
         self.assertEqual(metadata.gramps_version, "6.0")
-        self.assertEqual(metadata.tag, "v1.2.43")
+        self.assertEqual(metadata.tag, "v1.2.55")
         self.assertEqual(metadata.archive_name, "TwoWayFanChart.addon.tgz")
 
     def test_version_must_be_a_plain_semver_patch_version(self):
-        validate_version("1.2.40")
+        validate_version("1.2.47")
 
         with self.assertRaisesRegex(ValueError, "semantic version"):
             validate_version("1.2")
 
         with self.assertRaisesRegex(ValueError, "semantic version"):
-            validate_version("v1.2.40")
+            validate_version("v1.2.47")
 
     def test_version_must_be_newer_than_existing_release_tags(self):
-        validate_version_is_newer("1.2.40", ["1.2.39", "1.2.4"])
+        validate_version_is_newer("1.2.47", ["1.2.39", "1.2.4"])
 
         with self.assertRaisesRegex(ValueError, "newer than existing release"):
             validate_version_is_newer("1.2.39", ["1.2.39"])
 
         with self.assertRaisesRegex(ValueError, "newer than existing release"):
-            validate_version_is_newer("1.2.4", ["1.2.40"])
+            validate_version_is_newer("1.2.4", ["1.2.47"])
 
     def test_github_output_contains_only_single_line_values(self):
         metadata = read_release_metadata(Path(__file__).resolve().parents[1])
@@ -48,8 +48,8 @@ class ReleaseMetadataTests(unittest.TestCase):
 
         self.assertEqual(
             output,
-            "version=1.2.43\n"
-            "tag=v1.2.43\n"
+            "version=1.2.55\n"
+            "tag=v1.2.55\n"
             "archive_name=TwoWayFanChart.addon.tgz\n",
         )
 

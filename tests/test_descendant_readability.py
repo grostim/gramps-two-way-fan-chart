@@ -15,6 +15,7 @@ from TwoWayFanChart.layout import (
     _DESC_TOTAL_SWEEP,
     _allocate_descendant_union_cells,
     _descendant_ring_bounds,
+    _descendant_ring_layout,
     _MIN_INITIALS_MEDALLION_RADIUS_MM,
     _allocate_descendant_branches_by_demand,
     calculate_canvas,
@@ -287,7 +288,39 @@ class DescendantReadabilityTests(unittest.TestCase):
                     _DESCENDANT_FIRST_GEN_LINE_GAP_MM - 1e-3,
                 )
 
-    def test_first_generation_fallback_avoids_overlapping_lines_on_small_pages(self):
+    def test_descendant_marriage_bands_keep_deep_gen1_medallions(self):
+        deep_branch = branch("g5", 5)
+        for depth in range(4, 0, -1):
+            deep_branch = branch(
+                f"g{depth}",
+                depth,
+                children=(deep_branch,),
+                spouse=f"s{depth}",
+            )
+        labels = {
+            **{f"g{depth}": f"Generation {depth}" for depth in range(1, 6)},
+            **{f"s{depth}": f"Spouse {depth}" for depth in range(1, 5)},
+        }
+
+        scene = layout_descendants(
+            a0_canvas(descendant_generations=5),
+            (deep_branch,),
+            name_lookup=labels.__getitem__,
+            portrait_lookup=lambda _handle: "data:image/svg+xml;base64,PHN2Zy8+",
+            descendant_marriages={},
+            show_descendant_marriages=True,
+        )
+
+        self.assertEqual(
+            len([node for node in scene.children if isinstance(node, SceneCircle)]),
+            2,
+        )
+        self.assertEqual(
+            len([node for node in scene.children if isinstance(node, SceneImage)]),
+            2,
+        )
+
+    def test_first_generation_lines_never_overlap_on_small_pages(self):
         root = branch(
             "root",
             1,
@@ -349,14 +382,47 @@ class DescendantReadabilityTests(unittest.TestCase):
                 and "GEN1" in node.content
             ]
 
-            self.assertEqual(
-                len(paths),
+            ring_inner, ring_outer = _descendant_ring_bounds(
+                canvas.descendant_inner_radius_mm,
+                canvas.descendant_outer_radius_mm,
+                4,
                 1,
-                msg=f"{name} kept overlapping first-generation lines",
             )
-            self.assertIn("GEN1 Root", paths[0].content)
-            self.assertIn("GEN1 Spouse", paths[0].content)
-            self.assertNotIn("1908", paths[0].content)
+            path_radii = sorted(
+                _path_radius(
+                    node.path,
+                    canvas.center_cx_mm,
+                    canvas.center_cy_mm,
+                )
+                for node in paths
+            )
+            # No identity lane may leave its direct-child ring…
+            for radius in path_radii:
+                self.assertGreaterEqual(
+                    radius,
+                    ring_inner - 1e-3,
+                    msg=f"{name} first-generation line leaves the direct ring",
+                )
+                self.assertLessEqual(
+                    radius,
+                    ring_outer + 1e-3,
+                    msg=f"{name} first-generation line leaves the direct ring",
+                )
+            if len(paths) == 1:
+                # Compact pages that cannot hold two readable lanes merge the
+                # identities into one combined lane instead of overlapping.
+                self.assertIn("GEN1 Root", paths[0].content)
+                self.assertIn("GEN1 Spouse", paths[0].content)
+                self.assertNotIn("1908", paths[0].content)
+            else:
+                # Larger direct rings (issue #57 ratio ×1.2) keep two lanes
+                # spaced by at least the readable baseline gap.
+                self.assertEqual(len(paths), 2)
+                self.assertGreaterEqual(
+                    path_radii[1] - path_radii[0],
+                    _DESCENDANT_FIRST_GEN_LINE_GAP_MM - 1e-3,
+                    msg=f"{name} kept overlapping first-generation lines",
+                )
 
     def test_descendant_arc_labels_are_foreground_of_later_generation_sectors(self):
         root = branch(
@@ -445,6 +511,109 @@ class DescendantReadabilityTests(unittest.TestCase):
             places=6,
         )
         self.assertAlmostEqual(allocations[1].start_angle, allocations[0].start_angle + allocations[0].sweep_angle)
+
+    def _georgette_crowd(self):
+        """Five deep branches plus one narrow leaf (issue #60 shape).
+
+        The leaf's 14° generation-1 floor is far below the deep branches'
+        demands; a pure proportional allocation crushes it to a sliver and,
+        because every generation shares one font size, drags the whole
+        generation down with it.
+        """
+        deep = tuple(
+            branch(
+                f"deep-{index}",
+                1,
+                children=tuple(
+                    branch(
+                        f"deep-{index}-{mid}",
+                        2,
+                        children=tuple(
+                            branch(
+                                f"deep-{index}-{mid}-{grand}",
+                                3,
+                                children=tuple(
+                                    branch(f"deep-{index}-{mid}-{grand}-{leaf}", 4)
+                                    for leaf in range(4)
+                                ),
+                            )
+                            for grand in range(4)
+                        ),
+                    )
+                    for mid in range(4)
+                ),
+            )
+            for index in range(5)
+        )
+        return deep + (branch("georgette-berloty", 1),)
+
+    def test_gen1_sector_keeps_hard_minimum_sweep_under_demand_pressure(self):
+        branches = self._georgette_crowd()
+        allocations = _allocate_descendant_branches_by_demand(
+            branches,
+            start_angle=96.0,
+            total_sweep=_DESC_TOTAL_SWEEP,
+        )
+
+        # The sparse leaf must not collapse below its generation floor when
+        # the fan has room for it.
+        self.assertGreaterEqual(
+            min(allocation.sweep_angle for allocation in allocations),
+            14.0 - 1e-6,
+        )
+        self.assertAlmostEqual(
+            sum(allocation.sweep_angle for allocation in allocations),
+            _DESC_TOTAL_SWEEP,
+            places=6,
+        )
+        # Deep branches still keep the lion's share of the extra sweep.
+        self.assertGreater(allocations[0].sweep_angle, allocations[-1].sweep_angle)
+
+    def test_overflowing_floor_budget_still_fills_the_fan(self):
+        # Fourteen branches with grandchildren demand far more than the
+        # 168° fan: the allocator must still tile the fan exactly.
+        crowded = tuple(
+            branch(
+                f"crowded-{index}",
+                1,
+                children=tuple(
+                    branch(f"crowded-{index}-{child}", 2) for child in range(4)
+                ),
+            )
+            for index in range(14)
+        )
+        allocations = _allocate_descendant_branches_by_demand(
+            crowded,
+            start_angle=96.0,
+            total_sweep=_DESC_TOTAL_SWEEP,
+        )
+        self.assertAlmostEqual(
+            sum(allocation.sweep_angle for allocation in allocations),
+            _DESC_TOTAL_SWEEP,
+            places=6,
+        )
+
+    def test_narrow_gen1_sector_keeps_generation_font_readable(self):
+        branches = self._georgette_crowd()
+        scene = layout_descendants(
+            a0_canvas(descendant_generations=4),
+            branches,
+            name_lookup=lambda handle: {
+                "georgette-berloty": "Georgette Berloty",
+            }.get(handle, f"Charles {handle}"),
+            dates_lookup=lambda _handle: "",
+        )
+
+        names = [
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText) and node.content
+        ]
+        self.assertTrue(names)
+        # The narrowest sector used to cap the whole generation around 1 mm;
+        # the hard sweep floor keeps every first-generation name readable.
+        self.assertGreaterEqual(min(node.font_size for node in names), 2.5)
+        self.assertIn("Georgette Berloty", {node.content for node in names})
 
     def test_dense_layout_never_emits_point_sized_medallions(self):
         leaves = tuple(branch(f"leaf-{index}", 4) for index in range(36))
@@ -690,6 +859,91 @@ class DescendantReadabilityTests(unittest.TestCase):
                 and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
                 for node in scene.children
             )
+        )
+
+    def test_disabled_marriages_keep_issue57_ratio_allocation(self):
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A4, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=3,
+        )
+        widths = [
+            outer - inner
+            for inner, outer in (
+                _descendant_ring_bounds(
+                    canvas.descendant_inner_radius_mm,
+                    canvas.descendant_outer_radius_mm,
+                    3,
+                    depth,
+                )
+                for depth in range(1, 4)
+            )
+        ]
+        # Issue #57 fixes the descendant ring profile to the normalized
+        # ×1.2 / ×0.8 / ×1.5 multipliers; the marriage-disabled path must
+        # keep that pure profile (no direct-floor transfer).
+        self.assertAlmostEqual(widths[0], 12.9878, places=3)
+        self.assertAlmostEqual(widths[1], 8.5586, places=3)
+        self.assertAlmostEqual(widths[2], 16.3098, places=3)
+
+    def test_continuation_dots_clear_emitted_marriage_band(self):
+        root = DescendantBranch(
+            "banded-last-visible",
+            person("banded-last-visible"),
+            1,
+            (
+                UnionBranch(
+                    "banded-family",
+                    "banded-spouse",
+                    ("not-rendered-child",),
+                    ("birth",),
+                ),
+            ),
+            (),
+        )
+        canvas = a0_canvas(descendant_generations=1)
+
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: {
+                "banded-last-visible": "Banded Last Visible",
+                "banded-spouse": "Banded Spouse",
+            }[handle],
+            dates_lookup=lambda _handle: "",
+            configured_generation_limit=1,
+            descendant_marriages={"banded-family": ("1920 · Paris", "1920")},
+            show_descendant_marriages=True,
+        )
+        dots = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneCircle)
+            and node.fill == CONTINUATION_DOT_FILL
+            and math.isclose(node.r, _DESCENDANT_CONTINUATION_DOT_RADIUS_MM)
+        ]
+        _rings, bands = _descendant_ring_layout(
+            canvas.descendant_inner_radius_mm,
+            canvas.descendant_outer_radius_mm,
+            1,
+            show_marriages=True,
+        )
+        band_outer = bands[0][1]
+
+        self.assertEqual(len(dots), 3)
+        radii = sorted(
+            math.hypot(
+                dot.cx - canvas.center_cx_mm,
+                dot.cy - canvas.center_cy_mm,
+            )
+            for dot in dots
+        )
+        self.assertGreaterEqual(
+            radii[0] - _DESCENDANT_CONTINUATION_DOT_RADIUS_MM,
+            band_outer
+            + _DESCENDANT_CONTINUATION_DOT_OFFSET_MM
+            - _DESCENDANT_CONTINUATION_DOT_RADIUS_MM
+            - 1e-6,
         )
 
     def test_unresolved_child_before_configured_limit_does_not_emit_dots(self):

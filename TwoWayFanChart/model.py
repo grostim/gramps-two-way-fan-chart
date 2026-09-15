@@ -140,6 +140,25 @@ class AncestorSlot:
 
 
 @dataclass(frozen=True, slots=True)
+class AncestorMarriage:
+    """One marriage sector associated with a pair of ancestor slots."""
+
+    generation: int
+    lineage: str
+    index: int
+    family_handle: str
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        if self.generation < 1:
+            raise ValueError("ancestor marriage generation must be at least 1")
+        if self.lineage not in {"a", "b"}:
+            raise ValueError("ancestor marriage lineage must be 'a' or 'b'")
+        if self.index < 0:
+            raise ValueError("ancestor marriage index must not be negative")
+
+
+@dataclass(frozen=True, slots=True)
 class UnionBranch:
     """One recorded family of a descendant."""
 
@@ -200,6 +219,7 @@ class ChartGraph:
     ancestor_slots: tuple[AncestorSlot, ...]
     descendant_branches: tuple[DescendantBranch, ...]
     diagnostics: tuple[Diagnostic, ...]
+    ancestor_marriages: tuple[AncestorMarriage, ...] = ()
 
 
 # ---------------------------------------------------------------------------

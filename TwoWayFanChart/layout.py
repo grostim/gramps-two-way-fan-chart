@@ -23,7 +23,7 @@ try:
     )
     from TwoWayFanChart.styles import (
         ancestor_fill,
-        descendant_fill,
+        descendant_generation_fill,
         MEDALLION_BORDER,
         MEDALLION_FILL,
         HIDDEN_FILL,
@@ -50,7 +50,7 @@ except ModuleNotFoundError:
     )
     from styles import (  # type: ignore[no-redef]
         ancestor_fill,
-        descendant_fill,
+        descendant_generation_fill,
         MEDALLION_BORDER,
         MEDALLION_FILL,
         HIDDEN_FILL,
@@ -76,14 +76,14 @@ _DESCENDANT_FIRST_GEN_LINE_GAP_MM = 4.0  # minimum readable baseline gap
 # rings for their identity labels before asking the direct-child ring to donate
 # any remaining space. The value scales down on smaller paper sizes.
 _DESCENDANT_LATER_RING_MIN_WIDTH_MM = 30.0
-# Absolute lower bound for a later-generation identity lane after the
-# grandchild transfer. The nominal floor above is allowed to scale down, but
-# never below this amount, or the radial text capacity becomes zero.
-_DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM = 8.0
 # The publication composition gives the descendant quarter a smaller visual
 # footprint than the ancestor fan. Keep the ratio explicit so the A0 maquette
 # and its regression probes share one geometric contract.
 _DESCENDANT_OUTER_RADIUS_RATIO = 0.76
+# Issue #57: explicit radial multipliers for the descendant generation rings
+# (direct child ×1.2, grandchild ×0.8, great-grandchild ×1.5, fourth ×1.2).
+# The fifth ring reuses the fourth multiplier until a finer profile exists.
+_DESCENDANT_RING_RATIOS = (1.2, 0.8, 1.5, 1.2, 1.2)
 _DESCENDANT_MEDALLION_TARGET_RATIO = 28 / 600
 _MEDALLION_EDGE_CLEARANCE_MM = 1.6
 _MEDALLION_TEXT_RESERVE_RATIO = 0.58
@@ -659,6 +659,7 @@ def _ancestor_content_geometry(
 # ---------------------------------------------------------------------------
 
 _ANCESTOR_HALF_SPAN_DEG = 86.0  # mockup: 172° total, 4° waist gap per side
+_ANCESTOR_MARRIAGE_BAND_MM = 8.0
 
 
 def layout_ancestors(
@@ -666,6 +667,8 @@ def layout_ancestors(
     ancestor_slots: tuple[tuple, ...],
     *,
     show_highlight_markers: bool = False,
+    ancestor_marriages: tuple = (),
+    show_ancestor_marriages: bool = False,
 ) -> SceneNode:
     """Place ancestor fan sectors in the upper half-circle.
 
@@ -726,6 +729,16 @@ def layout_ancestors(
             gen = 1
         parsed.append((pid, lineage, gen, label, dates_label, portrait, highlighted))
 
+    marriage_labels: dict[tuple[int, str, int], str] = {}
+    for marriage in ancestor_marriages:
+        if hasattr(marriage, "generation"):
+            key = (marriage.generation, marriage.lineage, marriage.index)
+            label = marriage.label
+        else:
+            generation, lineage, index, label = marriage[:4]
+            key = (generation, lineage, index)
+        marriage_labels[key] = label
+
     # Determine actual generations present
     max_gen = max(g for _, _, g, _, _, _, _ in parsed) if parsed else 1
     num_gens = max_gen
@@ -734,12 +747,18 @@ def layout_ancestors(
     # Mockup ancestor rings widen outwards: 113 px, 125 px, 148 px.
     # The formula reproduces those proportions for three generations and
     # degrades progressively for deeper configurations.
+    marriage_band_width = (
+        min(_ANCESTOR_MARRIAGE_BAND_MM, total_depth / max(num_gens * 3.0, 1.0))
+        if show_ancestor_marriages and num_gens > 0
+        else 0.0
+    )
+    person_depth = max(0.0, total_depth - num_gens * marriage_band_width)
     if num_gens > 0:
         weights = [1.0 + 0.105 * i + 0.05 * i * (i - 1) for i in range(num_gens)]
         total_weight = sum(weights)
-        ring_widths = [total_depth * weight / total_weight for weight in weights]
+        ring_widths = [person_depth * weight / total_weight for weight in weights]
     else:
-        ring_widths = [total_depth]
+        ring_widths = [person_depth]
 
     children: list = []
 
@@ -760,10 +779,16 @@ def layout_ancestors(
                 lineage_surnames.setdefault(lineage, surname)
 
     # Group slots by generation
+    radial_cursor = inner_r
     for gen in range(1, num_gens + 1):
-        gen_inner = inner_r + sum(ring_widths[:gen-1])
+        marriage_inner = radial_cursor
+        marriage_outer = marriage_inner + marriage_band_width
+        if show_ancestor_marriages and marriage_band_width > 0.0:
+            radial_cursor = marriage_outer
+        gen_inner = radial_cursor
         ring_width = ring_widths[gen - 1]
         gen_outer = gen_inner + ring_width - _RING_GAP_MM
+        radial_cursor = gen_inner + ring_width
 
         gen_slots = [
             (pid, lin, lbl, dt, portrait, highlighted)
@@ -874,6 +899,65 @@ def layout_ancestors(
             generation_name_sizes[gen] = min(generation_candidates)
             generation_date_sizes[gen] = _date_font_size(generation_name_sizes[gen])
 
+        # Marriage sectors are emitted after the shared name size is known so
+        # their labels stay at or below the individuals they concern (issue
+        # #56): the smallest marriage fit of the ring and the shared name size
+        # both cap the single font used for this generation's band. Sectors are
+        # always emitted — an unlabeled lineage keeps its colored band instead
+        # of leaving a transparent radial hole where the width was reserved.
+        if show_ancestor_marriages and marriage_band_width > 0.0:
+            marriage_name_cap = generation_name_sizes.get(gen)
+            for lineage, slot_count in (("a", len(slots_a)), ("b", len(slots_b))):
+                marriage_count = (slot_count + 1) // 2
+                if marriage_count == 0:
+                    continue
+                marriage_sweep = _ANCESTOR_HALF_SPAN_DEG / marriage_count
+                labels = [
+                    marriage_labels.get((gen, lineage, marriage_index), "")
+                    for marriage_index in range(marriage_count)
+                ]
+                marriage_sizes: list[float] = []
+                for label in labels:
+                    if not label:
+                        continue
+                    text_radius = (marriage_inner + marriage_outer) / 2.0
+                    capacity = _ancestor_arc_text_capacity(
+                        text_radius=text_radius,
+                        sweep_angle=marriage_sweep,
+                    )
+                    marriage_sizes.append(_font_size_for_width(
+                        label,
+                        target_size=min(
+                            2.8,
+                            max(0.8, (marriage_outer - marriage_inner) * 0.42),
+                        ),
+                        max_width=capacity,
+                    ))
+                shared_size = None
+                if marriage_sizes:
+                    shared_size = min(marriage_sizes)
+                    if marriage_name_cap is not None:
+                        shared_size = min(shared_size, marriage_name_cap)
+                for marriage_index in range(marriage_count):
+                    start_angle = (
+                        -_ANCESTOR_HALF_SPAN_DEG + marriage_index * marriage_sweep
+                        if lineage == "a"
+                        else marriage_index * marriage_sweep
+                    )
+                    _emit_ancestor_marriage_sector(
+                        children,
+                        cx,
+                        cy,
+                        marriage_inner,
+                        marriage_outer,
+                        start_angle,
+                        marriage_sweep,
+                        gen,
+                        lineage,
+                        labels[marriage_index],
+                        font_size=shared_size,
+                    )
+
         # Place lineage a (paternal, left side: -90° to 0°)
         for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_a):
             start_angle = -_ANCESTOR_HALF_SPAN_DEG + i * sweep_a
@@ -897,6 +981,66 @@ def layout_ancestors(
             )
 
     return SceneNode(children=tuple(children))
+
+
+def _emit_ancestor_marriage_sector(
+    children: list,
+    cx: float,
+    cy: float,
+    inner_r: float,
+    outer_r: float,
+    start_angle: float,
+    sweep: float,
+    generation: int,
+    lineage: str,
+    label: str,
+    font_size: float | None = None,
+) -> None:
+    """Emit one optional inter-generation sector for a parent couple.
+
+    ``font_size`` carries the generation-wide shared size (capped by the
+    generation name size, issue #56); when omitted the sector falls back to
+    its local fit.
+    """
+    children.append(SceneSector(
+        inner_radius=inner_r,
+        outer_radius=outer_r,
+        start_angle=start_angle,
+        sweep_angle=sweep,
+        fill=ancestor_fill(generation, lineage),
+        stroke=SECTOR_STROKE,
+        stroke_width=SECTOR_STROKE_WIDTH,
+        cx=cx,
+        cy=cy,
+    ))
+    if not label:
+        return
+
+    text_radius = (inner_r + outer_r) / 2.0
+    capacity = _ancestor_arc_text_capacity(
+        text_radius=text_radius,
+        sweep_angle=sweep,
+    )
+    if font_size is None:
+        font_size = _font_size_for_width(
+            label,
+            target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
+            max_width=capacity,
+        )
+    children.append(ScenePathText(
+        path=_arc_text_path(
+            cx,
+            cy,
+            text_radius,
+            start_angle,
+            start_angle + sweep,
+            lower=False,
+        ),
+        content=label,
+        font_size=font_size,
+        fill=TEXT_DARK,
+        max_width=capacity,
+    ))
 
 
 def _emit_ancestor_sector(
@@ -1285,6 +1429,7 @@ def layout_center(
     right_label: str | None = None,
     left_dates: str = "",
     right_dates: str = "",
+    marriage_label: str = "",
     left_portrait: str | None = None,
     right_portrait: str | None = None,
     left_fallback: str = "",
@@ -1406,6 +1551,16 @@ def layout_center(
                 fill=TEXT_GREY,
                 anchor="middle",
             ))
+        if marriage_label:
+            children.append(SceneText(
+                x=cx,
+                y=cy + r * (94.0 / 190.0),
+                content=marriage_label,
+                font_size=r * (11.0 / 190.0),
+                fill=TEXT_GREY,
+                anchor="middle",
+                max_width=r * 1.72,
+            ))
     else:
         # Single medallion for incomplete couple
         med_r = r * (52.0 / 190.0)
@@ -1452,6 +1607,16 @@ def layout_center(
                 font_size=r * (13.0 / 190.0),
                 fill=TEXT_GREY,
                 anchor="middle",
+            ))
+        if marriage_label:
+            children.append(SceneText(
+                x=cx,
+                y=cy + r * (94.0 / 190.0),
+                content=marriage_label,
+                font_size=r * (11.0 / 190.0),
+                fill=TEXT_GREY,
+                anchor="middle",
+                max_width=r * 1.72,
             ))
 
     if statistics:
@@ -2061,7 +2226,18 @@ def _allocate_descendant_branches_by_demand(
     start_angle: float,
     total_sweep: float,
 ) -> tuple[DescendantBranchAllocation, ...]:
-    """Allocate siblings in proportion to their deepest-generation demand."""
+    """Allocate siblings by deepest-generation demand with a hard minimum.
+
+    Every branch keeps at least its generation's minimum useful sweep
+    (``_DESC_MIN_SWEEP_BY_GENERATION``) whenever the fan can afford it: the
+    floors are granted first and the remaining sweep is distributed over the
+    demand surplus. Without this, one sparse branch shrinks to a sliver and
+    drags the whole generation's shared font size down with it, because the
+    generation-wide size is the minimum measured across all sectors
+    (issue #60). Only when the summed floors overflow the fan itself does
+    allocation degrade to the old pure-proportional squeeze, keeping the fan
+    shape intact at the cost of uniform shrinking.
+    """
     if not branches:
         return ()
     demands = [_descendant_angle_demand(branch) for branch in branches]
@@ -2070,19 +2246,43 @@ def _allocate_descendant_branches_by_demand(
         demands = [1.0] * len(branches)
         total_demand = float(len(branches))
 
+    floors = [
+        min(_DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8), total_sweep)
+        for branch in branches
+    ]
+    if sum(floors) <= total_sweep:
+        extras = [
+            max(0.0, demand - floor)
+            for demand, floor in zip(demands, floors)
+        ]
+        extra_total = sum(extras)
+        if extra_total > 0:
+            remaining = total_sweep - sum(floors)
+            widths = [
+                floor + remaining * extra / extra_total
+                for floor, extra in zip(floors, extras)
+            ]
+        else:
+            # Every branch sits exactly at its floor: split evenly instead
+            # of dumping the whole surplus onto the last branch.
+            widths = [total_sweep / len(branches)] * len(branches)
+    else:
+        # The floor budget overflows the fan: proportional squeeze keeps the
+        # shape intact and every branch shrinks uniformly.
+        widths = [total_sweep * demand / total_demand for demand in demands]
+
     allocations: list[DescendantBranchAllocation] = []
     angle = start_angle
-    for index, (branch, demand) in enumerate(zip(branches, demands)):
+    for index, (branch, width) in enumerate(zip(branches, widths)):
         if index == len(branches) - 1:
-            sweep = start_angle + total_sweep - angle
-        else:
-            sweep = total_sweep * demand / total_demand
+            # Absorb any float remainder so the fan always sums exactly.
+            width = start_angle + total_sweep - angle
         allocations.append(DescendantBranchAllocation(
             start_angle=angle,
-            sweep_angle=sweep,
+            sweep_angle=width,
             leaf_count=_count_leaves(branch),
         ))
-        angle += sweep
+        angle += width
     return tuple(allocations)
 
 
@@ -2105,6 +2305,70 @@ def _spouse_label(union, name_lookup) -> str | None:
     return name_lookup(union.spouse_handle)
 
 
+def _descendant_ring_ratios(generation_count: int) -> tuple[float, ...]:
+    """Normalized radial weights for the first ``generation_count`` rings.
+
+    Issue #57 fixes the descendant ring sizes to explicit multipliers
+    (×1.2 / ×0.8 / ×1.5 / ×1.2): the direct-child ring and the
+    great-grandchild ring dominate while the grandchild ring is compact.
+    Fewer displayed generations take the leading prefix of the ratio table,
+    and the fifth ring reuses the fourth ring's multiplier.
+    """
+    if generation_count < 1:
+        raise ValueError("descendant generation count must be positive")
+    weights = _DESCENDANT_RING_RATIOS[:generation_count]
+    total_weight = sum(weights)
+    return tuple(weight / total_weight for weight in weights)
+
+
+def _allocate_descendant_ring_widths(
+    total_depth: float,
+    generation_count: int,
+    *,
+    direct_floor_extra: float = 0.0,
+) -> list[float]:
+    """Allocate ring widths from the issue #57 radial ratios.
+
+    Readability floors are kept: the direct-child ring never drops below its
+    medallion/text-stack lane (the marriage-enabled path passes a legacy
+    extra so the four-line first-generation stack survives the bands), and
+    later rings keep a visible identity lane. On large paper the floors are
+    inert and the nominal ratios apply exactly.
+    """
+    ratios = _descendant_ring_ratios(generation_count)
+    widths = [total_depth * ratio for ratio in ratios]
+    minimum_direct_visible_width = max(
+        8.0,
+        total_depth * 0.05,
+        _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM + direct_floor_extra,
+    )
+    minimum_later_visible_width = min(
+        _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
+        max(8.0, total_depth * 0.30),
+    )
+    # The direct-floor transfer runs only on the marriage-enabled path, where
+    # carving the bands reduces the person budget and the rebalance must
+    # protect the direct-child medallions; the disabled path keeps the pure
+    # issue-57 profile exactly.
+    if direct_floor_extra > 0.0:
+        direct_floor_deficit = max(
+            minimum_direct_visible_width - widths[0],
+            0.0,
+        )
+        for offset in range(len(widths) - 1, 0, -1):
+            reducible = max(
+                widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
+                0.0,
+            )
+            transfer = min(direct_floor_deficit, reducible)
+            widths[offset] -= transfer
+            widths[0] += transfer
+            direct_floor_deficit -= transfer
+            if direct_floor_deficit <= 0.0:
+                break
+    return widths
+
+
 def _descendant_ring_bounds(
     inner_radius: float,
     outer_radius: float,
@@ -2115,94 +2379,212 @@ def _descendant_ring_bounds(
     if generation_count < 1 or depth < 1 or depth > generation_count:
         raise ValueError("descendant depth must be inside the configured generation range")
     total_depth = outer_radius - inner_radius
-    if generation_count == 1:
-        widths = [total_depth]
-    elif generation_count == 2:
-        # ``depth=1`` is the direct child of the central couple and
-        # ``depth=2`` is the grandchild. Keep the direct-child lane compact,
-        # and give the grandchild lane the requested 2x radial depth while
-        # preserving the fixed outer boundary of the descendant fan.
-        exact_inner = (202 / 600, 302 / 600)
-        exact_outer = (297 / 600, 598 / 600)
-        return (
-            outer_radius * exact_inner[depth - 1],
-            outer_radius * exact_outer[depth - 1],
-        )
-    else:
-        weights = [1.0 + 0.35 * index for index in range(generation_count)]
-        total_weight = sum(weights)
-        widths = [total_depth * weight / total_weight for weight in weights]
-
-        # The extracted root branch is already a child of the central couple:
-        # ``depth=1`` is therefore the direct-child ring and ``depth=2`` is
-        # the grandchild ring. Transfer the extra depth needed to double the
-        # grandchild lane from later rings so the full descendant composition
-        # remains contained within the original outer radius.
-        grandchild_visible_width = max(widths[1] - _RING_GAP_MM, 0.0)
-        remaining_transfer = grandchild_visible_width
-        minimum_direct_visible_width = max(
-            8.0,
-            total_depth * 0.05,
-            _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
-        )
-        minimum_later_visible_width = min(
-            _DESCENDANT_LATER_RING_MIN_WIDTH_MM,
-            max(8.0, total_depth * 0.30),
-        )
-        # On smaller pages, the normal later-ring floor can consume the space
-        # needed to complete the target doubling. Scale that floor before
-        # taking more from the direct-child ring; the latter must retain its
-        # medallion capacity whenever the total radial budget allows it.
-        direct_donor_capacity = max(
-            widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
-            0.0,
-        )
-        later_ring_count = len(widths) - 2
-        needed_later_transfer = max(
-            remaining_transfer - direct_donor_capacity,
-            0.0,
-        )
-        if later_ring_count and needed_later_transfer > 0.0:
-            later_visible_budget = sum(
-                max(width - _RING_GAP_MM, 0.0)
-                for width in widths[2:]
-            )
-            scaled_later_floor = max(
-                _DESCENDANT_LATER_RING_MIN_LABEL_WIDTH_MM,
-                (later_visible_budget - needed_later_transfer)
-                / later_ring_count,
-            )
-            minimum_later_visible_width = min(
-                minimum_later_visible_width,
-                scaled_later_floor,
-            )
-        # Preserve the generations immediately following the target whenever
-        # possible: the outermost rings are the least identity-dense and can
-        # donate their excess width without collapsing intermediate unions.
-        for offset in range(len(widths) - 1, 1, -1):
-            reducible = max(
-                widths[offset] - _RING_GAP_MM - minimum_later_visible_width,
-                0.0,
-            )
-            transfer = min(remaining_transfer, reducible)
-            widths[offset] -= transfer
-            widths[1] += transfer
-            remaining_transfer -= transfer
-            if remaining_transfer <= 0.0:
-                break
-        if remaining_transfer > 0.0:
-            # A three-generation layout has only one later ring. Preserve a
-            # small direct-child lane as well, but use it as the final donor so
-            # the grandchild target remains exact whenever the page can hold it.
-            reducible = max(
-                widths[0] - _RING_GAP_MM - minimum_direct_visible_width,
-                0.0,
-            )
-            transfer = min(remaining_transfer, reducible)
-            widths[0] -= transfer
-            widths[1] += transfer
+    widths = _allocate_descendant_ring_widths(total_depth, generation_count)
     ring_inner = inner_radius + sum(widths[: depth - 1])
     return ring_inner, ring_inner + widths[depth - 1] - _RING_GAP_MM
+
+
+_DESCENDANT_MARRIAGE_BAND_MM = 8.0
+
+
+def _descendant_ring_layout(
+    inner_radius: float,
+    outer_radius: float,
+    generation_count: int,
+    *,
+    show_marriages: bool,
+) -> tuple[tuple[tuple[float, float], ...], tuple[tuple[float, float] | None, ...]]:
+    """Return person rings and optional marriage bands for the lower fan."""
+    if generation_count < 1:
+        return (), ()
+    if not show_marriages:
+        return (
+            tuple(
+                _descendant_ring_bounds(
+                    inner_radius,
+                    outer_radius,
+                    generation_count,
+                    depth,
+                )
+                for depth in range(1, generation_count + 1)
+            ),
+            (None,) * generation_count,
+        )
+
+    total_depth = outer_radius - inner_radius
+    band_width = min(
+        _DESCENDANT_MARRIAGE_BAND_MM,
+        total_depth / max(generation_count * 4.0, 1.0),
+    )
+    person_depth = max(0.0, total_depth - generation_count * band_width)
+    # The direct-child ring must keep the radial depth it would have had
+    # without marriage bands: that depth is what sustains the four-line
+    # first-generation stack (name, dates, spouse, spouse dates) through
+    # _first_generation_line_layout. Carving bands out of a shallower
+    # direct ring makes the layout drop the life-date lanes.
+    legacy_ring = _descendant_ring_bounds(
+        inner_radius,
+        outer_radius,
+        generation_count,
+        1,
+    )
+    legacy_ring1_visible = legacy_ring[1] - legacy_ring[0]
+    floor_extra = max(
+        2 * _RING_GAP_MM,
+        legacy_ring1_visible
+        - _DESCENDANT_DIRECT_MEDALLION_MIN_RING_WIDTH_MM,
+    )
+    widths = _allocate_descendant_ring_widths(
+        person_depth,
+        generation_count,
+        direct_floor_extra=floor_extra,
+    )
+
+    rings: list[tuple[float, float]] = []
+    bands: list[tuple[float, float]] = []
+    cursor = inner_radius
+    for width in widths:
+        ring_inner = cursor
+        ring_outer = cursor + width - _RING_GAP_MM
+        band_inner = ring_outer
+        band_outer = cursor + width + band_width
+        rings.append((ring_inner, ring_outer))
+        bands.append((band_inner, band_outer))
+        cursor = band_outer
+    return tuple(rings), tuple(bands)
+
+
+def _descendant_marriage_label_and_size(
+    full_label: str,
+    year_label: str,
+    capacity: float,
+    *,
+    inner_r: float,
+    outer_r: float,
+    common_size: float | None = None,
+) -> tuple[str, float]:
+    """Return the best-fit label and its font size for one marriage sector.
+
+    Without a common size the call computes the sector-local fit as before.
+    With a common generation size (measured over every marriage of the ring),
+    the label degrades to the year when the full label does not fit at that
+    shared size; every marriage of a generation then shares the same font.
+
+    The label choice is made against a readability floor of 1.8 mm: when the
+    shared size is capped far below it (issue #56), the full date-and-place
+    string is not re-selected at an unreadable size — the year-only label
+    chosen during measurement is kept, and only the font size follows the cap.
+    """
+    if common_size is not None:
+        threshold = max(common_size, 1.8)
+    else:
+        threshold = 1.8
+    if full_label and estimate_text_width(full_label, threshold) <= capacity:
+        label = full_label
+    elif not year_label:
+        return "", 0.0
+    else:
+        label = year_label
+    if common_size is not None:
+        return label, common_size
+    font_size = _font_size_for_width(
+        label,
+        target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
+        max_width=capacity,
+    )
+    return label, font_size
+
+
+def _emit_descendant_marriage_sector(
+    children: list,
+    cx: float,
+    cy: float,
+    inner_r: float,
+    outer_r: float,
+    start_angle: float,
+    sweep: float,
+    fill: str,
+    labels: dict[str, tuple[str, str]],
+    family_handle: str,
+    font_size: float | None = None,
+) -> None:
+    """Emit one optional descendant marriage sector and its best-fit label."""
+    children.append(SceneSector(
+        inner_radius=inner_r,
+        outer_radius=outer_r,
+        start_angle=start_angle,
+        sweep_angle=sweep,
+        fill=fill,
+        stroke=SECTOR_STROKE,
+        stroke_width=SECTOR_STROKE_WIDTH,
+        cx=cx,
+        cy=cy,
+    ))
+    full_label, year_label = labels.get(family_handle, ("", ""))
+    if not full_label and not year_label:
+        return
+    text_radius = (inner_r + outer_r) / 2.0
+    capacity = _ancestor_arc_text_capacity(
+        text_radius=text_radius,
+        sweep_angle=sweep,
+    )
+    # A place is retained only when it fits at the minimum practical label
+    # size. Distant generations therefore degrade to the year, never to a
+    # truncated place name.
+    label, size = _descendant_marriage_label_and_size(
+        full_label,
+        year_label,
+        capacity,
+        inner_r=inner_r,
+        outer_r=outer_r,
+        common_size=font_size,
+    )
+    if not label:
+        return
+    children.append(ScenePathText(
+        path=_arc_text_path(
+            cx,
+            cy,
+            text_radius,
+            start_angle,
+            start_angle + sweep,
+            lower=True,
+        ),
+        content=label,
+        font_size=size,
+        fill=TEXT_DARK,
+        max_width=capacity,
+    ))
+
+
+def _collect_descendant_marriage_size(
+    candidates: dict[int, list[float]],
+    depth: int,
+    inner_r: float,
+    outer_r: float,
+    start_angle: float,
+    sweep: float,
+    labels: dict[str, tuple[str, str]],
+    family_handle: str,
+) -> None:
+    """Record the sector-local fitted size for one marriage, per generation."""
+    full_label, year_label = labels.get(family_handle, ("", ""))
+    if not full_label and not year_label:
+        return
+    text_radius = (inner_r + outer_r) / 2.0
+    capacity = _ancestor_arc_text_capacity(
+        text_radius=text_radius,
+        sweep_angle=sweep,
+    )
+    _label, size = _descendant_marriage_label_and_size(
+        full_label,
+        year_label,
+        capacity,
+        inner_r=inner_r,
+        outer_r=outer_r,
+    )
+    if size > 0.0:
+        candidates.setdefault(depth, []).append(size)
 
 
 def layout_descendants(
@@ -2216,6 +2598,8 @@ def layout_descendants(
     highlight_lookup=None,
     show_highlight_markers: bool = False,
     configured_generation_limit: int | None = None,
+    descendant_marriages: dict[str, tuple[str, str]] | None = None,
+    show_descendant_marriages: bool = False,
 ) -> SceneNode:
     """Place all descendant medallions in the lower half-circle.
 
@@ -2262,6 +2646,8 @@ def layout_descendants(
     name_size_candidates: dict[int, list[float]] = {}
     generation_name_sizes: dict[int, float] = {}
     generation_date_sizes: dict[int, float] = {}
+    marriage_size_candidates: dict[int, list[float]] = {}
+    generation_marriage_sizes: dict[int, float] = {}
     name_cache: dict[str, str] = {}
     date_cache: dict[str, str] = {}
     inner_r = canvas.descendant_inner_radius_mm
@@ -2273,16 +2659,14 @@ def layout_descendants(
         else configured_generation_limit
     )
     total_depth = outer_r - inner_r
-    if max_gen <= 1:
-        ring_widths = [total_depth]
-    elif max_gen == 2:
-        # Match the mockup: children ring narrower, grandchildren ring wider.
-        ring_widths = [total_depth * 0.38, total_depth * 0.62]
-    else:
-        # Grow outer descendant rings progressively when deeper trees appear.
-        weights = [1.0 + 0.35 * i for i in range(max_gen)]
-        total_w = sum(weights)
-        ring_widths = [total_depth * w / total_w for w in weights]
+    ring_bounds, marriage_bands = _descendant_ring_layout(
+        inner_r,
+        outer_r,
+        max_gen,
+        show_marriages=show_descendant_marriages,
+    )
+    rings = _descendant_ring_ratios(max_gen)
+    ring_widths = [total_depth * ratio for ratio in rings]
 
     cx = canvas.center_cx_mm
     cy = canvas.center_cy_mm
@@ -2568,10 +2952,8 @@ def layout_descendants(
             for cell in union_cells
         }
 
-        if max_gen >= 2 and depth <= max_gen:
-            gen_inner, gen_outer = _descendant_ring_bounds(
-                inner_r, outer_r, max_gen, depth
-            )
+        if depth <= max_gen:
+            gen_inner, gen_outer = ring_bounds[depth - 1]
             ring_width = gen_outer - gen_inner
         else:
             gen_inner = inner_r + sum(ring_widths[: depth - 1])
@@ -2587,8 +2969,9 @@ def layout_descendants(
                         outer_radius=gen_outer,
                         start_angle=cell.start_angle,
                         sweep_angle=cell.sweep_angle,
-                        fill=descendant_fill(
-                            union_cell_fill_indices[cell.union_index]
+                        fill=descendant_generation_fill(
+                            union_cell_fill_indices[cell.union_index],
+                            depth,
                         ),
                         stroke=SECTOR_STROKE,
                         stroke_width=SECTOR_STROKE_WIDTH,
@@ -2596,7 +2979,7 @@ def layout_descendants(
                         cy=cy,
                     ))
             else:
-                fill = descendant_fill(inherited_fill_index)
+                fill = descendant_generation_fill(inherited_fill_index, depth)
                 all_children.append(SceneSector(
                     inner_radius=gen_inner,
                     outer_radius=gen_outer,
@@ -2608,6 +2991,68 @@ def layout_descendants(
                     cx=cx,
                     cy=cy,
                 ))
+
+        marriage_band = (
+            marriage_bands[depth - 1]
+            if show_descendant_marriages and depth <= len(marriage_bands)
+            else None
+        )
+        if marriage_band and branch.unions:
+            band_inner, band_outer = marriage_band
+            if measure_only:
+                # Measure every marriage of the generation so the render pass
+                # can apply one shared font size to the whole ring.
+                marriage_cells = union_cells
+                if not marriage_cells:
+                    marriage_cells = (
+                        _DescendantUnionAllocation(
+                            0,
+                            (),
+                            alloc_start,
+                            alloc_sweep,
+                        ),
+                    )
+                for cell in marriage_cells:
+                    if not 0 <= cell.union_index < len(branch.unions):
+                        continue
+                    _collect_descendant_marriage_size(
+                        marriage_size_candidates,
+                        depth,
+                        band_inner,
+                        band_outer,
+                        cell.start_angle,
+                        cell.sweep_angle,
+                        descendant_marriages or {},
+                        branch.unions[cell.union_index].family_handle,
+                    )
+            else:
+                marriage_cells = union_cells
+                if not marriage_cells:
+                    marriage_cells = (
+                        _DescendantUnionAllocation(
+                            0,
+                            (),
+                            alloc_start,
+                            alloc_sweep,
+                        ),
+                    )
+                for cell in marriage_cells:
+                    if not 0 <= cell.union_index < len(branch.unions):
+                        continue
+                    union = branch.unions[cell.union_index]
+                    _emit_descendant_marriage_sector(
+                        all_children,
+                        cx,
+                        cy,
+                        band_inner,
+                        band_outer,
+                        cell.start_angle,
+                        cell.sweep_angle,
+                        descendant_generation_fill(inherited_fill_index, depth),
+                        descendant_marriages or {},
+                        union.family_handle,
+                        font_size=generation_marriage_sizes.get(depth),
+                    )
 
         raw_label = _descendant_label(branch, _name_label)
         child_label = _short(raw_label, depth)
@@ -2908,7 +3353,10 @@ def layout_descendants(
                 med_r_pos = gen_outer
         elif show_medallion:
             med_border_r = outer_r * ((20 / 600) if depth == 1 else (14 / 600))
-            med_r_pos = outer_r * ((245 / 600) if depth == 1 else (397 / 600))
+            # The fixed mockup rails (245/600, 397/600) were anchored to the
+            # pre-#57 two-ring geometry. Anchor the medallions to the actual
+            # ring bounds instead so they stay inside the new radial profile.
+            med_r_pos = gen_inner + ring_width * (0.30 if depth == 1 else 0.45)
             pair_offset = outer_r * (20 / 600)
             med_text_inner = med_r_pos - med_border_r
 
@@ -3060,11 +3508,11 @@ def layout_descendants(
                     )
                     if cell_border_r > 0:
                         if max_gen == 2:
-                            # The fixed two-ring label rails occupy the outer
-                            # lane (317/600 and 337/600). Keep union-cell
-                            # medallions in the original inner lane instead of
+                            # The couple labels occupy the outer half of the
+                            # direct-child ring; keep union-cell medallions in
+                            # the inner section of that ring instead of
                             # placing them through those labels.
-                            cell_med_r_pos = outer_r * (245 / 600)
+                            cell_med_r_pos = gen_inner + ring_width * 0.30
                             cell_text_inner = min(
                                 gen_outer,
                                 cell_med_r_pos + cell_border_r + 1.0,
@@ -3751,6 +4199,10 @@ def layout_descendants(
         # Multi-union people get one marker per union cell, so a continuation
         # cannot be mistaken for a neighboring spouse's branch.
         if depth == displayed_generation_limit:
+            # The marriage band starts at the ring's outer edge and reaches
+            # past it, so anchor the continuation marker at the band's outer
+            # radius when the band was emitted; otherwise keep the ring edge.
+            dot_anchor = marriage_band[1] if marriage_band else gen_outer
             if union_cells:
                 for cell in union_cells:
                     if (
@@ -3760,7 +4212,7 @@ def layout_descendants(
                         _emit_continuation_dots(
                             cell.start_angle,
                             cell.sweep_angle,
-                            gen_outer,
+                            dot_anchor,
                         )
             elif (
                 len(branch.unions) == 1
@@ -3769,7 +4221,7 @@ def layout_descendants(
                 _emit_continuation_dots(
                     alloc_start,
                     alloc_sweep,
-                    gen_outer,
+                    dot_anchor,
                 )
 
     # Measure every name once so the smallest fitting size becomes the
@@ -3796,6 +4248,19 @@ def layout_descendants(
     generation_date_sizes = {
         depth: _descendant_date_font_size(name_size)
         for depth, name_size in generation_name_sizes.items()
+    }
+    # One marriage font size per generation: the smallest measured sector fit
+    # becomes the shared render size for every marriage of that ring. Issue
+    # #56: a marriage label must never be larger than the individuals it
+    # concerns, so the shared size is also capped by the generation's name
+    # size — dense name rings no longer let the marriage band outshine them.
+    generation_marriage_sizes = {
+        depth: min(
+            min(sizes),
+            generation_name_sizes.get(depth, min(sizes)),
+        )
+        for depth, sizes in marriage_size_candidates.items()
+        if sizes
     }
     measure_only = False
     all_children = []

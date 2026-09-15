@@ -82,6 +82,24 @@ No SSH key or GrampsWeb credential is stored in this repository. Keep
    the signal is cleared automatically for masked or excluded people.
 5. Choose SVG, PDF, or PNG output and generate the report.
 
+When the selected center family has a recorded marriage event, the chart
+displays its marriage date and place below the central couple's life dates.
+The information follows the same privacy rules as the rest of the chart.
+
+To include marriage information for each recorded ancestor couple, use
+**Show ancestor marriages** (enabled by default). The report then inserts compact
+intermediate sectors in the ancestor fan and displays the recorded marriage year
+and place, without altering the standard fan layout.
+
+To include the same information for descendant couples, use
+**Show descendant marriages** (enabled by default). Intermediate sectors are
+inserted after each descendant generation; when a distant sector cannot carry
+the place legibly, the label keeps the marriage year only.
+
+Each descendant generation is drawn in a progressively lighter shade of its
+direct-child branch color, so a branch remains recognizable across the whole
+fan while the generation depth stays readable at a glance.
+
 Headless example:
 
 ```bash
@@ -94,10 +112,14 @@ gramps -O "MyTree" -a report -p \
 - bidirectional ancestor/descendant fan layout;
 - adaptive ancestor depth from 0 to 8 generations, with density-aware detail reduction;
 - complete given-name + surname labels for the center and ancestors, with usage-name labels for descendants; records without known life years have no date label;
+- central couple marriage date and place when recorded;
+- optional intermediate ancestor-marriage sectors with marriage year and place;
+- optional intermediate descendant-marriage sectors with year/place fallback;
 - privacy filtering before formatting and media loading;
 - optional exact-name tag highlighting with a grayscale-distinct marker;
 - circular portrait crops with neutral, gendered, or initials fallbacks;
 - weighted descendant sectors and narrow-sector radial labels;
+- progressive generation shading inside each descendant branch;
 - portable vector labels for SVG, librsvg/Cairo, and browser renderers;
 - standalone SVG output without network resources or JavaScript;
 - optional PDF and PNG output through Cairo;
@@ -112,7 +134,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.43**
+- Add-on version: **1.2.55**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

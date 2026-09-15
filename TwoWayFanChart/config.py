@@ -80,6 +80,8 @@ class ChartConfig:
     years_past_death: int = 0
     highlight_tag: str = ""
     show_highlight_markers: bool = False
+    show_ancestor_marriages: bool = True
+    show_descendant_marriages: bool = True
 
     def __post_init__(self) -> None:
         enum_fields = (

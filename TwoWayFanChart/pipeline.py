@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from TwoWayFanChart.config import ChartConfig, OutputFormat
+    from TwoWayFanChart.config import ChartConfig, OutputFormat, PrivacyMode
     from TwoWayFanChart.extract import extract_chart_graph
-    from TwoWayFanChart.facts import simple_name, simple_dates
+    from TwoWayFanChart.facts import extract_union, simple_name, simple_dates
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -40,9 +40,9 @@ try:
     from TwoWayFanChart.render_svg import render_svg
     from TwoWayFanChart.validate import validate_svg_output
 except ModuleNotFoundError:
-    from config import ChartConfig, OutputFormat  # type: ignore[no-redef]
+    from config import ChartConfig, OutputFormat, PrivacyMode  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
-    from facts import simple_name, simple_dates  # type: ignore[no-redef]
+    from facts import extract_union, simple_name, simple_dates  # type: ignore[no-redef]
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -173,6 +173,135 @@ def _public_dates(database, handle: str | None) -> str:
     if not handle:
         return ""
     return simple_dates(database, handle)
+
+
+def _marriage_label(
+    database,
+    family_handle: str,
+    visibility_lookup,
+    *,
+    include_private: bool,
+) -> str:
+    """Return only a privacy-safe marriage date and place for one family."""
+    try:
+        family = database.get_family_from_handle(family_handle)
+    except Exception:
+        return ""
+    if family is None:
+        return ""
+    if not include_private:
+        privacy_getter = getattr(family, "get_privacy", None)
+        try:
+            family_is_private = (
+                bool(privacy_getter()) if callable(privacy_getter) else False
+            )
+        except Exception:
+            # A privacy inference failure must not expose a family fact.
+            family_is_private = True
+        if family_is_private:
+            return ""
+
+    parent_handles = tuple(
+        handle
+        for handle in (
+            family.get_father_handle(),
+            family.get_mother_handle(),
+        )
+        if handle
+    )
+    if not parent_handles or any(
+        visibility_lookup(handle)[1] is not VisibilityState.VISIBLE
+        for handle in parent_handles
+    ):
+        return ""
+    try:
+        fact = extract_union(
+            database,
+            family,
+            "years",
+            "locality",
+            include_private=include_private,
+        )
+    except Exception:
+        return ""
+    if fact is None:
+        return ""
+    return " · ".join(
+        value for value in (fact.date_text, fact.place) if value
+    )
+
+
+def _descendant_marriage_labels(
+    database,
+    branches,
+    visibility_lookup,
+    *,
+    include_private: bool,
+) -> dict[str, tuple[str, str]]:
+    """Return full/year marriage labels for every rendered descendant union."""
+    labels: dict[str, tuple[str, str]] = {}
+    for branch in _iter_all_descendants(branches):
+        for union in branch.unions:
+            if union.family_handle in labels:
+                continue
+            try:
+                family = database.get_family_from_handle(union.family_handle)
+            except Exception:
+                continue
+            if family is None:
+                continue
+            if not include_private:
+                privacy_getter = getattr(family, "get_privacy", None)
+                try:
+                    if callable(privacy_getter) and bool(privacy_getter()):
+                        continue
+                except Exception:
+                    continue
+            parent_handles = tuple(
+                handle
+                for handle in (
+                    family.get_father_handle(),
+                    family.get_mother_handle(),
+                )
+                if handle
+            )
+            if not parent_handles or any(
+                visibility_lookup(handle)[1] is not VisibilityState.VISIBLE
+                for handle in parent_handles
+            ):
+                continue
+            try:
+                fact = extract_union(
+                    database,
+                    family,
+                    "years",
+                    "locality",
+                    include_private=include_private,
+                )
+            except Exception:
+                continue
+            if fact is None:
+                continue
+            year = fact.date_text
+            full = " · ".join(value for value in (year, fact.place) if value)
+            labels[union.family_handle] = (full, year)
+    return labels
+
+
+def _ancestor_marriage_label(
+    database,
+    family_handle: str,
+    visibility_lookup,
+    *,
+    include_private: bool,
+) -> str:
+    """Return a privacy-safe label for one ancestor family marriage."""
+    return _marriage_label(
+        database,
+        family_handle,
+        visibility_lookup,
+        include_private=include_private,
+    )
 
 
 def _center_portrait_data_uri(config: ChartConfig, db, handle: str | None) -> str | None:
@@ -359,6 +488,15 @@ def _build_scene(
     right_portrait = _safe_portrait(center_right_handle)
     left_dates = _safe_dates(center_left_handle)
     right_dates = _safe_dates(center_right_handle)
+    center_marriage_label = _marriage_label(
+        db,
+        graph.center_family_handle,
+        _person_visibility,
+        include_private=(
+            config.include_private
+            and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
+        ),
+    )
 
     # Statistics line is omitted (not needed for now)
     statistics = None
@@ -369,6 +507,7 @@ def _build_scene(
         right_label=right_label,
         left_dates=left_dates,
         right_dates=right_dates,
+        marriage_label=center_marriage_label,
         left_portrait=left_portrait,
         right_portrait=right_portrait,
         left_fallback=_safe_fallback(center_left_handle, left_label),
@@ -413,10 +552,29 @@ def _build_scene(
                 ),
             )
         )
+    ancestor_marriages = tuple(
+        (
+            marriage.generation,
+            marriage.lineage,
+            marriage.index,
+            _ancestor_marriage_label(
+                db,
+                marriage.family_handle,
+                _person_visibility,
+                include_private=(
+                    config.include_private
+                    and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
+                ),
+            ),
+        )
+        for marriage in graph.ancestor_marriages
+    ) if config.show_ancestor_marriages else ()
     ancestors_node = layout_ancestors(
         canvas,
         ancestor_slots=tuple(ancestor_slots),
         show_highlight_markers=config.show_highlight_markers,
+        ancestor_marriages=ancestor_marriages,
+        show_ancestor_marriages=config.show_ancestor_marriages,
     )
 
     # --- Descendant branches with real person names ---
@@ -426,6 +584,19 @@ def _build_scene(
     def _dates_lookup(handle: str | None) -> str:
         return _safe_dates(handle)
 
+    descendant_marriages = (
+        _descendant_marriage_labels(
+            db,
+            graph.descendant_branches,
+            _person_visibility,
+            include_private=(
+                config.include_private
+                and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
+            ),
+        )
+        if config.show_descendant_marriages
+        else {}
+    )
     descendants_node = layout_descendants(
         canvas,
         graph.descendant_branches,
@@ -436,6 +607,8 @@ def _build_scene(
         highlight_lookup=_safe_highlight,
         show_highlight_markers=config.show_highlight_markers,
         configured_generation_limit=config.descendant_generations,
+        descendant_marriages=descendant_marriages,
+        show_descendant_marriages=config.show_descendant_marriages,
     )
 
     # --- Optional decorations (section titles are intentionally omitted) ---

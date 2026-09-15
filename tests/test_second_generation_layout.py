@@ -8,6 +8,7 @@ from TwoWayFanChart.layout import (
     _MIN_INITIALS_MEDALLION_RADIUS_MM,
     _RING_GAP_MM,
     _descendant_ring_bounds,
+    _descendant_ring_ratios,
     calculate_canvas,
     layout_descendants,
 )
@@ -21,9 +22,6 @@ from TwoWayFanChart.model import (
     SceneSector,
     UnionBranch,
 )
-
-
-_BASE_WEIGHTS_FOR_FOUR_GENERATIONS = (1.0, 1.35, 1.7, 2.05)
 
 
 def branch(
@@ -67,7 +65,7 @@ def path_radius(path: str, cx: float, cy: float) -> float:
 
 
 class SecondGenerationLayoutTests(unittest.TestCase):
-    def test_grandchild_ring_is_doubled_without_widening_direct_children(self):
+    def test_grandchild_ring_uses_issue57_ratio_profile(self):
         fourth = branch("fourth", 4)
         third = branch("third", 3, children=(fourth,))
         second = branch("second", 2, children=(third,))
@@ -108,19 +106,15 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                 )[0],
             )
         )
+        ratios = _descendant_ring_ratios(4)
         total_depth = (
             chart.descendant_outer_radius_mm - chart.descendant_inner_radius_mm
         )
-        total_weight = sum(_BASE_WEIGHTS_FOR_FOUR_GENERATIONS)
-        baseline_direct_depth = (
-            total_depth * _BASE_WEIGHTS_FOR_FOUR_GENERATIONS[0] / total_weight
-            - _RING_GAP_MM
-        )
-        baseline_grandchild_depth = (
-            total_depth * _BASE_WEIGHTS_FOR_FOUR_GENERATIONS[1] / total_weight
-            - _RING_GAP_MM
-        )
+        baseline_direct_depth = total_depth * ratios[0] - _RING_GAP_MM
+        baseline_grandchild_depth = total_depth * ratios[1] - _RING_GAP_MM
 
+        # The grandchild ring is now the compact ×0.8 lane of issue #57,
+        # not the doubled lane of the previous design.
         self.assertAlmostEqual(
             direct_child_ring.outer_radius - direct_child_ring.inner_radius,
             baseline_direct_depth,
@@ -128,8 +122,12 @@ class SecondGenerationLayoutTests(unittest.TestCase):
         )
         self.assertAlmostEqual(
             grandchild_ring.outer_radius - grandchild_ring.inner_radius,
-            baseline_grandchild_depth * 2,
+            baseline_grandchild_depth,
             places=6,
+        )
+        self.assertGreater(
+            baseline_direct_depth,
+            baseline_grandchild_depth,
         )
         for depth in (1, 2, 3, 4):
             _inner, ring_outer = _descendant_ring_bounds(
@@ -197,7 +195,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                 _MIN_INITIALS_MEDALLION_RADIUS_MM,
             )
 
-    def test_a1_and_a2_keep_the_doubled_grandchild_ring(self):
+    def test_a1_and_a2_keep_the_issue57_ring_profile(self):
         for paper_size in (PaperSize.A1, PaperSize.A2):
             for generations in (3, 4):
                 chart = calculate_canvas(
@@ -221,14 +219,14 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                     chart.descendant_outer_radius_mm
                     - chart.descendant_inner_radius_mm
                 )
-                weights = _BASE_WEIGHTS_FOR_FOUR_GENERATIONS[:generations]
+                ratios = _descendant_ring_ratios(generations)
                 baseline_grandchild_width = (
-                    total_depth * weights[1] / sum(weights) - _RING_GAP_MM
+                    total_depth * ratios[1] - _RING_GAP_MM
                 )
 
                 self.assertAlmostEqual(
                     grandchild_outer - grandchild_inner,
-                    baseline_grandchild_width * 2.0,
+                    baseline_grandchild_width,
                     places=6,
                     msg=f"{paper_size.value} generation {generations}",
                 )
@@ -346,7 +344,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                     msg=f"{paper_size.value} label crosses a direct-child portrait",
                 )
 
-    def test_two_generation_chart_doubles_the_grandchild_ring(self):
+    def test_two_generation_chart_uses_issue57_ring_profile(self):
         grandchild = branch("grandchild", 2)
         direct_child = branch("child", 1, children=(grandchild,))
         chart = canvas(2)
@@ -373,14 +371,19 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                 )
             )
 
+        ratios = _descendant_ring_ratios(2)
+        total_depth = (
+            chart.descendant_outer_radius_mm - chart.descendant_inner_radius_mm
+        )
+        # The ×1.2 direct-child lane now outweighs the ×0.8 grandchild lane.
         self.assertAlmostEqual(
             rings[0].outer_radius - rings[0].inner_radius,
-            chart.descendant_outer_radius_mm * (95 / 600),
+            total_depth * ratios[0] - _RING_GAP_MM,
             places=6,
         )
         self.assertAlmostEqual(
             rings[1].outer_radius - rings[1].inner_radius,
-            chart.descendant_outer_radius_mm * (296 / 600),
+            total_depth * ratios[1] - _RING_GAP_MM,
             places=6,
         )
 

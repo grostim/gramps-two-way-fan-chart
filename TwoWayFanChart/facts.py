@@ -67,7 +67,7 @@ def event_date_symbol(event_type: int, occurrence: int = 1) -> str:
     if event_type == EventType.DEATH:
         return "†"
     if event_type == EventType.MARRIAGE:
-        return "x" if occurrence == 1 else f"x{occurrence}"
+        return "⚭" if occurrence == 1 else f"⚭{occurrence}"
     return ""
 
 
@@ -169,12 +169,48 @@ def extract_vital_dates(
     )
 
 
+def _place_hierarchy_is_private(database, place) -> bool:
+    """Return whether a place or any of its parents is private."""
+    pending = [place]
+    visited = set()
+    while pending:
+        current = pending.pop()
+        get_handle = getattr(current, "get_handle", None)
+        key = get_handle() if callable(get_handle) else id(current)
+        if key in visited:
+            continue
+        visited.add(key)
+
+        privacy_getter = getattr(current, "get_privacy", None)
+        try:
+            if not callable(privacy_getter) or bool(privacy_getter()):
+                return True
+        except Exception:
+            return True
+
+        parents_getter = getattr(current, "get_placeref_list", None)
+        try:
+            parent_refs = parents_getter() if callable(parents_getter) else ()
+        except Exception:
+            return True
+        for parent_ref in parent_refs:
+            parent_handle = getattr(parent_ref, "ref", None)
+            if not parent_handle:
+                continue
+            parent = database.get_place_from_handle(parent_handle)
+            if parent is None:
+                return True
+            pending.append(parent)
+    return False
+
+
 def format_event_place(
     database,
     event,
     strategy: str,
     *,
     displayer=place_displayer,
+    include_private: bool = True,
 ) -> str:
     """Format one event place through Gramps, then shorten explicitly."""
     if strategy not in {
@@ -186,6 +222,23 @@ def format_event_place(
         raise ValueError(f"unsupported place strategy: {strategy}")
     if event is None:
         return ""
+    place_handle = event.get_place_handle()
+    if not include_private and place_handle:
+        get_place = getattr(database, "get_place_from_handle", None)
+        if not callable(get_place):
+            return ""
+        place = get_place(place_handle)
+        if place is None:
+            return ""
+        privacy_getter = getattr(place, "get_privacy", None)
+        try:
+            place_is_private = (
+                bool(privacy_getter()) if callable(privacy_getter) else True
+            )
+        except Exception:
+            place_is_private = True
+        if place_is_private or _place_hierarchy_is_private(database, place):
+            return ""
     displayed = displayer.display_event(database, event).strip()
     if not displayed or strategy == "gramps":
         return displayed
@@ -362,10 +415,17 @@ def extract_union(
     *,
     locale=glocale,
     displayer=place_displayer,
+    include_private: bool = True,
     occurrence: int = 1,
 ) -> EventFact | None:
-    """Extract the first marriage event in the family's Gramps order."""
+    """Extract the first permitted marriage event in the family's order."""
     events = _events_for(database, family, EventType.MARRIAGE)
+    if not include_private:
+        events = tuple(
+            event
+            for event in events
+            if not bool(getattr(event, "get_privacy", lambda: False)())
+        )
     if not events:
         return None
     selected = events[0]
@@ -379,7 +439,11 @@ def extract_union(
             locale=locale,
         ),
         place=format_event_place(
-            database, selected, place_strategy, displayer=displayer
+            database,
+            selected,
+            place_strategy,
+            displayer=displayer,
+            include_private=include_private,
         ),
         year=_event_year(selected),
     )
@@ -513,7 +577,7 @@ _EMPTY_VITALS = VitalDates(
 def simple_name(database, handle: str | None) -> str:
     """Return the preferred short display name for a person handle.
 
-    Priority is: call name, then the last given name as a fallback. A
+    Priority is: call name, then the first given name as a fallback. A
     nickname is appended to that usage-name candidate. The surname is
     returned in Gramps' ``Surname, Given`` order and is reordered by the
     layout layer when needed. Only the usage name is retained; other given
@@ -540,7 +604,7 @@ def simple_name(database, handle: str | None) -> str:
         given = call
     else:
         first_name = name.get_first_name().strip()
-        given = first_name.split()[-1] if first_name else ""
+        given = first_name.split()[0] if first_name else ""
     if nickname:
         given = f'{given} "{nickname}"'.strip()
 

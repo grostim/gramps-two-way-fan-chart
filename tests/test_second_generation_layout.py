@@ -65,7 +65,7 @@ def path_radius(path: str, cx: float, cy: float) -> float:
 
 
 class SecondGenerationLayoutTests(unittest.TestCase):
-    def test_grandchild_ring_uses_issue57_ratio_profile(self):
+    def test_descendant_rings_share_the_uniform_ratio_profile(self):
         fourth = branch("fourth", 4)
         third = branch("third", 3, children=(fourth,))
         second = branch("second", 2, children=(third,))
@@ -110,24 +110,25 @@ class SecondGenerationLayoutTests(unittest.TestCase):
         total_depth = (
             chart.descendant_outer_radius_mm - chart.descendant_inner_radius_mm
         )
-        baseline_direct_depth = total_depth * ratios[0] - _RING_GAP_MM
-        baseline_grandchild_depth = total_depth * ratios[1] - _RING_GAP_MM
+        baseline_ring_depth = total_depth * ratios[0] - _RING_GAP_MM
 
-        # The grandchild ring is now the compact ×0.8 lane of issue #57,
-        # not the doubled lane of the previous design.
+        # Issue #77: every descendant ring receives the same radial depth —
+        # the direct-child and grandchild lanes are equal, each 1/4 of the
+        # descendant depth minus the ring gap.
         self.assertAlmostEqual(
             direct_child_ring.outer_radius - direct_child_ring.inner_radius,
-            baseline_direct_depth,
+            baseline_ring_depth,
             places=6,
         )
         self.assertAlmostEqual(
             grandchild_ring.outer_radius - grandchild_ring.inner_radius,
-            baseline_grandchild_depth,
+            baseline_ring_depth,
             places=6,
         )
-        self.assertGreater(
-            baseline_direct_depth,
-            baseline_grandchild_depth,
+        self.assertAlmostEqual(
+            baseline_ring_depth,
+            total_depth / 4 - _RING_GAP_MM,
+            places=6,
         )
         for depth in (1, 2, 3, 4):
             _inner, ring_outer = _descendant_ring_bounds(
@@ -195,7 +196,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                 _MIN_INITIALS_MEDALLION_RADIUS_MM,
             )
 
-    def test_a1_and_a2_keep_the_issue57_ring_profile(self):
+    def test_a1_and_a2_keep_the_uniform_ring_profile(self):
         for paper_size in (PaperSize.A1, PaperSize.A2):
             for generations in (3, 4):
                 chart = calculate_canvas(
@@ -344,7 +345,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
                     msg=f"{paper_size.value} label crosses a direct-child portrait",
                 )
 
-    def test_two_generation_chart_uses_issue57_ring_profile(self):
+    def test_two_generation_chart_uses_uniform_ring_profile(self):
         grandchild = branch("grandchild", 2)
         direct_child = branch("child", 1, children=(grandchild,))
         chart = canvas(2)
@@ -375,7 +376,7 @@ class SecondGenerationLayoutTests(unittest.TestCase):
         total_depth = (
             chart.descendant_outer_radius_mm - chart.descendant_inner_radius_mm
         )
-        # The ×1.2 direct-child lane now outweighs the ×0.8 grandchild lane.
+        # Issue #77: both lanes share the same radial depth (1/2 each).
         self.assertAlmostEqual(
             rings[0].outer_radius - rings[0].inner_radius,
             total_depth * ratios[0] - _RING_GAP_MM,

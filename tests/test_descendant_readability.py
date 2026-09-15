@@ -414,7 +414,9 @@ class DescendantReadabilityTests(unittest.TestCase):
                 self.assertIn("GEN1 Spouse", paths[0].content)
                 self.assertNotIn("1908", paths[0].content)
             else:
-                # Larger direct rings (issue #57 ratio ×1.2) keep two lanes
+                # Wider direct rings keep two lanes (issue #77: the direct
+                # ring still receives the same depth as the later rings, and
+                # the readability floors keep it above the label floor)
                 # spaced by at least the readable baseline gap.
                 self.assertEqual(len(paths), 2)
                 self.assertGreaterEqual(
@@ -860,7 +862,7 @@ class DescendantReadabilityTests(unittest.TestCase):
             )
         )
 
-    def test_disabled_marriages_keep_issue57_ratio_allocation(self):
+    def test_disabled_marriages_keep_uniform_ratio_allocation(self):
         canvas = calculate_canvas(
             PaperRegion(PaperSize.A4, Orientation.LANDSCAPE),
             ancestor_generations=5,
@@ -878,13 +880,17 @@ class DescendantReadabilityTests(unittest.TestCase):
                 for depth in range(1, 4)
             )
         ]
-        # Issue #57 fixes the descendant ring profile to the normalized
-        # ×1.2 / ×0.8 / ×1.5 multipliers; the marriage-disabled path must
+        # Issue #77 fixes the descendant ring profile to uniform normalized
+        # multipliers (equal ring depths); the marriage-disabled path must
         # keep that pure profile (no direct-floor transfer). The absolute
         # values follow the full-size outer radius (ratio 1.0, issue #71).
-        self.assertAlmostEqual(widths[0], 20.1813, places=3)
-        self.assertAlmostEqual(widths[1], 13.3542, places=3)
-        self.assertAlmostEqual(widths[2], 25.3016, places=3)
+        self.assertAlmostEqual(widths[0], 19.612, places=3)
+        self.assertAlmostEqual(widths[1], 19.612, places=3)
+        self.assertAlmostEqual(widths[2], 19.612, places=3)
+        # All three rings receive the same radial depth (1/3 of the total
+        # descendant depth minus the ring gap on each boundary).
+        self.assertAlmostEqual(widths[0], widths[1], places=6)
+        self.assertAlmostEqual(widths[1], widths[2], places=6)
 
     def test_continuation_dots_clear_emitted_marriage_band(self):
         root = DescendantBranch(

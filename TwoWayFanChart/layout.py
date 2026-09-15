@@ -82,10 +82,11 @@ _DESCENDANT_LATER_RING_MIN_WIDTH_MM = 30.0
 # so both halves share one geometric contract and one visual weight. Keep the
 # ratio explicit so the A0 maquette and its regression probes stay in sync.
 _DESCENDANT_OUTER_RADIUS_RATIO = 1.0
-# Issue #57: explicit radial multipliers for the descendant generation rings
-# (direct child ×1.2, grandchild ×0.8, great-grandchild ×1.5, fourth ×1.2).
-# The fifth ring reuses the fourth multiplier until a finer profile exists.
-_DESCENDANT_RING_RATIOS = (1.2, 0.8, 1.5, 1.2, 1.2)
+# Issue #77: uniform radial multipliers for the descendant generation rings.
+# Every ring (direct child, grandchild, great-grandchild, …) receives the same
+# radial depth; `_descendant_ring_ratios` normalizes by total weight, so with
+# N displayed generations each ring is 1/N of the descendant depth.
+_DESCENDANT_RING_RATIOS = (1, 1, 1, 1, 1)
 _DESCENDANT_MEDALLION_TARGET_RATIO = 28 / 600
 _MEDALLION_EDGE_CLEARANCE_MM = 1.6
 _MEDALLION_TEXT_RESERVE_RATIO = 0.58
@@ -2369,11 +2370,10 @@ def _spouse_label(union, name_lookup) -> str | None:
 def _descendant_ring_ratios(generation_count: int) -> tuple[float, ...]:
     """Normalized radial weights for the first ``generation_count`` rings.
 
-    Issue #57 fixes the descendant ring sizes to explicit multipliers
-    (×1.2 / ×0.8 / ×1.5 / ×1.2): the direct-child ring and the
-    great-grandchild ring dominate while the grandchild ring is compact.
-    Fewer displayed generations take the leading prefix of the ratio table,
-    and the fifth ring reuses the fourth ring's multiplier.
+    Issue #77 gives every descendant generation ring the same radial
+    weight: with ``generation_count`` displayed generations each ring is
+    1/``generation_count`` of the descendant depth. Shallower trees take
+    the leading prefix of the ratio table.
     """
     if generation_count < 1:
         raise ValueError("descendant generation count must be positive")
@@ -2388,7 +2388,7 @@ def _allocate_descendant_ring_widths(
     *,
     direct_floor_extra: float = 0.0,
 ) -> list[float]:
-    """Allocate ring widths from the issue #57 radial ratios.
+    """Allocate ring widths from the issue #77 uniform radial ratios.
 
     Readability floors are kept: the direct-child ring never drops below its
     medallion/text-stack lane (the marriage-enabled path passes a legacy
@@ -2410,7 +2410,7 @@ def _allocate_descendant_ring_widths(
     # The direct-floor transfer runs only on the marriage-enabled path, where
     # carving the bands reduces the person budget and the rebalance must
     # protect the direct-child medallions; the disabled path keeps the pure
-    # issue-57 profile exactly.
+    # issue-77 profile exactly.
     if direct_floor_extra > 0.0:
         direct_floor_deficit = max(
             minimum_direct_visible_width - widths[0],

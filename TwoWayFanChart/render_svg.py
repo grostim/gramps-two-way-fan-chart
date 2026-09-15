@@ -10,6 +10,7 @@ from xml.sax.saxutils import escape as _xml_escape
 try:
     from TwoWayFanChart.geometry import arc_path, mm_to_pt, AnnularSector
     from TwoWayFanChart.model import (
+        MARRIAGE_EMBLEM_DY_RATIO,
         MARRIAGE_EMBLEM_SCALE,
         SceneCircle,
         SceneImage,
@@ -27,6 +28,7 @@ try:
 except ModuleNotFoundError:
     from geometry import arc_path, mm_to_pt, AnnularSector
     from model import (
+        MARRIAGE_EMBLEM_DY_RATIO,
         MARRIAGE_EMBLEM_SCALE,
         SceneCircle,
         SceneImage,
@@ -187,9 +189,13 @@ def _escape_content(content: str, font_size: float) -> str:
     if not emblem:
         return xml_escape(content)
     scaled = _fmt(font_size * MARRIAGE_EMBLEM_SCALE)
+    dy = font_size * MARRIAGE_EMBLEM_SCALE * MARRIAGE_EMBLEM_DY_RATIO
     return (
-        f'<tspan font-size="{scaled}">{xml_escape(emblem)}</tspan>'
-        f"{xml_escape(rest)}"
+        f'<tspan font-size="{scaled}" dy="{_fmt(dy)}">{xml_escape(emblem)}</tspan>'
+        # The dy is relative to the current text position, so the rest of the
+        # label is shifted down with the emblem; cancel it to keep the date in
+        # place with its own span.
+        f'<tspan dy="{_fmt(-dy)}">{xml_escape(rest)}</tspan>'
     )
 
 

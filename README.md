@@ -80,21 +80,30 @@ No SSH key or GrampsWeb credential is stored in this repository. Keep
    markers** and enter a Gramps tag in **Highlight tag**. The publication
    profile leaves this option disabled so the fan remains visually uncluttered;
    the signal is cleared automatically for masked or excluded people.
-5. Choose SVG, PDF, or PNG output and generate the report.
+5. Choose the output file format (SVG, PDF, or PNG) through the report
+   dialog, the command-line extension, or Gramps Web, and generate the
+   report.
+
+The effect of every menu option is documented in
+[`TwoWayFanChart/OPTIONS.md`](TwoWayFanChart/OPTIONS.md) (English) and
+[`TwoWayFanChart/OPTIONS.fr.md`](TwoWayFanChart/OPTIONS.fr.md) (French).
+A CI test keeps this documentation in sync with the option menu: adding,
+removing or renaming an option without updating both files fails the
+build.
 
 When the selected center family has a recorded marriage event, the chart
 displays its marriage date and place below the central couple's life dates.
 The information follows the same privacy rules as the rest of the chart.
 
-To include marriage information for each recorded ancestor couple, use
-**Show ancestor marriages** (enabled by default). The report then inserts compact
-intermediate sectors in the ancestor fan and displays the recorded marriage year
-and place, without altering the standard fan layout.
+To include marriage information for each recorded ancestor couple, enable
+**Show ancestor marriages**. The report then inserts compact intermediate
+sectors in the ancestor fan and displays the recorded marriage year and place.
+The option is disabled by default and does not alter the standard fan layout.
 
-To include the same information for descendant couples, use
-**Show descendant marriages** (enabled by default). Intermediate sectors are
-inserted after each descendant generation; when a distant sector cannot carry
-the place legibly, the label keeps the marriage year only.
+To include the same information for descendant couples, enable
+**Show descendant marriages**. Intermediate sectors are inserted after each
+descendant generation; when a distant sector cannot carry the place legibly,
+the label keeps the marriage year only. This option is also disabled by default.
 
 Each descendant generation is drawn in a progressively lighter shade of its
 direct-child branch color, so a branch remains recognizable across the whole
@@ -134,7 +143,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.56**
+- Add-on version: **1.2.54**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

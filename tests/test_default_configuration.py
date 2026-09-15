@@ -5,7 +5,6 @@ from pathlib import Path
 from TwoWayFanChart.config import (
     ChartConfig,
     Orientation,
-    OutputFormat,
     PaperSize,
     PresetName,
     PrivacyMode,
@@ -22,14 +21,13 @@ class DefaultConfigurationTests(unittest.TestCase):
         )
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
-        self.assertIn('version="1.2.56"', registration)
-        self.assertIn('VERSION = "1.2.56"', builder)
+        self.assertIn('version="1.2.54"', registration)
+        self.assertIn('VERSION = "1.2.54"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
 
         self.assertEqual(config.center_family, "F0055")
-        self.assertEqual(config.output_format, OutputFormat.SVG)
         self.assertEqual(config.paper_size, PaperSize.A0)
         self.assertEqual(config.ancestor_generations, 5)
         self.assertEqual(config.descendant_generations, 4)
@@ -38,8 +36,8 @@ class DefaultConfigurationTests(unittest.TestCase):
         self.assertTrue(config.include_private)
         self.assertEqual(config.living_people_mode, 99)
         self.assertFalse(config.show_highlight_markers)
-        self.assertTrue(config.show_ancestor_marriages)
-        self.assertTrue(config.show_descendant_marriages)
+        self.assertFalse(config.show_ancestor_marriages)
+        self.assertFalse(config.show_descendant_marriages)
 
     def test_publication_preset_uses_the_same_requested_defaults(self):
         config = build_preset(PresetName.PUBLICATION)
@@ -67,14 +65,13 @@ class DefaultConfigurationTests(unittest.TestCase):
             'NumberOption(_("Descendant generations"), 4, 0, 5)',
             'default_center = ChartConfig().center_family',
             '"Orientation",\n                "landscape"',
-            '_enum("Output format", "svg"',
             '"Paper size",\n                "A0"',
             '"Privacy mode",\n                "include_all"',
             'add_private_data_option(menu, _(CATEGORY_PRIVACY), default=True)',
             'mode=LivingProxyDb.MODE_INCLUDE_ALL',
             'BooleanOption(_("Show citation markers"), False)',
-            'BooleanOption(_("Show ancestor marriages"), True)',
-            'BooleanOption(_("Show descendant marriages"), True)',
+            'BooleanOption(_("Show ancestor marriages"), False)',
+            'BooleanOption(_("Show descendant marriages"), False)',
         ):
             self.assertIn(expected, source)
 

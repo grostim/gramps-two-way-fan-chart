@@ -1,10 +1,20 @@
-# Two-Way Fan Chart 1.2.56
+# Two-Way Fan Chart 1.2.54
 
 Graphical report add-on for Gramps 6.0.x: ancestors above a central couple, descendants below, portrait medallions, and publication-safe privacy filtering.
 
 When recorded, the central couple's marriage date and place appear below
 their life dates. The label is omitted when privacy rules do not permit the
 underlying family or partners to be shown.
+
+## Options reference
+
+Every option of the report menu is documented with its exact effect on
+the rendered chart in [`OPTIONS.md`](OPTIONS.md) (English) and
+[`OPTIONS.fr.md`](OPTIONS.fr.md) (French). The menu and the
+documentation are kept in sync by an automated test
+(`tests/test_option_contract.py` covers the menu, `tests/test_options_documentation.py`
+covers the documentation), so any change to an option must update the
+documentation in the same change.
 
 ## Recommended installation
 
@@ -16,14 +26,14 @@ https://raw.githubusercontent.com/grostim/gramps-two-way-fan-chart/main/gramps60
 
 Then refresh the **Extensions** list and install **Two-Way Fan Chart**.
 
-The **Show ancestor marriages** option is enabled by default: the ancestor fan
-gains compact intermediate sectors containing the recorded marriage year and
-place for each available parent couple.
+The **Show ancestor marriages** option is disabled by default. When enabled,
+the ancestor fan gains compact intermediate sectors containing the recorded
+marriage year and place for each available parent couple.
 
-The **Show descendant marriages** option is enabled by default: the descendant
-fan gains matching intermediate sectors for each recorded union. Narrow distant
-sectors retain the marriage year and omit the place when the complete label
-would not remain legible.
+The **Show descendant marriages** option is disabled by default. When enabled,
+the descendant fan gains matching intermediate sectors for each recorded
+union. Narrow distant sectors retain the marriage year and omit the place when
+the complete label would not remain legible.
 
 Descendant branches keep one base color per direct child of the central couple;
 each following generation lightens that color progressively so the generation

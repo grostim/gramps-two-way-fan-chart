@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from TwoWayFanChart.config import ChartConfig, OutputFormat, PrivacyMode
+    from TwoWayFanChart.config import ChartConfig, PrivacyMode
     from TwoWayFanChart.extract import extract_chart_graph
     from TwoWayFanChart.facts import extract_union, simple_name, simple_dates
     from TwoWayFanChart.highlight import (
@@ -40,7 +40,7 @@ try:
     from TwoWayFanChart.render_svg import render_svg
     from TwoWayFanChart.validate import validate_svg_output
 except ModuleNotFoundError:
-    from config import ChartConfig, OutputFormat, PrivacyMode  # type: ignore[no-redef]
+    from config import ChartConfig, PrivacyMode  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
     from facts import extract_union, simple_name, simple_dates  # type: ignore[no-redef]
     from highlight import (  # type: ignore[no-redef]
@@ -689,10 +689,10 @@ def generate_report(
         fmt = "svg"
     elif suffix in ("pdf", "png"):
         fmt = suffix
-    elif config.output_format.value in ("svg", "pdf", "png") and not suffix:
-        fmt = config.output_format.value
+    elif not suffix:
+        fmt = "svg"
     else:
-        raise ValueError(f"unsupported output format: {suffix or config.output_format.value}")
+        raise ValueError(f"unsupported output format: {suffix}")
 
     if fmt == "svg":
         _render_svg(config, page, scene, output_path)

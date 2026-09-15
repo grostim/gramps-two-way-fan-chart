@@ -27,7 +27,6 @@ try:
     from .config import (
         ChartConfig,
         Orientation,
-        OutputFormat,
         PaperSize,
         PresetName,
         PrivacyMode,
@@ -42,7 +41,6 @@ except ImportError:
     from config import (  # type: ignore[no-redef]
         ChartConfig,
         Orientation,
-        OutputFormat,
         PaperSize,
         PresetName,
         PrivacyMode,
@@ -62,7 +60,6 @@ CATEGORY_PORTRAITS = "Portraits and medallions"
 CATEGORY_PAPER = "Paper and layout"
 CATEGORY_COLORS = "Colors and styles"
 CATEGORY_PRIVACY = "Privacy"
-CATEGORY_OUTPUT = "Output"
 
 
 def _enum(label: str, value: str, items: tuple[tuple[str, str], ...]):
@@ -154,7 +151,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "publication",
             (
                 ("publication", "Publication — mockup"),
-                ("family", "Family — mockup"),
                 ("compact", "Compact view"),
                 ("custom", "Custom"),
             ),
@@ -258,7 +254,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
             _enum(
                 "Orientation",
                 "landscape",
-                (("portrait", "Portrait"), ("landscape", "Landscape"), ("automatic", "Automatic")),
+                (("portrait", "Portrait"), ("landscape", "Landscape")),
             ),
         )
         menu.add_option(
@@ -292,7 +288,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 (
                     ("include_all", "Include all"),
                     ("full_name_only", "Full name only"),
-                    ("surname_only", "Surname only"),
                     ("replace_identity", "Replace complete identity"),
                     ("exclude", "Exclude completely"),
                     ("publication_safe", "Safe publication"),
@@ -307,11 +302,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
             after_death_years=0,
         )
 
-        menu.add_option(
-            _(CATEGORY_OUTPUT),
-            "output_format",
-            _enum("Output format", "svg", (("svg", "SVG"), ("pdf", "PDF"))),
-        )
         for controller in ("paper_size", "show_portraits"):
             menu.get_option_by_name(controller).connect(
                 "value-changed", self.refresh_dependencies
@@ -347,7 +337,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "incl_private": config.include_private,
             "living_people": config.living_people_mode,
             "years_past_death": config.years_past_death,
-            "output_format": config.output_format.value,
             "highlight_tag": config.highlight_tag,
             "show_highlight_markers": config.show_highlight_markers,
         }
@@ -477,7 +466,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 include_private=value("incl_private"),
                 living_people_mode=value("living_people"),
                 years_past_death=value("years_past_death"),
-                output_format=OutputFormat(value("output_format")),
                 highlight_tag=value("highlight_tag"),
                 show_highlight_markers=value("show_highlight_markers"),
             )

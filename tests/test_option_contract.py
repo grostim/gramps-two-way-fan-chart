@@ -17,7 +17,6 @@ ACTIVE_CONFIG_FIELDS = {
     "margin_mm",
     "custom_width_mm",
     "custom_height_mm",
-    "output_format",
     "privacy_mode",
     "background_color",
     "parent_family_policy",
@@ -55,7 +54,6 @@ ACTIVE_MENU_KEYS = {
     "custom_height_mm",
     "background_color",
     "privacy_mode",
-    "output_format",
     "highlight_tag",
     "show_highlight_markers",
 }

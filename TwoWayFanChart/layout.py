@@ -1940,11 +1940,11 @@ _DESC_TOTAL_SWEEP = 168.0  # descendants end at 264°, leaving 6° on the left
 # by the most demanding visible depth rather than immediate child count, so a
 # branch with few children but many deep descendants receives enough room.
 _DESC_MIN_SWEEP_BY_GENERATION = {
-    1: 14.0,
-    2: 3.5,
-    3: 1.4,
-    4: 1.0,
-    5: 0.8,
+    1: 21.0,
+    2: 5.25,
+    3: 2.1,
+    4: 1.5,
+    5: 1.2,
 }
 
 # Below this radius a circle is perceived as a dot rather than a medallion on
@@ -1989,7 +1989,7 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
     """Return the branch sweep needed by its visible generations and cells."""
     demand = 0.0
     for generation, count in _descendant_generation_counts(branch).items():
-        slot = _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 0.8)
+        slot = _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 1.2)
         demand = max(demand, count * slot)
     # Propagate the deepest group demand through unsplit ancestors as well.
     # Without this, a zero/one-union branch can receive enough room for its
@@ -2002,7 +2002,7 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
         # after the branch-level sweep is allocated. The ring and cell demands
         # are competing lower bounds, not additive widths: reserve whichever
         # is larger, otherwise the outer allocator over-weights this branch.
-        cell_floor = _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8)
+        cell_floor = _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2)
         demand = max(
             demand,
             sum(
@@ -2013,7 +2013,7 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
     elif branch.children:
         child_group = groups[0] if groups else branch.children
         demand = max(demand, _descendant_group_angle_demand(child_group))
-    return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8))
+    return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2))
 
 
 def _children_grouped_by_union(
@@ -2070,10 +2070,10 @@ def _descendant_group_angle_demand(
             counts[generation] = counts.get(generation, 0) + count
     generation_demand = max(
         (
-            count * _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 0.8)
+            count * _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 1.2)
             for generation, count in counts.items()
         ),
-        default=0.8,
+        default=1.2,
     )
     nested_demand = sum(_descendant_angle_demand(child) for child in children)
     return max(generation_demand, nested_demand)
@@ -2133,9 +2133,9 @@ def _allocate_descendant_union_groups(
             # this same floor so their radial boundaries remain aligned.
             demand = max(
                 demand,
-                _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8),
+                _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
             )
-        demands.append(demand or 0.8)
+        demands.append(demand or 1.2)
     total_demand = sum(demands) or float(len(indexed_groups))
     allocations: list[_DescendantUnionAllocation] = []
     angle = start_angle
@@ -2247,7 +2247,7 @@ def _allocate_descendant_branches_by_demand(
         total_demand = float(len(branches))
 
     floors = [
-        min(_DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 0.8), total_sweep)
+        min(_DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2), total_sweep)
         for branch in branches
     ]
     if sum(floors) <= total_sweep:

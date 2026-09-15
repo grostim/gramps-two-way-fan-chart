@@ -559,7 +559,7 @@ class DescendantReadabilityTests(unittest.TestCase):
         # the fan has room for it.
         self.assertGreaterEqual(
             min(allocation.sweep_angle for allocation in allocations),
-            14.0 - 1e-6,
+            21.0 - 1e-6,
         )
         self.assertAlmostEqual(
             sum(allocation.sweep_angle for allocation in allocations),

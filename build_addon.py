@@ -18,7 +18,7 @@ import tarfile
 ADDON = "TwoWayFanChart"
 GRAMPS_VERSION = "6.0"
 
-VERSION = "1.2.75"
+VERSION = "1.2.76"
 
 # ── Build .addon.tgz ──
 

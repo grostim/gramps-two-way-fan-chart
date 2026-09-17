@@ -2,7 +2,7 @@
 
 A dense descendant fan (a couple on every crown) used to render its deep-crown
 names and dates at a fraction of the declared readability floor: the couple rail
-budget `angular_capacity / _COUPLE_RAIL_TANGENTIAL_EM` could reach 0 for a narrow
+budget `angular_capacity / _COUPLE_TANGENTIAL_EM` could reach 0 for a narrow
 cell, and the measuring pass then fell back to the DATE floor because the size
 estimator applies `_MIN_DATE_FONT_SIZE_MM` without distinguishing a name from a
 date. One collapsed name then fixed the WHOLE generation through `min(sizes)`.

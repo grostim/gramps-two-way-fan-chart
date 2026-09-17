@@ -138,14 +138,18 @@ def _descendant_name_target(depth: int) -> float:
 _COUPLE_GLYPH_BOX_EM = 1.3625
 _COUPLE_RAIL_GAP_EM = 0.30
 _COUPLE_RAIL_OFFSET_EM = (_COUPLE_GLYPH_BOX_EM + _COUPLE_RAIL_GAP_EM) / 2.0
-# The tangential budget a couple needs, in em of the rail size. This is the
-# historical value and it is deliberately kept: it is what produced the accepted
-# rendered sizes. Note the two budgets are NOT interchangeable — this one decides
-# how many rails fit side by side, while a rail's `max_width` below must bound its
-# RADIAL text length, because the label runs from the centre outwards. Setting
-# `max_width` to the cell's arc instead made Cairo squash labels to 7.5% of their
-# width in the exported PDF.
-_COUPLE_RAIL_TANGENTIAL_EM = 2.35
+# Issue #85: the arc a couple consumes across its cell. Two rails sit
+# `2 * _COUPLE_RAIL_OFFSET_EM` apart (centre to centre), and each text line is
+# `_COUPLE_GLYPH_BOX_EM` tall, so the pair needs both measurements -- not just
+# the separation. Sizing a couple on the separation alone let a cell be narrower
+# than the text it had to hold, which is what made a name bite into the
+# neighbouring rail line.
+_COUPLE_TANGENTIAL_EM = 2.0 * _COUPLE_RAIL_OFFSET_EM + _COUPLE_GLYPH_BOX_EM
+# The tangential budget a couple needs, in em of the rail size, is
+# `_COUPLE_TANGENTIAL_EM` above (separation + glyph box). `max_width` is NOT this
+# budget: a rail's `max_width` bounds its RADIAL text length, because the label
+# runs from the centre outwards. Setting `max_width` to the cell's arc instead
+# made Cairo squash labels to 7.5% of their width in the exported PDF.
 
 
 @dataclass(frozen=True, slots=True)
@@ -2255,24 +2259,56 @@ def _allocate_descendant_union_groups(
             )
         demands.append(demand or 1.2)
     total_demand = sum(demands) or float(len(indexed_groups))
+    # A demand floor is an absolute angular requirement, not a weight. The old
+    # proportional pass scaled `_DESC_MIN_SWEEP_BY_GENERATION` away when one
+    # union had many descendants: a G3 couple floor of 2.1° became 0.57° in the
+    # reporter's chart. Grant every couple cell its final floor first whenever
+    # the parent sweep can afford the set, then distribute only the demand
+    # surplus. If the parent cannot afford all floors, retain every cell and
+    # fall back to proportional packing; the renderer can then omit a couple
+    # label whose own cell is physically too narrow (see the render guard).
+    if len(branch.unions) > 1:
+        floors = [
+            min(
+                _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
+                total_sweep,
+            )
+            for _union_index, _group in indexed_groups
+        ]
+        if sum(floors) <= total_sweep:
+            extras = [
+                max(0.0, demand - floor)
+                for demand, floor in zip(demands, floors)
+            ]
+            extra_total = sum(extras)
+            if extra_total > 0.0:
+                remaining = total_sweep - sum(floors)
+                widths = [
+                    floor + remaining * extra / extra_total
+                    for floor, extra in zip(floors, extras)
+                ]
+            else:
+                widths = [total_sweep / len(indexed_groups)] * len(indexed_groups)
+        else:
+            widths = [total_sweep * demand / total_demand for demand in demands]
+    else:
+        widths = [total_sweep * demand / total_demand for demand in demands]
     allocations: list[_DescendantUnionAllocation] = []
     angle = start_angle
-    for group_index, ((union_index, group), demand) in enumerate(
-        zip(indexed_groups, demands)
+    for group_index, ((union_index, group), width) in enumerate(
+        zip(indexed_groups, widths)
     ):
         if group_index == len(indexed_groups) - 1:
-            group_sweep = start_angle + total_sweep - angle
-        else:
-            group_sweep = total_sweep * demand / total_demand
+            width = start_angle + total_sweep - angle
         allocations.append(
             _DescendantUnionAllocation(
                 union_index,
                 tuple(group),
                 angle,
-                group_sweep,
+                width,
             )
         )
-        angle += group_sweep
+        angle += width
     return tuple(allocations)
 
 
@@ -3077,12 +3113,14 @@ def layout_descendants(
             / 2.0
         )
         # Issue #85: the stacked pair is placed with the same rail separation as
-        # every other couple, so its capacity must be derived from that same
-        # separation. The old literal 1.12 estimated a *narrower* pair than the
-        # layout draws, which let a stacked G4 couple overflow its cell.
+        # every other couple, so its capacity must come from the same tangential
+        # budget: the separation PLUS the glyph height. Dividing by the
+        # separation alone under-estimated what the pair occupies, which is what
+        # let a stacked couple overflow its cell. `half_arc` is HALF the cell's
+        # arc, so the pair's budget is `2 * half_arc`.
         local_size = min(
             target_size,
-            max(0.0, half_arc - 0.3) / _COUPLE_RAIL_OFFSET_EM,
+            max(0.0, 2.0 * half_arc - 0.3) / _COUPLE_TANGENTIAL_EM,
         )
         local_size = min(
             local_size,
@@ -4139,6 +4177,31 @@ def layout_descendants(
                         0.0,
                         text_r * math.radians(max(block_sweep - 0.25, 0.0)) - 1.0,
                     )
+                    if block_spouse and depth >= 2:
+                        # Issue #85: a fixed 2.1° generation floor is a useful
+                        # allocation demand, but it is not the physical test for
+                        # every cell. The actual couple needs the arc occupied by
+                        # its two baselines plus one glyph box. Compute that
+                        # requirement from the rail size this cell will render at;
+                        # only omit the pair when this FINAL cell is genuinely too
+                        # narrow for those two lines.
+                        couple_size = max(
+                            _DESCENDANT_NAME_FLOOR_MM,
+                            min(
+                                name_target,
+                                angular_capacity / _COUPLE_TANGENTIAL_EM
+                                if angular_capacity > 0.0
+                                else 0.0,
+                            ),
+                        )
+                        required_sweep = math.degrees(
+                            _COUPLE_TANGENTIAL_EM * couple_size / text_r
+                        ) if text_r > 0.0 else float("inf")
+                        if block_sweep + 1e-9 < required_sweep:
+                            # Retain the coloured sector and its optional marker,
+                            # but do not draw text through its separator.
+                            return
+
 
                     if block_spouse:
                         # Issue #83: a couple always gets two parallel radial
@@ -4157,20 +4220,24 @@ def layout_descendants(
                         # squashed labels down to 7.5% of their width in the
                         # exported PDF.
                         rail_lane_width = max(text_width, angular_capacity * 0.92)
-                        tangential_size = angular_capacity / (
-                            2.0 * _COUPLE_RAIL_OFFSET_EM
-                        )
+                        tangential_size = angular_capacity / _COUPLE_TANGENTIAL_EM
                         rail_target = min(name_target, tangential_size)
                         # Issue #85: the couple rail budget (`tangential_size`)
                         # can be spent entirely on a narrow cell, which used to
                         # let the names shrink past the readability floor. A name
                         # never goes below that floor: the renderer's horizontal
                         # compression absorbs what does not fit.
-                        rail_minimum = min(
-                            name_minimum,
-                            max(tangential_size, name_minimum * 0.75),
+                        rail_minimum = min(name_minimum, tangential_size)
+                        # Issue #85: never raise the floor above what the cell can
+                        # hold. `max(..., name_minimum * 0.75)` used to do exactly
+                        # that, so the measured candidate exceeded the cell's own
+                        # capacity and the render-time cap then pulled that one
+                        # cell back down -- splitting a generation across two
+                        # sizes. The floor still applies wherever it fits.
+                        rail_minimum = max(
+                            rail_minimum,
+                            min(_DESCENDANT_NAME_FLOOR_MM, tangential_size),
                         )
-                        rail_minimum = max(rail_minimum, _DESCENDANT_NAME_FLOOR_MM)
                         if union_cells:
                             stack_size = _fit_generation_stacked_couple(
                                 depth,
@@ -4206,23 +4273,35 @@ def layout_descendants(
                                 )
                             )
                         rail_size = max(child_size, spouse_size)
-                        # Issue #85 follow-up: the pair must fit across the cell's
-                        # arc once the rail separation is the real glyph box plus
-                        # a gap. Cap the rail size so both rails stay inside the
-                        # cell instead of spilling over the white separators.
-                        pair_capacity = angular_capacity / (2.0 * _COUPLE_RAIL_OFFSET_EM)
+                        # Issue #85: the pair must fit across the cell's arc once
+                        # the rail separation AND the glyph height are counted.
+                        # Dividing by the separation alone left the couple sized
+                        # for less arc than its two text lines occupy, which is
+                        # what let a name bite into the neighbouring rail line.
+                        pair_capacity = angular_capacity / _COUPLE_TANGENTIAL_EM
                         if rail_size > pair_capacity > 0.0:
                             rail_size = pair_capacity
                             child_size = min(child_size, rail_size)
                             spouse_size = min(spouse_size, rail_size)
                         # Never shrink below the readable floor: a cell that cannot
                         # hold two readable rails degrades by compression (the
-                        # renderer's max_width), not by unreadable type.
-                        if rail_size < _DESCENDANT_NAME_FLOOR_MM:
-                            child_size = spouse_size = max(
-                                rail_size, _DESCENDANT_NAME_FLOOR_MM
+                        # renderer's `max_width`) and by spilling past its own line,
+                        # not by unreadable type. Keeping one size for the whole
+                        # generation matters more: pulling this cell alone below its
+                        # neighbours is what made one crown render at two sizes.
+                        floor_candidate = max(
+                            rail_size, _DESCENDANT_NAME_FLOOR_MM
+                        )
+                        generation_floor = generation_name_sizes.get(depth)
+                        if generation_floor is not None:
+                            floor_candidate = max(
+                                floor_candidate,
+                                min(_DESCENDANT_NAME_FLOOR_MM, generation_floor),
                             )
-                            rail_size = child_size
+                        child_size = spouse_size = max(
+                            child_size, spouse_size, floor_candidate
+                        )
+                        rail_size = child_size
                         child_offset, spouse_offset = _couple_line_offsets(
                             block_mid_angle,
                             rail_size * _COUPLE_RAIL_OFFSET_EM,

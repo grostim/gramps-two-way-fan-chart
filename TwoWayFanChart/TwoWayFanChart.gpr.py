@@ -10,7 +10,7 @@ register(
         "and portraits around a center family."
     ),
 
-    version="1.2.75",
+    version="1.2.76",
     gramps_target_version="6.0",
     status=STABLE,
     fname="TwoWayFanChart.py",

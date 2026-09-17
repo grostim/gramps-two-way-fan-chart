@@ -163,4 +163,3 @@ class DescendantCoupleAngleTest(unittest.TestCase):
             and node.sweep_angle < _DESC_MIN_SWEEP_BY_GENERATION[2]
         ]
         self.assertTrue(target_sectors, "the narrow target sector was removed with its text")
-

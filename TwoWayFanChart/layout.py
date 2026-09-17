@@ -134,15 +134,18 @@ def _descendant_name_target(depth: int) -> float:
 # real glyph box — the layout's font renders a 1.3625 em box (measured on a size
 # sweep in Chromium, constant from 20 to 160 px), so a pair separated by only
 # 2 * 0.68 = 1.36 em put the two rails' ink in contact at EVERY size. The 0.68
-# was calibrated to "just touch", which reads as overlapping text. Keep a real
-# gap between the two rails, and use the same factor for the tangential budget so
-# the fit and the placement can never disagree.
+# was calibrated to "just touch", which reads as overlapping text.
 _COUPLE_GLYPH_BOX_EM = 1.3625
 _COUPLE_RAIL_GAP_EM = 0.30
 _COUPLE_RAIL_OFFSET_EM = (_COUPLE_GLYPH_BOX_EM + _COUPLE_RAIL_GAP_EM) / 2.0
-# Narrowest lane the renderer still draws a rail in (mm). Below this the label
-# keeps its size and the renderer's physical compression takes over instead.
-_COUPLE_RAIL_MIN_LANE_MM = 2.0
+# The tangential budget a couple needs, in em of the rail size. This is the
+# historical value and it is deliberately kept: it is what produced the accepted
+# rendered sizes. Note the two budgets are NOT interchangeable — this one decides
+# how many rails fit side by side, while a rail's `max_width` below must bound its
+# RADIAL text length, because the label runs from the centre outwards. Setting
+# `max_width` to the cell's arc instead made Cairo squash labels to 7.5% of their
+# width in the exported PDF.
+_COUPLE_RAIL_TANGENTIAL_EM = 2.35
 
 
 @dataclass(frozen=True, slots=True)
@@ -4131,21 +4134,16 @@ def layout_descendants(
                         # name). Two rails must fit side by side inside the
                         # cell, so a narrow sector reduces the rail size
                         # instead of merging both identities onto one line.
-                        # Issue #85: a rail's `max_width` is the TANGENTIAL budget
-                        # its cell can give that rail, not the radial text depth.
-                        # Both rails of a couple run along the radius, so
-                        # `text_width` (the radial depth, tens of millimetres) is
-                        # the wrong axis entirely: taking `max(text_width, ...)`
-                        # let every rail claim 60-75 mm of `textLength` inside a
-                        # cell whose half-arc was a few millimetres, and the
-                        # stretched label ran over the white separator into the
-                        # neighbouring branch. Bound the lane by the arc available
-                        # at the rail's own radius, never below the narrowest lane
-                        # the renderer still draws.
-                        rail_arc = text_r * math.radians(max(block_sweep, 0.0))
-                        rail_lane_width = max(
-                            rail_arc / 2.0 - 1.0, _COUPLE_RAIL_MIN_LANE_MM
-                        )
+                        # Issue #85: a rail's `max_width` bounds the text it lays
+                        # along the RADIUS — a rail's baseline runs from the centre
+                        # outwards, so the label length is radial and the ring's
+                        # text depth is the correct budget. It must NOT be the
+                        # cell's arc: the arc is a few millimetres for a narrow
+                        # cell while a name needs tens, and Cairo converts that
+                        # ratio into `scale_x = max_width / natural_width`, which
+                        # squashed labels down to 7.5% of their width in the
+                        # exported PDF.
+                        rail_lane_width = max(text_width, angular_capacity * 0.92)
                         tangential_size = angular_capacity / (
                             2.0 * _COUPLE_RAIL_OFFSET_EM
                         )

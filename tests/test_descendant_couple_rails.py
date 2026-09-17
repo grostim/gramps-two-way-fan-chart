@@ -177,31 +177,30 @@ class DescendantCoupleRailTests(unittest.TestCase):
             msg=f"a person's own rails overlap: {collisions[:5]}",
         )
 
-    def test_rail_lane_never_exceeds_the_cell_half_arc(self):
-        """A rail's lane must be the tangential budget, not the radial depth.
+    def test_rail_lane_is_a_radial_budget_that_holds_a_long_name(self):
+        """A rail's lane must be the ring's text depth, not the cell's arc.
 
-        The radial text depth is tens of millimetres; a cell's half-arc can be a
-        few. A lane taken from the former lets the label run over the separator.
+        A rail lays its label out along the RADIUS, so the budget that bounds it
+        must be radial. Issue #91 asserted the opposite (a lane of at most 40 mm,
+        i.e. the cell arc) and that assertion is what let an unreadable 0.075x
+        horizontal squish reach the exported PDF. The invariant is therefore
+        stated the other way round: a lane must be able to hold a long name.
         """
         canvas, scene_node = scene()
-        cx, cy = canvas.center_cx_mm, canvas.center_cy_mm
         offenders = []
         for node in rail_nodes(scene_node):
-            radius = math.hypot(node.x - cx, node.y - cy)
             if node.max_width is None or node.max_width <= 0:
                 continue
-            # A lane wider than half the ring depth cannot be a tangential budget
-            # for a rail that lies along the radius on this fan.
-            width = estimate_text_width(node.content, node.font_size)
-            # The lane must at least be able to hold the natural width, or the
-            # renderer compresses the label. Compression is legitimate; what is
-            # not is a lane that lets the label span a whole ring depth.
-            if node.max_width > 40.0:
-                offenders.append((node.max_width, width, node.content))
+            natural = estimate_text_width(node.content, node.font_size)
+            if natural > 0 and node.max_width < natural / 2.0:
+                offenders.append((node.max_width, round(natural, 2), node.content))
         self.assertEqual(
             offenders[:5],
             [],
-            msg=f"rail lanes are radial depths, not cell arc budgets: {offenders[:5]}",
+            msg=(
+                "rail lanes are cell arcs, not radial depths, so the renderers "
+                f"squash their labels into unreadable smears: {offenders[:5]}"
+            ),
         )
 
 

@@ -3097,7 +3097,12 @@ def layout_descendants(
                 max_width=max_width,
             ),
         )
-        stack_floor = minimum_size * 0.75
+        # Issue #85: a stacked pair is a NAME pair, so its admissible floor is
+        # the name readability floor, not `0.75 * minimum_size`. That slack
+        # admitted a size in [0.75*min, min) -- e.g. 1.76 mm -- which then became
+        # the generation-wide size through `min(candidates)` and rendered a
+        # whole crown below the floor.
+        stack_floor = max(minimum_size, _DESCENDANT_NAME_FLOOR_MM)
         if local_size < stack_floor or max_width < local_size * 2.1:
             return None
         if measure_only:
@@ -4098,7 +4103,15 @@ def layout_descendants(
                 text_end = med_text_inner - 2.0
                 text_width = max(0.0, text_end - text_start)
                 name_target = _descendant_name_target(depth)
-                name_minimum = 3.2 if depth == 2 else (1.8 if depth >= 3 else 2.8)
+                # Issue #85: the depth floor must not undercut the declared name
+                # readability floor (2.0 mm). This used to read 1.8 for depth 3+
+                # -- below the contract -- so a name could be measured and then
+                # rendered under the floor even with no under-floor candidate in
+                # the generation.
+                name_minimum = (
+                    3.2 if depth == 2
+                    else max(_DESCENDANT_NAME_FLOOR_MM, 1.8 if depth >= 3 else 2.8)
+                )
                 # Issue #83: the spouse's dates ride its own rail, so resolve
                 # them once for the whole branch's intermediate block.
                 spouse_dates = " / ".join(
@@ -4581,8 +4594,14 @@ def layout_descendants(
             1,
             source_index,
         )
+    # Issue #85: the shared size of a generation must never be below the name
+    # readability floor. `min(candidates)` is only sound while every candidate is
+    # itself admissible: the reporter's PDF renders one crown at 1.76 mm AND
+    # 2.00 mm because a fitting path measured below the floor and this `min`
+    # adopted it, dragging the whole ring down with it. Clamping the aggregate
+    # makes that impossible however a candidate was produced.
     generation_name_sizes = {
-        depth: min(sizes)
+        depth: max(min(sizes), _DESCENDANT_NAME_FLOOR_MM)
         for depth, sizes in name_size_candidates.items()
         if sizes
     }

@@ -2402,11 +2402,29 @@ def _allocate_descendant_branches_by_demand(
         demands = [1.0] * len(branches)
         total_demand = float(len(branches))
 
+    # Issue #100: Gen3+ couples have priority over singleton cells. A couple
+    # needs the generation floor to keep two names on readable rails; a
+    # singleton may use a narrower cell and fall back to a compact name/date
+    # presentation. Preserve the historical floors whenever the complete fan
+    # can afford them, but do not sacrifice a couple to oversized singleton
+    # floors when the fan is dense.
     floors = [
         min(_DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2), total_sweep)
         for branch in branches
     ]
-    if sum(floors) <= total_sweep:
+    couple_priority = [
+        branch.generation >= 3
+        and any(union.spouse_handle for union in branch.unions)
+        for branch in branches
+    ]
+    priority_total = sum(
+        floor for floor, is_priority in zip(floors, couple_priority) if is_priority
+    )
+    if priority_total > total_sweep:
+        # Even the requested couple slots cannot fit; keep the fan tiled and
+        # let the renderer omit only physically impossible couple text.
+        widths = [total_sweep * demand / total_demand for demand in demands]
+    elif sum(floors) <= total_sweep:
         extras = [
             max(0.0, demand - floor)
             for demand, floor in zip(demands, floors)
@@ -2419,13 +2437,27 @@ def _allocate_descendant_branches_by_demand(
                 for floor, extra in zip(floors, extras)
             ]
         else:
-            # Every branch sits exactly at its floor: split evenly instead
-            # of dumping the whole surplus onto the last branch.
             widths = [total_sweep / len(branches)] * len(branches)
     else:
-        # The floor budget overflows the fan: proportional squeeze keeps the
-        # shape intact and every branch shrinks uniformly.
-        widths = [total_sweep * demand / total_demand for demand in demands]
+        # Only singleton floors are negotiable in this dense case. Reserve the
+        # couple slots, then distribute what remains among singleton branches.
+        widths = [0.0] * len(branches)
+        remaining = total_sweep - priority_total
+        singleton_indices = [
+            index for index, is_priority in enumerate(couple_priority)
+            if not is_priority
+        ]
+        singleton_demand = sum(demands[index] for index in singleton_indices)
+        for index, is_priority in enumerate(couple_priority):
+            if is_priority:
+                widths[index] = floors[index]
+        if singleton_indices and singleton_demand > 0.0:
+            for index in singleton_indices:
+                widths[index] = remaining * demands[index] / singleton_demand
+        elif singleton_indices:
+            share = remaining / len(singleton_indices)
+            for index in singleton_indices:
+                widths[index] = share
 
     allocations: list[DescendantBranchAllocation] = []
     angle = start_angle
@@ -4509,6 +4541,34 @@ def layout_descendants(
                             max_width=text_width,
                             allow_ellipsis=False,
                         )
+                        # Issue #100: at Gen3+ a singleton has no second name
+                        # rail to protect. Keep its date on the same radial line
+                        # as the name, so the cell can be narrower without
+                        # wasting tangential room on a second baseline.
+                        if depth >= 3 and fitted_name and date_fit:
+                            compact_label = f"{fitted_name} · {date_fit}"
+                            compact_name, compact_size, compact_width = (
+                                _fit_generation_name(
+                                    compact_label,
+                                    depth,
+                                    target_size=name_size,
+                                    minimum_size=name_minimum,
+                                    max_width=text_width,
+                                )
+                            )
+                            if compact_name:
+                                if not measure_only:
+                                    all_children.append(SceneText(
+                                        x=base_x,
+                                        y=base_y,
+                                        content=compact_name,
+                                        font_size=compact_size,
+                                        fill=TEXT_DARK,
+                                        anchor="middle",
+                                        rotation=rotation,
+                                        max_width=compact_width,
+                                    ))
+                                return
                         show_date_lane = bool(
                             date_fit
                             and date_target > 0.0

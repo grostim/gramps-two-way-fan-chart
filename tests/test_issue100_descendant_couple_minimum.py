@@ -1,0 +1,124 @@
+"""Regression tests for issue #100 descendant angular allocation."""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from TwoWayFanChart.layout import (  # noqa: E402
+    _DESC_MIN_SWEEP_BY_GENERATION,
+    _allocate_descendant_branches_by_demand,
+    calculate_canvas,
+    layout_descendants,
+)
+from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize  # noqa: E402
+from TwoWayFanChart.model import (  # noqa: E402
+    DescendantBranch,
+    PersonNode,
+    SceneText,
+    UnionBranch,
+)
+
+
+def branch(handle: str, *, generation: int, spouse: bool) -> DescendantBranch:
+    unions = (
+        UnionBranch(
+            family_handle=f"family-{handle}",
+            spouse_handle=f"spouse-{handle}" if spouse else None,
+            child_handles=(),
+            child_relations=(),
+        ),
+    )
+    return DescendantBranch(
+        position_id=f"descendant-{handle}",
+        person=PersonNode(handle, handle),
+        generation=generation,
+        unions=unions,
+        children=(),
+    )
+
+
+class Issue100DescendantMinimumTests(unittest.TestCase):
+    def test_gen3_couples_keep_floor_when_singletons_must_shrink(self):
+        branches = tuple(
+            branch(f"couple-{index}", generation=3, spouse=True)
+            for index in range(3)
+        ) + tuple(
+            branch(f"single-{index}", generation=3, spouse=False)
+            for index in range(7)
+        )
+
+        allocations = _allocate_descendant_branches_by_demand(
+            branches,
+            start_angle=96.0,
+            total_sweep=10.0,
+        )
+        couple_floor = _DESC_MIN_SWEEP_BY_GENERATION[3]
+        couple_sweeps = [
+            allocation.sweep_angle
+            for branch_item, allocation in zip(branches, allocations)
+            if branch_item.unions[0].spouse_handle
+        ]
+        single_sweeps = [
+            allocation.sweep_angle
+            for branch_item, allocation in zip(branches, allocations)
+            if not branch_item.unions[0].spouse_handle
+        ]
+
+        self.assertTrue(couple_sweeps)
+        self.assertTrue(single_sweeps)
+        self.assertGreaterEqual(min(couple_sweeps), couple_floor - 1e-9)
+        self.assertLess(max(single_sweeps), couple_floor)
+        self.assertAlmostEqual(
+            sum(allocation.sweep_angle for allocation in allocations),
+            10.0,
+            places=9,
+        )
+
+    def test_gen3_singleton_keeps_date_on_the_name_line(self):
+        singles = tuple(
+            branch(f"single-{index}", generation=3, spouse=False)
+            for index in range(8)
+        )
+        parent = DescendantBranch(
+            "descendant-parent",
+            PersonNode("parent", "Parent"),
+            2,
+            (UnionBranch("family-parent", "parent-spouse", tuple(
+                child.person.handle for child in singles
+            ), tuple("birth" for _child in singles)),),
+            singles,
+        )
+        root = DescendantBranch(
+            "descendant-root",
+            PersonNode("root", "Root"),
+            1,
+            (UnionBranch("family-root", "root-spouse", ("parent",), ("birth",)),),
+            (parent,),
+        )
+        canvas = calculate_canvas(
+            PaperRegion(PaperSize.A0, Orientation.LANDSCAPE),
+            ancestor_generations=5,
+            descendant_generations=4,
+        )
+        scene = layout_descendants(
+            canvas,
+            (root,),
+            name_lookup=lambda handle: (
+                "Damaris Gros" if handle == "single-0" else handle
+            ),
+            dates_lookup=lambda handle: "1890–1960" if handle.startswith("single-") else "",
+            configured_generation_limit=4,
+        )
+        labels = [
+            node.content for node in scene.children
+            if isinstance(node, SceneText)
+        ]
+        self.assertIn("Damaris Gros · 1890–1960", labels)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -8,6 +8,7 @@ from TwoWayFanChart.extract import extract_descendant_branches
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
     _DESCENDANT_CONTINUATION_DOT_RADIUS_MM,
+    _DESC_MIN_SWEEP_BY_GENERATION,
     _allocate_descendant_branches_by_demand,
     _allocate_descendant_union_cells,
     _allocate_descendant_union_groups,
@@ -694,7 +695,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertAlmostEqual(
             _descendant_group_angle_demand((nested,)),
-            3.0,
+            2 * _DESC_MIN_SWEEP_BY_GENERATION[4],
         )
         parent_groups = _allocate_descendant_union_groups(
             parent,
@@ -1756,7 +1757,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertAlmostEqual(
             _descendant_group_angle_demand((nested,)),
-            3.0,
+            2 * _DESC_MIN_SWEEP_BY_GENERATION[4],
         )
         parent_groups = _allocate_descendant_union_groups(
             parent,

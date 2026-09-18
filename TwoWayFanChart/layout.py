@@ -4759,9 +4759,10 @@ def layout_descendants(
                             if not measure_only:
                                 name_offset = -total / 2.0 + name_width / 2.0
                                 date_offset = total / 2.0 - dates_width / 2.0
-                                name_x, name_y = _tangent_offset(
-                                    base_x, base_y, block_mid_angle, name_offset
-                                )
+                                rail_angle = math.radians(rotation)
+                                axis_x, axis_y = math.cos(rail_angle), math.sin(rail_angle)
+                                name_x = base_x + axis_x * name_offset
+                                name_y = base_y + axis_y * name_offset
                                 all_children.append(SceneText(
                                     x=name_x,
                                     y=name_y,
@@ -4772,9 +4773,8 @@ def layout_descendants(
                                     rotation=rotation,
                                     max_width=text_width,
                                 ))
-                                date_x, date_y = _tangent_offset(
-                                    base_x, base_y, block_mid_angle, date_offset
-                                )
+                                date_x = base_x + axis_x * date_offset
+                                date_y = base_y + axis_y * date_offset
                                 all_children.append(SceneText(
                                     x=date_x,
                                     y=date_y,

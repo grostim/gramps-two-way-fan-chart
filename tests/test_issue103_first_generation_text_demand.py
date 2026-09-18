@@ -2,13 +2,45 @@
 
 import unittest
 
-from TwoWayFanChart.layout import layout_descendants
-from TwoWayFanChart.model import ScenePathText, SceneSector
+from TwoWayFanChart.layout import (
+    _allocate_descendant_union_cells,
+    layout_descendants,
+)
+from TwoWayFanChart.model import (
+    DescendantBranch,
+    ScenePathText,
+    SceneSector,
+    UnionBranch,
+)
 
 from tests.test_descendant_readability import a0_canvas, branch
 
 
 class FirstGenerationTextDemandTests(unittest.TestCase):
+    def test_multiple_union_cells_use_their_own_text_demands(self):
+        children = (branch("child", 2),)
+        root = DescendantBranch(
+            position_id="descendant-root",
+            person=branch("root", 1).person,
+            generation=1,
+            unions=(
+                UnionBranch("family-1", "short-spouse", ("child",), ("birth",)),
+                UnionBranch("family-2", "long-spouse", ("child",), ("birth",)),
+            ),
+            children=children,
+            children_by_union=(children, children),
+        )
+
+        allocations = _allocate_descendant_union_cells(
+            root,
+            start_angle=0.0,
+            total_sweep=100.0,
+            text_demands=(10.0, 30.0),
+        )
+
+        self.assertEqual(len(allocations), 2)
+        self.assertGreater(allocations[1].sweep_angle, allocations[0].sweep_angle)
+
     def test_longer_gen1_identity_gets_a_larger_sector(self):
         short = branch("short", 1)
         long = branch("long", 1)

@@ -2053,9 +2053,116 @@ def layout_descendant_node(
     return SceneNode(children=tuple(children))
 
 
-# ---------------------------------------------------------------------------
-# Full descendant tree placement
-# ---------------------------------------------------------------------------
+def _descendant_first_generation_text_demand(
+    branch: DescendantBranch,
+    *,
+    name_lookup,
+    shortener,
+    inner_radius: float,
+    outer_radius: float,
+) -> float:
+    """Measure the GEN1 sweep required by its longest displayed identity.
+
+    The direct-child text is laid on an arc.  Convert the widest label at the
+    accepted GEN1 target size into an angular demand at the text lane radius,
+    including the renderer's one-degree safety margin and two millimetres of
+    side clearance.  This replaces a fixed sector floor without changing the
+    typography when a sector can afford the target size.
+    """
+    labels: list[str] = []
+    person_handle = branch.person.handle if branch.person else None
+    if person_handle:
+        labels.append(name_lookup(person_handle))
+    for union in branch.unions:
+        if union.spouse_handle:
+            labels.append(name_lookup(union.spouse_handle))
+    if shortener is not None:
+        shortened: list[str] = []
+        for label in labels:
+            if not label:
+                continue
+            try:
+                label = shortener(label, 1)
+            except Exception:
+                pass
+            shortened.append(label)
+        labels = shortened
+    labels = [label for label in labels if label]
+    if not labels:
+        return _DESC_MIN_SWEEP_BY_GENERATION[1]
+
+    ring_width = max(outer_radius - inner_radius, 0.0)
+    text_radius = max(inner_radius + 1.0, inner_radius + ring_width * 0.72)
+    longest_width = max(
+        estimate_text_width(label, _DESCENDANT_DENSE_FIRST_GEN_TARGET_MM)
+        for label in labels
+    )
+    required_arc = longest_width + 2.0
+    measured_sweep = math.degrees(required_arc / text_radius) + 1.0
+    return max(measured_sweep, 0.1)
+
+
+
+
+def _descendant_first_generation_union_text_demands(
+    branch: DescendantBranch,
+    *,
+    name_lookup,
+    shortener,
+    inner_radius: float,
+    outer_radius: float,
+    combined_couple_labels: bool = False,
+) -> tuple[float, ...]:
+    """Return one measured GEN1 demand for each displayed union cell."""
+    ring_width = max(outer_radius - inner_radius, 0.0)
+    text_radius = max(inner_radius + 1.0, inner_radius + ring_width * 0.72)
+
+    def demand_for(labels: list[str]) -> float:
+        cleaned: list[str] = []
+        for label in labels:
+            if not label:
+                continue
+            if shortener is not None:
+                try:
+                    label = shortener(label, 1)
+                except Exception:
+                    pass
+            cleaned.append(label)
+        if not cleaned:
+            return _DESC_MIN_SWEEP_BY_GENERATION[1]
+        longest_width = max(
+            estimate_text_width(label, _DESCENDANT_DENSE_FIRST_GEN_TARGET_MM)
+            for label in cleaned
+        )
+        return max(
+            math.degrees((longest_width + 2.0) / text_radius) + 1.0,
+            0.1,
+        )
+
+    person_label = (
+        name_lookup(branch.person.handle)
+        if branch.person
+        else ""
+    )
+    if not branch.unions:
+        return (demand_for([person_label]),)
+    demands = []
+    for union in branch.unions:
+        spouse_label = (
+            name_lookup(union.spouse_handle)
+            if union.spouse_handle
+            else ""
+        )
+        demands.append(
+            demand_for(
+                [f"{person_label} × {spouse_label}"]
+                if combined_couple_labels and person_label and spouse_label
+                else [person_label, spouse_label]
+            )
+        )
+    return tuple(demands)
+
+
 
 _DESC_START_ANGLE = 96.0  # mockup: 6° waist gap on the right
 _DESC_TOTAL_SWEEP = 168.0  # descendants end at 264°, leaving 6° on the left
@@ -2109,11 +2216,22 @@ def _descendant_generation_counts(branch: DescendantBranch) -> dict[int, int]:
     return counts
 
 
-def _descendant_angle_demand(branch: DescendantBranch) -> float:
-    """Return the branch sweep needed by its visible generations and cells."""
+def _descendant_angle_demand(
+    branch: DescendantBranch,
+    *,
+    text_demands: dict[str, float] | None = None,
+) -> float:
+    """Return the branch sweep needed by its visible generations and cells.
+
+    ``text_demands`` is populated only for the direct-child crown.  Keeping it
+    optional preserves the low-level allocator's historical contract while the
+    report can replace the fixed GEN1 floor with a measured label demand.
+    """
     demand = 0.0
     for generation, count in _descendant_generation_counts(branch).items():
         slot = _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 1.2)
+        if generation == 1 and text_demands is not None:
+            slot = text_demands.get(branch.position_id, slot)
         demand = max(demand, count * slot)
     # Propagate the deepest group demand through unsplit ancestors as well.
     # Without this, a zero/one-union branch can receive enough room for its
@@ -2137,6 +2255,12 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
     elif branch.children:
         child_group = groups[0] if groups else branch.children
         demand = max(demand, _descendant_group_angle_demand(child_group))
+    if (
+        text_demands is not None
+        and branch.generation == 1
+        and branch.position_id in text_demands
+    ):
+        return demand
     return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2))
 
 
@@ -2210,6 +2334,7 @@ def _allocate_descendant_union_groups(
     total_sweep: float,
     include_empty: bool = False,
     reverse_display: bool = False,
+    text_demands: tuple[float, ...] | None = None,
 ) -> tuple[_DescendantUnionAllocation, ...]:
     """Allocate one contiguous angular block per recorded union.
 
@@ -2251,6 +2376,11 @@ def _allocate_descendant_union_groups(
     demands = []
     for _union_index, group in indexed_groups:
         demand = _descendant_group_angle_demand(group) if group else 0.0
+        if (
+            text_demands is not None
+            and 0 <= _union_index < len(text_demands)
+        ):
+            demand = max(demand, text_demands[_union_index])
         if len(branch.unions) > 1:
             # A sparse/empty union still needs enough angular room for its
             # first-generation couple label. All later child sectors inherit
@@ -2320,6 +2450,7 @@ def _allocate_descendant_union_cells(
     start_angle: float,
     total_sweep: float,
     reverse_display: bool = False,
+    text_demands: tuple[float, ...] | None = None,
 ) -> tuple[_DescendantUnionAllocation, ...]:
     """Allocate one cell per recorded union at any descendant depth.
 
@@ -2337,6 +2468,7 @@ def _allocate_descendant_union_cells(
             start_angle=start_angle,
             total_sweep=total_sweep,
             reverse_display=reverse_display,
+            text_demands=text_demands,
         )
     return _allocate_descendant_union_groups(
         branch,
@@ -2344,6 +2476,7 @@ def _allocate_descendant_union_cells(
         total_sweep=total_sweep,
         include_empty=True,
         reverse_display=reverse_display,
+        text_demands=text_demands,
     )
 
 
@@ -2381,6 +2514,7 @@ def _allocate_descendant_branches_by_demand(
     *,
     start_angle: float,
     total_sweep: float,
+    text_demands: dict[str, float] | None = None,
 ) -> tuple[DescendantBranchAllocation, ...]:
     """Allocate siblings by deepest-generation demand with a hard minimum.
 
@@ -2396,7 +2530,10 @@ def _allocate_descendant_branches_by_demand(
     """
     if not branches:
         return ()
-    demands = [_descendant_angle_demand(branch) for branch in branches]
+    demands = [
+        _descendant_angle_demand(branch, text_demands=text_demands)
+        for branch in branches
+    ]
     total_demand = sum(demands)
     if total_demand <= 0:
         demands = [1.0] * len(branches)
@@ -2409,7 +2546,14 @@ def _allocate_descendant_branches_by_demand(
     # can afford them, but do not sacrifice a couple to oversized singleton
     # floors when the fan is dense.
     floors = [
-        min(_DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2), total_sweep)
+        min(
+            (
+                text_demands.get(branch.position_id, _DESC_MIN_SWEEP_BY_GENERATION[1])
+                if branch.generation == 1 and text_demands is not None
+                else _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2)
+            ),
+            total_sweep,
+        )
         for branch in branches
     ]
     couple_cell_counts = [
@@ -2452,12 +2596,23 @@ def _allocate_descendant_branches_by_demand(
         else:
             # Keep promoted floors (which may be unequal because a branch has
             # several couple cells), then distribute only the unallocated
-            # remainder. An equal split here would shrink the multi-union
-            # branch back below one floor per couple cell.
+            # remainder. Text-driven GEN1 demands retain their proportion here;
+            # equal redistribution would erase the measured difference whenever
+            # both labels fit below the total fan sweep.
             remaining = total_sweep - sum(floors)
+            if text_demands is not None:
+                weight_total = sum(demands)
+                weights = [
+                    remaining * demand / weight_total
+                    for demand in demands
+                ] if weight_total > 0.0 else [
+                    remaining / len(branches)
+                ] * len(branches)
+            else:
+                weights = [remaining / len(branches)] * len(branches)
             widths = [
-                floor + remaining / len(branches)
-                for floor in floors
+                floor + extra
+                for floor, extra in zip(floors, weights)
             ]
     else:
         # Only singleton floors are negotiable in this dense case. Reserve the
@@ -3087,18 +3242,10 @@ def layout_descendants(
         return SceneNode(children=())
 
     # Allocate every first-generation branch from the densest visible depth,
-    # not merely its immediate child count. This prevents deep lineages from
-    # collapsing into sub-degree outer sectors while sparse branches stay wide.
-    # The fan sweeps clockwise from the right waist to the left waist, so walk
-    # source-ordered children in reverse for display: oldest ends up left,
-    # youngest right. The source index is restored when assigning colors below.
+    # not merely its immediate child count. The text demand is measured per
+    # direct-child sector, so a long name gets room without penalising a short
+    # neighbouring branch (issue #103).
     display_branches = tuple(reversed(branches))
-    allocations = _allocate_descendant_branches_by_demand(
-        display_branches,
-        start_angle=_DESC_START_ANGLE,
-        total_sweep=_DESC_TOTAL_SWEEP,
-    )
-    source_allocations = tuple(reversed(allocations))
 
     all_children: list = []
     measure_only = True
@@ -3129,7 +3276,37 @@ def layout_descendants(
     )
     rings = _descendant_ring_ratios(max_gen)
     ring_widths = [total_depth * ratio for ratio in rings]
+    gen1_inner, gen1_outer = ring_bounds[0]
 
+    def _measured_name_label(handle: str | None) -> str:
+        if not handle:
+            return ""
+        if handle not in name_cache:
+            name_cache[handle] = name_lookup(handle)
+        return name_cache[handle]
+
+    union_text_demands = {
+        branch.position_id: _descendant_first_generation_union_text_demands(
+            branch,
+            name_lookup=_measured_name_label,
+            shortener=shortener,
+            inner_radius=gen1_inner,
+            outer_radius=gen1_outer,
+            combined_couple_labels=max_gen == 2,
+        )
+        for branch in display_branches
+    }
+    text_demands = {
+        position_id: sum(demands)
+        for position_id, demands in union_text_demands.items()
+    }
+    allocations = _allocate_descendant_branches_by_demand(
+        display_branches,
+        start_angle=_DESC_START_ANGLE,
+        total_sweep=_DESC_TOTAL_SWEEP,
+        text_demands=text_demands,
+    )
+    source_allocations = tuple(reversed(allocations))
     cx = canvas.center_cx_mm
     cy = canvas.center_cy_mm
 
@@ -3348,6 +3525,7 @@ def layout_descendants(
         label: str,
         portrait: str | None,
         highlighted: bool = False,
+        initials_font_size: float | None = None,
     ) -> None:
         if measure_only:
             return
@@ -3379,7 +3557,7 @@ def layout_descendants(
                 x=x,
                 y=y + radius * 0.25,
                 content=initials,
-                font_size=radius * 0.55,
+                font_size=initials_font_size or radius * 0.55,
                 fill=TEXT_DARK,
                 anchor="middle",
             ))
@@ -3422,6 +3600,7 @@ def layout_descendants(
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
                 reverse_display=True,
+                text_demands=union_text_demands.get(branch.position_id),
             )
             if len(branch.unions) > 1
             else ()
@@ -3961,6 +4140,7 @@ def layout_descendants(
                     child_label or raw_label,
                     child_portrait_data,
                     _highlight(branch.person.handle),
+                    initials_font_size=(3.1 if adaptive_dense else None),
                 )
                 _emit_medallion(
                     mx + tangent_x * pair_offset,
@@ -3969,6 +4149,7 @@ def layout_descendants(
                     spouse_medallion_label,
                     spouse_portrait_data,
                     _highlight(spouse_handle),
+                    initials_font_size=(3.1 if adaptive_dense else None),
                 )
             else:
                 child_radius = (
@@ -3983,6 +4164,7 @@ def layout_descendants(
                     child_label or raw_label,
                     child_portrait_data,
                     _highlight(branch.person.handle),
+                    initials_font_size=(3.1 if adaptive_dense else None),
                 )
         elif not union_cells:
             # Later-generation people are text-only by design. When highlight
@@ -4124,6 +4306,7 @@ def layout_descendants(
                         cell_child_label or raw_label,
                         cell_child_portrait,
                         _highlight(branch.person.handle),
+                        initials_font_size=(3.1 if adaptive_dense else None),
                     )
                     _emit_medallion(
                         cell_mx + tangent_x * cell_pair_offset,
@@ -4132,6 +4315,7 @@ def layout_descendants(
                         cell_spouse_label,
                         cell_spouse_portrait,
                         _highlight(cell_spouse_handle),
+                        initials_font_size=(3.1 if adaptive_dense else None),
                     )
                 else:
                     cell_child_radius = (
@@ -4146,6 +4330,7 @@ def layout_descendants(
                         cell_child_label or raw_label,
                         cell_child_portrait,
                         _highlight(branch.person.handle),
+                        initials_font_size=(3.1 if adaptive_dense else None),
                     )
             if union_text_inners:
                 med_text_inner = min(union_text_inners)
@@ -4838,6 +5023,7 @@ def layout_descendants(
                 total_sweep=alloc_sweep,
                 include_empty=True,
                 reverse_display=True,
+                text_demands=union_text_demands.get(branch.position_id),
             )
             for union_allocation in union_allocations:
                 display_children = tuple(reversed(union_allocation.children))

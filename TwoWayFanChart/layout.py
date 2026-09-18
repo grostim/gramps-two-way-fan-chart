@@ -4756,6 +4756,21 @@ def layout_descendants(
                             dates_width = estimate_text_width(date_fit, date_size)
                             gap = name_size * 0.35
                             total = name_width + gap + dates_width
+                            fit_scale = (
+                                min(1.0, text_width / total)
+                                if total > 0.0
+                                else 1.0
+                            )
+                            render_name_size = name_size * fit_scale
+                            render_date_size = date_size * fit_scale
+                            name_width = estimate_text_width(
+                                fitted_name, render_name_size
+                            )
+                            dates_width = estimate_text_width(
+                                date_fit, render_date_size
+                            )
+                            gap = render_name_size * 0.35
+                            total = name_width + gap + dates_width
                             if not measure_only:
                                 name_offset = -total / 2.0 + name_width / 2.0
                                 date_offset = total / 2.0 - dates_width / 2.0
@@ -4767,7 +4782,7 @@ def layout_descendants(
                                     x=name_x,
                                     y=name_y,
                                     content=fitted_name,
-                                    font_size=name_size,
+                                    font_size=render_name_size,
                                     fill=TEXT_DARK,
                                     anchor="middle",
                                     rotation=rotation,
@@ -4779,7 +4794,7 @@ def layout_descendants(
                                     x=date_x,
                                     y=date_y,
                                     content=date_fit,
-                                    font_size=date_size,
+                                    font_size=render_date_size,
                                     fill=TEXT_GREY,
                                     anchor="middle",
                                     rotation=rotation,

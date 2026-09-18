@@ -2111,6 +2111,7 @@ def _descendant_first_generation_union_text_demands(
     shortener,
     inner_radius: float,
     outer_radius: float,
+    combined_couple_labels: bool = False,
 ) -> tuple[float, ...]:
     """Return one measured GEN1 demand for each displayed union cell."""
     ring_width = max(outer_radius - inner_radius, 0.0)
@@ -2145,15 +2146,21 @@ def _descendant_first_generation_union_text_demands(
     )
     if not branch.unions:
         return (demand_for([person_label]),)
-    return tuple(
-        demand_for([
-            person_label,
+    demands = []
+    for union in branch.unions:
+        spouse_label = (
             name_lookup(union.spouse_handle)
             if union.spouse_handle
-            else "",
-        ])
-        for union in branch.unions
-    )
+            else ""
+        )
+        demands.append(
+            demand_for(
+                [f"{person_label} × {spouse_label}"]
+                if combined_couple_labels and person_label and spouse_label
+                else [person_label, spouse_label]
+            )
+        )
+    return tuple(demands)
 
 
 
@@ -2248,6 +2255,12 @@ def _descendant_angle_demand(
     elif branch.children:
         child_group = groups[0] if groups else branch.children
         demand = max(demand, _descendant_group_angle_demand(child_group))
+    if (
+        text_demands is not None
+        and branch.generation == 1
+        and branch.position_id in text_demands
+    ):
+        return demand
     return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2))
 
 
@@ -3279,6 +3292,7 @@ def layout_descendants(
             shortener=shortener,
             inner_radius=gen1_inner,
             outer_radius=gen1_outer,
+            combined_couple_labels=max_gen == 2,
         )
         for branch in display_branches
     }

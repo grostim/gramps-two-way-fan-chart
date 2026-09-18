@@ -112,6 +112,39 @@ class Issue100DescendantMinimumTests(unittest.TestCase):
             couple_floor - 1e-9,
         )
 
+    def test_promoted_multi_union_floor_survives_equal_demand_fallback(self):
+        multi = DescendantBranch(
+            "descendant-multi-equal",
+            PersonNode("multi-equal", "Multi equal"),
+            3,
+            (
+                UnionBranch("family-a-equal", "spouse-a-equal", (), ()),
+                UnionBranch("family-b-equal", "spouse-b-equal", (), ()),
+            ),
+            (),
+        )
+        singletons = tuple(
+            branch(f"equal-single-{index}", generation=3, spouse=False)
+            for index in range(3)
+        )
+        allocations = _allocate_descendant_branches_by_demand(
+            (multi,) + singletons,
+            start_angle=96.0,
+            total_sweep=11.0,
+        )
+        cells = _allocate_descendant_union_cells(
+            multi,
+            start_angle=allocations[0].start_angle,
+            total_sweep=allocations[0].sweep_angle,
+        )
+        couple_floor = _DESC_MIN_SWEEP_BY_GENERATION[3]
+
+        self.assertGreaterEqual(allocations[0].sweep_angle, 2 * couple_floor)
+        self.assertGreaterEqual(
+            min(cell.sweep_angle for cell in cells),
+            couple_floor - 1e-9,
+        )
+
     def test_infeasible_couple_floor_never_erases_singletons(self):
         demanding_children = tuple(
             DescendantBranch(
@@ -147,6 +180,7 @@ class Issue100DescendantMinimumTests(unittest.TestCase):
             places=9,
         )
 
+    def test_gen3_singleton_keeps_date_on_the_name_line(self):
         singles = tuple(
             branch(f"single-{index}", generation=3, spouse=False)
             for index in range(8)

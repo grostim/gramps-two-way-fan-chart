@@ -2450,7 +2450,15 @@ def _allocate_descendant_branches_by_demand(
                 for floor, extra in zip(floors, extras)
             ]
         else:
-            widths = [total_sweep / len(branches)] * len(branches)
+            # Keep promoted floors (which may be unequal because a branch has
+            # several couple cells), then distribute only the unallocated
+            # remainder. An equal split here would shrink the multi-union
+            # branch back below one floor per couple cell.
+            remaining = total_sweep - sum(floors)
+            widths = [
+                floor + remaining / len(branches)
+                for floor in floors
+            ]
     else:
         # Only singleton floors are negotiable in this dense case. Reserve the
         # couple slots, then distribute what remains among singleton branches.

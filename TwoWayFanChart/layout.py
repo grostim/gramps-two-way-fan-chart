@@ -2174,7 +2174,9 @@ _DESC_MIN_SWEEP_BY_GENERATION = {
     1: 21.0,
     2: 5.25,
     3: 2.1,
-    4: 1.5,
+    # Issue #105: a G4 couple needs the same minimum angular reservation as
+    # G3 to keep a two-rail name from touching the neighbouring separator.
+    4: 2.1,
     5: 1.2,
 }
 

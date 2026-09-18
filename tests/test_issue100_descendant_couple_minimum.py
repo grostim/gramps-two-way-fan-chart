@@ -80,7 +80,30 @@ class Issue100DescendantMinimumTests(unittest.TestCase):
             places=9,
         )
 
-    def test_multi_union_gen3_branch_reserves_each_couple_cell(self):
+    def test_gen4_couples_keep_the_larger_minimum_angle(self):
+        branches = tuple(
+            branch(f"g4-couple-{index}", generation=4, spouse=True)
+            for index in range(3)
+        ) + tuple(
+            branch(f"g4-single-{index}", generation=4, spouse=False)
+            for index in range(2)
+        )
+
+        allocations = _allocate_descendant_branches_by_demand(
+            branches,
+            start_angle=96.0,
+            total_sweep=10.0,
+        )
+        couple_floor = _DESC_MIN_SWEEP_BY_GENERATION[4]
+        couple_sweeps = [
+            allocation.sweep_angle
+            for branch_item, allocation in zip(branches, allocations)
+            if branch_item.unions[0].spouse_handle
+        ]
+
+        self.assertEqual(couple_floor, 2.1)
+        self.assertGreaterEqual(min(couple_sweeps), couple_floor - 1e-9)
+
         multi = DescendantBranch(
             "descendant-multi",
             PersonNode("multi", "Multi"),

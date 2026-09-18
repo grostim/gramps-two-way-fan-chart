@@ -4722,6 +4722,17 @@ def layout_descendants(
         for depth, sizes in name_size_candidates.items()
         if sizes
     }
+    # Descendant typography is a depth hierarchy, not a set of independent
+    # target caps. A crowded G3 can be measured below the nominal G4 target;
+    # never let a deeper crown then become visually larger than the preceding
+    # one (issue #96). Keep the measured degradation, but propagate it outward.
+    previous_name_size: float | None = None
+    for depth in sorted(generation_name_sizes):
+        current_size = generation_name_sizes[depth]
+        if previous_name_size is not None:
+            current_size = min(current_size, previous_name_size)
+            generation_name_sizes[depth] = current_size
+        previous_name_size = current_size
     generation_date_sizes = {
         depth: _descendant_date_font_size(name_size)
         for depth, name_size in generation_name_sizes.items()

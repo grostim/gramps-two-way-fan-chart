@@ -160,6 +160,44 @@ class DescendantNameTargetTests(unittest.TestCase):
         self.assertLess(sizes[3][0], 4.9 * 0.5)
         self.assertGreater(sizes[3][0], 0.0)
 
+    def test_fourth_generation_never_exceeds_the_third(self):
+        fourth = branch("g4", 4)
+        third = branch(
+            "g3",
+            3,
+            children=(fourth,),
+        )
+        second = branch(
+            "g2",
+            2,
+            children=(third,),
+            spouse="g2-spouse",
+        )
+        root = branch("g1", 1, children=(second,), spouse="g1-spouse")
+        labels = {
+            "g1": "G1",
+            "g1-spouse": "S1",
+            "g2": "G2",
+            "g2-spouse": "S2",
+            "g3": "A very very very long generation three identity",
+            "g4": "G4",
+        }
+        scene = layout_descendants(
+            a0(4),
+            (root,),
+            name_lookup=labels.__getitem__,
+            dates_lookup=lambda _handle: "",
+        )
+        sizes = {}
+        for node in scene.children:
+            if not isinstance(node, (SceneText, ScenePathText)):
+                continue
+            for depth, label in ((3, labels["g3"]), (4, labels["g4"])):
+                if label in node.content:
+                    sizes.setdefault(depth, set()).add(round(node.font_size, 6))
+        self.assertEqual(set(sizes), {3, 4})
+        self.assertLessEqual(max(sizes[4]), min(sizes[3]))
+
 
 if __name__ == "__main__":
     unittest.main()

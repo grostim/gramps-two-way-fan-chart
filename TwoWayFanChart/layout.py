@@ -3188,30 +3188,6 @@ def layout_descendants(
     date_cache: dict[str, str] = {}
     inner_r = canvas.descendant_inner_radius_mm
     outer_r = canvas.descendant_outer_radius_mm
-    def _measured_name_label(handle: str | None) -> str:
-        if not handle:
-            return ""
-        if handle not in name_cache:
-            name_cache[handle] = name_lookup(handle)
-        return name_cache[handle]
-
-    text_demands = {
-        branch.position_id: _descendant_first_generation_text_demand(
-            branch,
-            name_lookup=_measured_name_label,
-            shortener=shortener,
-            inner_radius=inner_r,
-            outer_radius=outer_r,
-        )
-        for branch in display_branches
-    }
-    allocations = _allocate_descendant_branches_by_demand(
-        display_branches,
-        start_angle=_DESC_START_ANGLE,
-        total_sweep=_DESC_TOTAL_SWEEP,
-        text_demands=text_demands,
-    )
-    source_allocations = tuple(reversed(allocations))
     max_gen = max(_max_desc_depth(b) for b in branches) if branches else 1
     displayed_generation_limit = (
         max_gen
@@ -3227,7 +3203,32 @@ def layout_descendants(
     )
     rings = _descendant_ring_ratios(max_gen)
     ring_widths = [total_depth * ratio for ratio in rings]
+    gen1_inner, gen1_outer = ring_bounds[0]
 
+    def _measured_name_label(handle: str | None) -> str:
+        if not handle:
+            return ""
+        if handle not in name_cache:
+            name_cache[handle] = name_lookup(handle)
+        return name_cache[handle]
+
+    text_demands = {
+        branch.position_id: _descendant_first_generation_text_demand(
+            branch,
+            name_lookup=_measured_name_label,
+            shortener=shortener,
+            inner_radius=gen1_inner,
+            outer_radius=gen1_outer,
+        )
+        for branch in display_branches
+    }
+    allocations = _allocate_descendant_branches_by_demand(
+        display_branches,
+        start_angle=_DESC_START_ANGLE,
+        total_sweep=_DESC_TOTAL_SWEEP,
+        text_demands=text_demands,
+    )
+    source_allocations = tuple(reversed(allocations))
     cx = canvas.center_cx_mm
     cy = canvas.center_cy_mm
 

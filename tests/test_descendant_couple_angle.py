@@ -146,14 +146,18 @@ class DescendantCoupleAngleTest(unittest.TestCase):
         couple_text = [
             node for node in scene.children
             if isinstance(node, SceneText)
-            and node.content in {
-                "Margaux Mirieu de Labarre",
-                "× Jean Kouji Decourt",
-            }
+            and node.content == (
+                "Margaux Mirieu de Labarre × Jean Kouji Decourt"
+            )
         ]
         self.assertEqual(
-            couple_text, [],
-            "a sub-minimum couple cell still emitted text over its separator",
+            len(couple_text), 1,
+            "a narrow couple cell should use one merged line before omission",
+        )
+        self.assertGreaterEqual(couple_text[0].font_size, 2.0)
+        self.assertEqual(
+            len({round(node.font_size, 9) for node in couple_text}),
+            1,
         )
         # The target remains represented by its descendant sector; only the
         # impossible text block is omitted.

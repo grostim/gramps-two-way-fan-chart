@@ -4747,34 +4747,45 @@ def layout_descendants(
                             max_width=text_width,
                             allow_ellipsis=False,
                         )
-                        # Issue #100: at Gen3+ a singleton has no second name
-                        # rail to protect. Keep its date on the same radial line
-                        # as the name, so the cell can be narrower without
-                        # wasting tangential room on a second baseline.
+                        # Issue #106: singleton dates use the same two-run rail
+                        # treatment as couple dates. The previous compact label
+                        # merged both runs into one dark string (``Name · date``),
+                        # making Gen3 singles visibly different from couples.
                         if depth >= 3 and fitted_name and date_fit:
-                            compact_label = f"{fitted_name} · {date_fit}"
-                            compact_name, compact_size, compact_width = (
-                                _fit_generation_name(
-                                    compact_label,
-                                    depth,
-                                    target_size=name_size,
-                                    minimum_size=name_minimum,
-                                    max_width=text_width,
+                            name_width = estimate_text_width(fitted_name, name_size)
+                            dates_width = estimate_text_width(date_fit, date_size)
+                            gap = name_size * 0.35
+                            total = name_width + gap + dates_width
+                            if not measure_only:
+                                name_offset = -total / 2.0 + name_width / 2.0
+                                date_offset = total / 2.0 - dates_width / 2.0
+                                name_x, name_y = _tangent_offset(
+                                    base_x, base_y, block_mid_angle, name_offset
                                 )
-                            )
-                            if compact_name:
-                                if not measure_only:
-                                    all_children.append(SceneText(
-                                        x=base_x,
-                                        y=base_y,
-                                        content=compact_name,
-                                        font_size=compact_size,
-                                        fill=TEXT_DARK,
-                                        anchor="middle",
-                                        rotation=rotation,
-                                        max_width=compact_width,
-                                    ))
-                                return
+                                all_children.append(SceneText(
+                                    x=name_x,
+                                    y=name_y,
+                                    content=fitted_name,
+                                    font_size=name_size,
+                                    fill=TEXT_DARK,
+                                    anchor="middle",
+                                    rotation=rotation,
+                                    max_width=text_width,
+                                ))
+                                date_x, date_y = _tangent_offset(
+                                    base_x, base_y, block_mid_angle, date_offset
+                                )
+                                all_children.append(SceneText(
+                                    x=date_x,
+                                    y=date_y,
+                                    content=date_fit,
+                                    font_size=date_size,
+                                    fill=TEXT_GREY,
+                                    anchor="middle",
+                                    rotation=rotation,
+                                    max_width=text_width,
+                                ))
+                            return
                         show_date_lane = bool(
                             date_fit
                             and date_target > 0.0

@@ -219,7 +219,9 @@ class Issue100DescendantMinimumTests(unittest.TestCase):
             node.content for node in scene.children
             if isinstance(node, SceneText)
         ]
-        self.assertIn("Damaris Gros · 1890–1960", labels)
+        self.assertIn("Damaris Gros", labels)
+        self.assertIn("1890–1960", labels)
+        self.assertNotIn("Damaris Gros · 1890–1960", labels)
 
 
 if __name__ == "__main__":

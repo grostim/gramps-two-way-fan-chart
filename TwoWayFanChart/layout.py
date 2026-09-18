@@ -4198,8 +4198,46 @@ def layout_descendants(
                             _COUPLE_TANGENTIAL_EM * couple_size / text_r
                         ) if text_r > 0.0 else float("inf")
                         if block_sweep + 1e-9 < required_sweep:
-                            # Retain the coloured sector and its optional marker,
-                            # but do not draw text through its separator.
+                            # First fallback: keep both identities on one radial
+                            # line. This often fits even when two parallel rails
+                            # do not (the reporter's Margaux/Jean pair is 47.9 mm
+                            # at 2.0 mm inside a 58.7 mm radial lane). Dates are
+                            # optional secondary data and are intentionally omitted
+                            # in this compact mode so both names stay complete.
+                            merged_label = f"{block_child_label} × {block_spouse}"
+                            common_size = generation_name_sizes.get(depth)
+                            if measure_only:
+                                measured_size = _font_size_for_width(
+                                    merged_label,
+                                    target_size=name_target,
+                                    max_width=text_width,
+                                    minimum_size=_DESCENDANT_NAME_FLOOR_MM,
+                                )
+                                name_size_candidates.setdefault(depth, []).append(
+                                    measured_size
+                                )
+                                return
+                            merged_size = common_size or name_target
+                            merged_width = estimate_text_width(
+                                merged_label, merged_size
+                            )
+                            if (
+                                merged_size >= _DESCENDANT_NAME_FLOOR_MM
+                                and merged_width <= text_width + 1e-9
+                            ):
+                                if not measure_only:
+                                    all_children.append(SceneText(
+                                        x=base_x,
+                                        y=base_y,
+                                        content=merged_label,
+                                        font_size=merged_size,
+                                        fill=TEXT_DARK,
+                                        anchor="middle",
+                                        rotation=rotation,
+                                        max_width=text_width,
+                                    ))
+                                return
+                            # Last resort: retain the sector but omit the text.
                             return
 
 

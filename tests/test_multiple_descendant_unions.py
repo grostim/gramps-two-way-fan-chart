@@ -1060,10 +1060,11 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, SceneText)
             and "Compact Target" in node.content
         ]
+        self.assertEqual(len(compact_couples), 2)
+        self.assertTrue(all(" × " in node.content for node in compact_couples))
         self.assertEqual(
-            compact_couples, [],
-            "a physically impossible couple cell still emitted text over its "
-            "separator instead of omitting the complete pair",
+            len({round(node.font_size, 9) for node in compact_couples}),
+            1,
         )
         compact_sectors = [
             node for node in scene.children
@@ -2121,10 +2122,11 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, SceneText)
             and "Compact Target" in node.content
         ]
+        self.assertEqual(len(compact_couples), 2)
+        self.assertTrue(all(" × " in node.content for node in compact_couples))
         self.assertEqual(
-            compact_couples, [],
-            "a physically impossible couple cell still emitted text over its "
-            "separator instead of omitting the complete pair",
+            len({round(node.font_size, 9) for node in compact_couples}),
+            1,
         )
         compact_sectors = [
             node for node in scene.children

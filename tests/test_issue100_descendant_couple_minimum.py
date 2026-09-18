@@ -112,7 +112,41 @@ class Issue100DescendantMinimumTests(unittest.TestCase):
             couple_floor - 1e-9,
         )
 
-    def test_gen3_singleton_keeps_date_on_the_name_line(self):
+    def test_infeasible_couple_floor_never_erases_singletons(self):
+        demanding_children = tuple(
+            DescendantBranch(
+                f"descendant-grandchild-{index}",
+                PersonNode(f"grandchild-{index}", f"Grandchild {index}"),
+                4,
+                (),
+                (),
+            )
+            for index in range(10)
+        )
+        couple = DescendantBranch(
+            "descendant-demanding-couple",
+            PersonNode("demanding", "Demanding"),
+            3,
+            (UnionBranch("family-demanding", "spouse-demanding", tuple(
+                child.person.handle for child in demanding_children
+            ), tuple("birth" for _child in demanding_children)),),
+            demanding_children,
+        )
+        singleton = branch("single", generation=3, spouse=False)
+        allocations = _allocate_descendant_branches_by_demand(
+            (couple, singleton),
+            start_angle=96.0,
+            total_sweep=5.0,
+        )
+
+        self.assertGreater(allocations[0].sweep_angle, 0.0)
+        self.assertGreater(allocations[1].sweep_angle, 0.0)
+        self.assertAlmostEqual(
+            sum(allocation.sweep_angle for allocation in allocations),
+            5.0,
+            places=9,
+        )
+
         singles = tuple(
             branch(f"single-{index}", generation=3, spouse=False)
             for index in range(8)

@@ -2432,9 +2432,10 @@ def _allocate_descendant_branches_by_demand(
     priority_total = sum(
         floor for floor, is_priority in zip(floors, couple_priority) if is_priority
     )
-    if priority_total > total_sweep:
-        # Even the requested couple slots cannot fit; keep the fan tiled and
-        # let the renderer omit only physically impossible couple text.
+    if priority_total >= total_sweep:
+        # The couple floor is infeasible if it consumes the whole sector: keep
+        # every sibling represented with a positive proportional share rather
+        # than assigning zero width to singleton branches.
         widths = [total_sweep * demand / total_demand for demand in demands]
     elif sum(floors) <= total_sweep:
         extras = [

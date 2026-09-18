@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from TwoWayFanChart.layout import (  # noqa: E402
     _DESC_MIN_SWEEP_BY_GENERATION,
     _allocate_descendant_branches_by_demand,
+    _allocate_descendant_union_cells,
     calculate_canvas,
     layout_descendants,
 )
@@ -76,6 +77,39 @@ class Issue100DescendantMinimumTests(unittest.TestCase):
             sum(allocation.sweep_angle for allocation in allocations),
             10.0,
             places=9,
+        )
+
+    def test_multi_union_gen3_branch_reserves_each_couple_cell(self):
+        multi = DescendantBranch(
+            "descendant-multi",
+            PersonNode("multi", "Multi"),
+            3,
+            (
+                UnionBranch("family-a", "spouse-a", (), ()),
+                UnionBranch("family-b", "spouse-b", (), ()),
+            ),
+            (),
+        )
+        singletons = tuple(
+            branch(f"single-{index}", generation=3, spouse=False)
+            for index in range(2)
+        )
+        allocations = _allocate_descendant_branches_by_demand(
+            (multi,) + singletons,
+            start_angle=96.0,
+            total_sweep=5.0,
+        )
+        couple_floor = _DESC_MIN_SWEEP_BY_GENERATION[3]
+        cells = _allocate_descendant_union_cells(
+            multi,
+            start_angle=allocations[0].start_angle,
+            total_sweep=allocations[0].sweep_angle,
+        )
+
+        self.assertEqual(len(cells), 2)
+        self.assertGreaterEqual(
+            min(cell.sweep_angle for cell in cells),
+            couple_floor - 1e-9,
         )
 
     def test_gen3_singleton_keeps_date_on_the_name_line(self):

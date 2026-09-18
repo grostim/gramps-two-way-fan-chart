@@ -2412,11 +2412,23 @@ def _allocate_descendant_branches_by_demand(
         min(_DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2), total_sweep)
         for branch in branches
     ]
-    couple_priority = [
-        branch.generation >= 3
-        and any(union.spouse_handle for union in branch.unions)
+    couple_cell_counts = [
+        sum(1 for union in branch.unions if union.spouse_handle)
+        if branch.generation >= 3
+        else 0
         for branch in branches
     ]
+    for index, branch in enumerate(branches):
+        if couple_cell_counts[index]:
+            # A multi-union branch is subdivided again by
+            # `_allocate_descendant_union_cells`; reserve one couple floor per
+            # spouse cell and retain any deeper demand surplus at branch level.
+            couple_floor = floors[index] * couple_cell_counts[index]
+            floors[index] = min(
+                total_sweep,
+                max(couple_floor, demands[index]),
+            )
+    couple_priority = [count > 0 for count in couple_cell_counts]
     priority_total = sum(
         floor for floor, is_priority in zip(floors, couple_priority) if is_priority
     )

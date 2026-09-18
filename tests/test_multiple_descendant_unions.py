@@ -1060,12 +1060,18 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, SceneText)
             and "Compact Target" in node.content
         ]
-
         self.assertEqual(len(compact_couples), 2)
+        self.assertTrue(all(" × " in node.content for node in compact_couples))
         self.assertEqual(
             len({round(node.font_size, 9) for node in compact_couples}),
             1,
         )
+        compact_sectors = [
+            node for node in scene.children
+            if isinstance(node, SceneSector)
+            and node.sweep_angle < 2.0
+        ]
+        self.assertTrue(compact_sectors, "the narrow couple sector was removed with its text")
 
     def test_stacked_multi_union_couples_share_generation_font_size(self):
         first_children = tuple(
@@ -2116,12 +2122,18 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, SceneText)
             and "Compact Target" in node.content
         ]
-
         self.assertEqual(len(compact_couples), 2)
+        self.assertTrue(all(" × " in node.content for node in compact_couples))
         self.assertEqual(
             len({round(node.font_size, 9) for node in compact_couples}),
             1,
         )
+        compact_sectors = [
+            node for node in scene.children
+            if isinstance(node, SceneSector)
+            and node.sweep_angle < 2.0
+        ]
+        self.assertTrue(compact_sectors, "the narrow couple sector was removed with its text")
 
     def test_stacked_multi_union_couples_share_generation_font_size(self):
         first_children = tuple(

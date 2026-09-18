@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -238,11 +239,26 @@ class Issue100DescendantMinimumTests(unittest.TestCase):
             dates_lookup=lambda handle: "1890–1960" if handle.startswith("single-") else "",
             configured_generation_limit=4,
         )
-        labels = [
-            node.content for node in scene.children
+        text_nodes = [
+            node for node in scene.children
             if isinstance(node, SceneText)
         ]
-        self.assertIn("Damaris Gros · 1890–1960", labels)
+        labels = [node.content for node in text_nodes]
+        self.assertIn("Damaris Gros", labels)
+        self.assertIn("1890–1960", labels)
+        self.assertNotIn("Damaris Gros · 1890–1960", labels)
+
+        name_node = next(node for node in text_nodes if node.content == "Damaris Gros")
+        date_node = next(node for node in text_nodes if node.content == "1890–1960")
+        dx = date_node.x - name_node.x
+        dy = date_node.y - name_node.y
+        rail_angle = math.radians(name_node.rotation)
+        self.assertAlmostEqual(
+            dx * math.sin(rail_angle) - dy * math.cos(rail_angle),
+            0.0,
+            places=6,
+            msg="singleton name and date must share one radial rail",
+        )
 
 
 if __name__ == "__main__":

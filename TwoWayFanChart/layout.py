@@ -21,6 +21,7 @@ try:
         ScenePathText,
         estimate_emblem_text_width,
         estimate_text_width,
+        split_marriage_emblem,
     )
     from TwoWayFanChart.styles import (
         ancestor_fill,
@@ -49,6 +50,7 @@ except ModuleNotFoundError:
         ScenePathText,
         estimate_emblem_text_width,
         estimate_text_width,
+        split_marriage_emblem,
     )
     from styles import (  # type: ignore[no-redef]
         ancestor_fill,
@@ -2557,6 +2559,17 @@ _DESCENDANT_MARRIAGE_TWO_LINE_ENVELOPE_RATIO = (
     _DESCENDANT_MARRIAGE_LINE_LEADING_RATIO + 1.0
 )
 _DESCENDANT_MARRIAGE_LABEL_READABILITY_FLOOR_MM = 1.8
+# Issue #90: the marriage DATE had no readable floor. `_font_size_for_width`
+# falls back to `_MIN_DATE_FONT_SIZE_MM` (0.25 mm) when the caller names no
+# minimum, and the render pass then shares one measured size per crown
+# (`min` over its sectors), so a narrow ring rendered every one of its marriage
+# dates at a fraction of a millimetre: "les dates de mariage de la troisième
+# couronne sont tous petits". This is the collapse #85 fixed for the couple
+# NAMES, left in place for the marriage labels.
+# The floor reuses the name floor rather than inventing a constant, which keeps
+# issue #56 true by construction: a marriage label can never outgrow the
+# individuals it concerns, because both are pinned at the same value.
+_DESCENDANT_MARRIAGE_FLOOR_MM = _DESCENDANT_NAME_FLOOR_MM
 
 
 def _descendant_ring_layout(
@@ -2642,6 +2655,42 @@ def _marriage_place_label(full_label: str) -> str:
     return ""
 
 
+def _marriage_has_emblem(label: str) -> bool:
+    """Return whether a marriage label leads with the enlarged emblem.
+
+    The renderers scale a leading U+26AD by ``MARRIAGE_EMBLEM_SCALE`` and skip
+    ``textLength`` for such a label: a textLength would rescale every glyph and
+    cancel the enlargement. So an emblem label cannot be horizontally
+    compressed, while a label without one still can.
+    """
+    return split_marriage_emblem(label)[0] != ""
+
+
+def _marriage_line_capacities(
+    text_radius: float,
+    sweep: float,
+    font_size: float,
+) -> tuple[float, float]:
+    """Return the arc capacity of the (date, place) lines' own radii.
+
+    The two lines of a marriage stack do not sit at the band's mid radius: the
+    date line is one half-leading inside it and the place line one half-leading
+    outside. Each line therefore has its own arc length, and measuring both at
+    the mid radius over-estimates the inner line's usable width. The radii come
+    from ``_marriage_line_radii``, the same helper the emitter uses, so the
+    measurement and the rendered baselines cannot drift apart.
+    """
+    date_radius, place_radius = _marriage_line_radii(text_radius, font_size)
+    return (
+        _ancestor_arc_text_capacity(
+            text_radius=date_radius, sweep_angle=sweep
+        ),
+        _ancestor_arc_text_capacity(
+            text_radius=place_radius, sweep_angle=sweep
+        ),
+    )
+
+
 def _marriage_line_radii(text_radius: float, font_size: float) -> tuple[float, float]:
     """Return the (date, place) line radii of the two-line marriage stack.
 
@@ -2694,8 +2743,26 @@ def _descendant_marriage_plan(
             # therefore not a second binding constraint on this path -- each
             # line still carries its own arc length as ``max_width`` so the
             # renderer keeps the final physical guard.
+            #
+            # Issue #90: every measurement below is taken on the arc each line
+            # is actually DRAWN on, not on the band's mid radius. The date line
+            # sits one half-leading inside the text radius, where its arc is
+            # shorter; measuring at the mid radius under-sized the capacity and
+            # let an emblem date overflow its own sector.
+            #
+            # Issue #90: the envelope is no longer allowed to push the shared
+            # size under the readability floor either. A band whose radial depth
+            # cannot hold the two-line stack AT the floor falls through to the
+            # single-line contract below, which fits the year on one line; the
+            # floor is never traded for the second line.
             envelope_cap = (
                 band_width / _DESCENDANT_MARRIAGE_TWO_LINE_ENVELOPE_RATIO
+            )
+            probe_size = target_size if common_size is None else min(
+                common_size, envelope_cap
+            )
+            line_capacities = _marriage_line_capacities(
+                text_radius, sweep, probe_size
             )
             if common_size is None:
                 size = min(
@@ -2704,12 +2771,12 @@ def _descendant_marriage_plan(
                     _font_size_for_width(
                         date_label,
                         target_size=target_size,
-                        max_width=capacity,
+                        max_width=line_capacities[0],
                     ),
                     _font_size_for_width(
                         place_label,
                         target_size=target_size,
-                        max_width=capacity,
+                        max_width=line_capacities[1],
                     ),
                 )
             else:
@@ -2720,7 +2787,24 @@ def _descendant_marriage_plan(
                 # is dominated by another constraint and the two-line split is
                 # not warranted at an unreadable size.
                 size = min(common_size, envelope_cap)
-            if size >= _DESCENDANT_MARRIAGE_LABEL_READABILITY_FLOOR_MM:
+            # Issue #90: a marriage label is never rendered below the readable
+            # floor. Above that, the guard is applied only where the renderer
+            # cannot protect itself: an emblem line forbids `textLength` (it
+            # would rescale the glyphs and cancel the 1.5x enlargement), so a
+            # too-wide emblem line really overflows its sector. A line without
+            # an emblem keeps the established behaviour and is compressed by
+            # the renderer's `textLength`.
+            line_capacities = _marriage_line_capacities(
+                text_radius, sweep, size
+            )
+            if size >= _DESCENDANT_MARRIAGE_FLOOR_MM and all(
+                not _marriage_has_emblem(line)
+                or estimate_emblem_text_width(line, size)
+                <= capacity_at_line + 1e-9
+                for line, capacity_at_line in zip(
+                    (date_label, place_label), line_capacities
+                )
+            ):
                 return (date_label, place_label), size
 
     label, size = _descendant_marriage_label_and_size(
@@ -2772,12 +2856,46 @@ def _descendant_marriage_label_and_size(
     else:
         label = year_label
     if common_size is not None:
+        # Issue #90: a SHARED size must still be honest about the sector it is
+        # drawn in. The shared size is the ring's smallest measured fit, but a
+        # different label can be selected at render time (the year instead of
+        # the full date-and-place), so the fit is re-checked here rather than
+        # assumed. An emblem line cannot be compressed by the renderer, so a
+        # sector whose arc cannot carry the shared size omits its date and keeps
+        # its colored band; the ring keeps one size for every label it does
+        # render (issue #56).
+        if common_size < _DESCENDANT_MARRIAGE_FLOOR_MM:
+            return "", 0.0
+        if (
+            _marriage_has_emblem(label)
+            and estimate_emblem_text_width(label, common_size) > capacity
+        ):
+            return "", 0.0
         return label, common_size
+    # Issue #90: the single-line fit is floored exactly like a name. The label
+    # choice above is made at the readability threshold, but the SIZE used to
+    # fall back to `_MIN_DATE_FONT_SIZE_MM` (0.25 mm) once the arc capacity
+    # collapsed — an unreadable date on any print size.
+    #
+    # Above the floor the renderer protects itself wherever it can: a line
+    # without an emblem is compressed through `textLength`. An emblem line
+    # forbids that (it would rescale the glyphs and cancel the 1.5x
+    # enlargement), so a year that still overflows its arc is omitted and the
+    # band keeps its color — the repository's established treatment for a date
+    # that cannot be read.
     font_size = _font_size_for_width(
         label,
         target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),
         max_width=capacity,
+        minimum_size=_DESCENDANT_MARRIAGE_FLOOR_MM,
     )
+    if font_size < _DESCENDANT_MARRIAGE_FLOOR_MM:
+        return "", 0.0
+    if (
+        _marriage_has_emblem(label)
+        and estimate_emblem_text_width(label, font_size) > capacity
+    ):
+        return "", 0.0
     return label, font_size
 
 

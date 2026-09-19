@@ -95,6 +95,37 @@ class Issue109ContentAwareAnglesTests(unittest.TestCase):
             places=9,
         )
 
+    def test_overflow_preserves_couple_minima_before_squeezing_singletons(self):
+        couples = (
+            person_branch("couple-a", 3, spouse="spouse-a"),
+            person_branch("couple-b", 3, spouse="spouse-b"),
+        )
+        dense_singleton = person_branch(
+            "dense-singleton",
+            3,
+            children=tuple(
+                person_branch(f"leaf-{index}", 4)
+                for index in range(10)
+            ),
+        )
+
+        allocations = _allocate_descendant_branches_by_demand(
+            couples + (dense_singleton,),
+            start_angle=96.0,
+            total_sweep=5.0,
+            angular_budgets=self.profile,
+        )
+        couple_minimum = self.profile[3][1].minimum_sweep
+
+        self.assertGreaterEqual(allocations[0].sweep_angle, couple_minimum)
+        self.assertGreaterEqual(allocations[1].sweep_angle, couple_minimum)
+        self.assertGreater(allocations[2].sweep_angle, 0.0)
+        self.assertAlmostEqual(
+            sum(allocation.sweep_angle for allocation in allocations),
+            5.0,
+            places=9,
+        )
+
     def test_first_generation_budget_keeps_union_labels_aligned_with_children(self):
         dense_children = (
             person_branch("dense-child-a", 2, spouse="spouse-a"),

@@ -2471,9 +2471,59 @@ def _descendant_branch_angular_budget(
     return _DescendantAngularBudget(minimum, preferred)
 
 
+def _descendant_branch_protected_couple_minimum(
+    branch: DescendantBranch,
+    *,
+    angular_budgets: dict[
+        int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
+    ],
+) -> float:
+    """Return the Gen3+ couple minima that survive an overflow squeeze."""
+    groups = list(_children_grouped_by_union(branch))
+    if branch.unions:
+        if len(groups) < len(branch.unions):
+            groups.extend(() for _ in range(len(branch.unions) - len(groups)))
+        cells = [
+            (union, groups[index])
+            for index, union in enumerate(branch.unions)
+        ]
+    else:
+        cells = [(None, branch.children)]
+
+    couple_minimum = angular_budgets.get(
+        branch.generation,
+        (
+            _DescendantAngularBudget(0.0, 0.0),
+            _DescendantAngularBudget(0.0, 0.0),
+        ),
+    )[1].minimum_sweep
+    protected = 0.0
+    for union, children in cells:
+        child_minimum = sum(
+            _descendant_branch_protected_couple_minimum(
+                child,
+                angular_budgets=angular_budgets,
+            )
+            for child in children
+        )
+        own_minimum = (
+            couple_minimum
+            if (
+                branch.generation >= 3
+                and union is not None
+                and union.spouse_handle
+            )
+            else 0.0
+        )
+        protected += max(own_minimum, child_minimum)
+    return protected
+
+
 def _allocate_angular_budgets(
     budgets: list[_DescendantAngularBudget],
     total_sweep: float,
+    *,
+    protected_minima: list[float] | None = None,
 ) -> list[float]:
     """Fill minima first, then preferred deficits, then residual demand."""
     if not budgets:
@@ -2481,6 +2531,20 @@ def _allocate_angular_budgets(
     minimum_total = sum(b.minimum_sweep for b in budgets)
     preferred_total = sum(b.preferred_sweep for b in budgets)
     if minimum_total > total_sweep:
+        if protected_minima is not None:
+            protected_total = sum(protected_minima)
+            if protected_total <= total_sweep:
+                deficits = [
+                    max(0.0, budget.minimum_sweep - protected)
+                    for budget, protected in zip(budgets, protected_minima)
+                ]
+                deficit_total = sum(deficits)
+                remaining = total_sweep - protected_total
+                if deficit_total > 0.0:
+                    return [
+                        protected + remaining * deficit / deficit_total
+                        for protected, deficit in zip(protected_minima, deficits)
+                    ]
         weights = [b.preferred_sweep for b in budgets]
         weight_total = sum(weights)
         if weight_total <= 0.0:
@@ -2591,6 +2655,7 @@ def _allocate_descendant_union_groups(
             ) * 2,
         )
         budgets: list[_DescendantAngularBudget] = []
+        protected_minima: list[float] = []
         for union_index, group in indexed_groups:
             child_budgets = [
                 _descendant_branch_angular_budget(
@@ -2623,7 +2688,33 @@ def _allocate_descendant_union_groups(
                 minimum_sweep=max(own_budget.minimum_sweep, children_minimum),
                 preferred_sweep=max(own_budget.preferred_sweep, children_preferred),
             ))
-        widths = _allocate_angular_budgets(budgets, total_sweep)
+            protected_children = sum(
+                _descendant_branch_protected_couple_minimum(
+                    child,
+                    angular_budgets=angular_budgets,
+                )
+                for child in group
+            )
+            union = (
+                branch.unions[union_index]
+                if 0 <= union_index < len(branch.unions)
+                else None
+            )
+            protected_own = (
+                couple_budget.minimum_sweep
+                if (
+                    branch.generation >= 3
+                    and union is not None
+                    and union.spouse_handle
+                )
+                else 0.0
+            )
+            protected_minima.append(max(protected_own, protected_children))
+        widths = _allocate_angular_budgets(
+            budgets,
+            total_sweep,
+            protected_minima=protected_minima,
+        )
     else:
         widths = None
 
@@ -2804,7 +2895,18 @@ def _allocate_descendant_branches_by_demand(
             )
             for branch in branches
         ]
-        widths = _allocate_angular_budgets(budgets, total_sweep)
+        protected_minima = [
+            _descendant_branch_protected_couple_minimum(
+                branch,
+                angular_budgets=angular_budgets,
+            )
+            for branch in branches
+        ]
+        widths = _allocate_angular_budgets(
+            budgets,
+            total_sweep,
+            protected_minima=protected_minima,
+        )
         allocations: list[DescendantBranchAllocation] = []
         angle = start_angle
         for index, (branch, width) in enumerate(zip(branches, widths)):

@@ -3459,12 +3459,20 @@ def _shrunk_marriage_size(
     )
     if capacity <= 0.0:
         return 0.0
-    return _font_size_for_width(
+    fitted_size = _font_size_for_width(
         label,
         target_size=ceiling,
         max_width=capacity,
         minimum_size=_MIN_DATE_FONT_SIZE_MM,
     )
+    final_radius = _marriage_line_radii(text_radius, fitted_size)[0]
+    final_capacity = _ancestor_arc_text_capacity(
+        text_radius=final_radius,
+        sweep_angle=sweep,
+    )
+    if estimate_emblem_text_width(label, fitted_size) > final_capacity + 1e-9:
+        return 0.0
+    return fitted_size
 
 
 def _descendant_marriage_label_and_size(
@@ -5635,6 +5643,17 @@ def layout_descendants(
         for depth, sizes in marriage_size_candidates.items()
         if sizes
     }
+    # A generation with only sectors below the absolute date floor has no
+    # measurement candidate, but its render pass still needs a ceiling so the
+    # local shrink fallback can attempt the smallest honest label. Use the
+    # generation's name size as the same issue-#56 cap; generations without a
+    # marriage simply ignore the seeded entry.
+    if show_descendant_marriages:
+        for depth in range(1, max_gen + 1):
+            generation_marriage_sizes.setdefault(
+                depth,
+                generation_name_sizes.get(depth, _DESCENDANT_MARRIAGE_FLOOR_MM),
+            )
     measure_only = False
     all_children = []
     for source_index, (branch, alloc) in enumerate(

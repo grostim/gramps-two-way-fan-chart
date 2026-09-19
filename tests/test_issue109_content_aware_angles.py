@@ -197,6 +197,49 @@ class Issue109ContentAwareAnglesTests(unittest.TestCase):
             places=9,
         )
 
+    def test_generation_two_long_singleton_name_keeps_its_dates(self):
+        singleton = person_branch("armand", 2)
+        root = person_branch("root", 1, children=(singleton,))
+        long_name = "Marie-Charlotte-Alexandrine de Bonneval-Villequier"
+        scene = layout_descendants(
+            self.canvas,
+            (root,),
+            name_lookup=lambda handle: long_name if handle == "armand" else handle,
+            dates_lookup=lambda handle: "1890–1960" if handle == "armand" else "",
+            configured_generation_limit=4,
+            show_descendant_marriages=True,
+        )
+        labels = [
+            node.content
+            for node in scene.children
+            if isinstance(node, SceneText)
+        ]
+
+        self.assertIn(long_name, labels)
+        self.assertIn("1890–1960", labels)
+
+    def test_generation_three_long_singleton_name_stays_compact(self):
+        singleton = person_branch("armand", 3)
+        parent = person_branch("parent", 2, children=(singleton,))
+        root = person_branch("root", 1, children=(parent,))
+        long_name = "Marie-Charlotte-Alexandrine de Bonneval-Villequier"
+        scene = layout_descendants(
+            self.canvas,
+            (root,),
+            name_lookup=lambda handle: long_name if handle == "armand" else handle,
+            dates_lookup=lambda handle: "1890–1960" if handle == "armand" else "",
+            configured_generation_limit=4,
+            show_descendant_marriages=True,
+        )
+        labels = [
+            node.content
+            for node in scene.children
+            if isinstance(node, SceneText)
+        ]
+
+        self.assertIn(long_name, labels)
+        self.assertNotIn("1890–1960", labels)
+
     def test_generation_two_singleton_name_and_date_share_one_radial_rail(self):
         singleton = person_branch("armand", 2)
         root = person_branch("root", 1, children=(singleton,))

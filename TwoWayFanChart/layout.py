@@ -5150,10 +5150,42 @@ def layout_descendants(
                             gap = name_size * 0.35
                             total = name_width + gap + dates_width
                             if total > text_width:
+                                if depth >= 3:
+                                    # Deep singletons keep the historical
+                                    # compact form: their sector cannot host the
+                                    # parallel date lane either, so only the
+                                    # name is emitted.
+                                    if not measure_only:
+                                        all_children.append(SceneText(
+                                            x=base_x,
+                                            y=base_y,
+                                            content=fitted_name,
+                                            font_size=name_size,
+                                            fill=TEXT_DARK,
+                                            anchor="middle",
+                                            rotation=rotation,
+                                            max_width=text_width,
+                                        ))
+                                    return
+                                # A Gen2 name that leaves no radial room for its
+                                # dates falls through to the parallel date lane
+                                # below. The rail is the preferred compact form,
+                                # not a licence to drop known dates: the lane is
+                                # already guarded by its own angular capacity.
+                                show_radial_rail = False
+                            else:
+                                show_radial_rail = True
+                            if show_radial_rail:
                                 if not measure_only:
+                                    name_offset = -total / 2.0 + name_width / 2.0
+                                    date_offset = total / 2.0 - dates_width / 2.0
+                                    rail_angle = math.radians(rotation)
+                                    axis_x, axis_y = math.cos(rail_angle), math.sin(rail_angle)
+                                    name_x = base_x + axis_x * name_offset
+                                    name_y = base_y + axis_y * name_offset
                                     all_children.append(SceneText(
-                                        x=base_x,
-                                        y=base_y,
+                                        x=name_x,
+                                        y=name_y,
                                         content=fitted_name,
                                         font_size=name_size,
                                         fill=TEXT_DARK,
@@ -5161,37 +5193,19 @@ def layout_descendants(
                                         rotation=rotation,
                                         max_width=text_width,
                                     ))
+                                    date_x = base_x + axis_x * date_offset
+                                    date_y = base_y + axis_y * date_offset
+                                    all_children.append(SceneText(
+                                        x=date_x,
+                                        y=date_y,
+                                        content=date_fit,
+                                        font_size=date_size,
+                                        fill=TEXT_GREY,
+                                        anchor="middle",
+                                        rotation=rotation,
+                                        max_width=text_width,
+                                    ))
                                 return
-                            if not measure_only:
-                                name_offset = -total / 2.0 + name_width / 2.0
-                                date_offset = total / 2.0 - dates_width / 2.0
-                                rail_angle = math.radians(rotation)
-                                axis_x, axis_y = math.cos(rail_angle), math.sin(rail_angle)
-                                name_x = base_x + axis_x * name_offset
-                                name_y = base_y + axis_y * name_offset
-                                all_children.append(SceneText(
-                                    x=name_x,
-                                    y=name_y,
-                                    content=fitted_name,
-                                    font_size=name_size,
-                                    fill=TEXT_DARK,
-                                    anchor="middle",
-                                    rotation=rotation,
-                                    max_width=text_width,
-                                ))
-                                date_x = base_x + axis_x * date_offset
-                                date_y = base_y + axis_y * date_offset
-                                all_children.append(SceneText(
-                                    x=date_x,
-                                    y=date_y,
-                                    content=date_fit,
-                                    font_size=date_size,
-                                    fill=TEXT_GREY,
-                                    anchor="middle",
-                                    rotation=rotation,
-                                    max_width=text_width,
-                                ))
-                            return
                         show_date_lane = bool(
                             date_fit
                             and date_target > 0.0

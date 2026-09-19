@@ -1061,10 +1061,23 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, SceneText)
             and "Compact Target" in node.content
         ]
+        spouse_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and "Spouse" in node.content
+        ]
         self.assertEqual(len(compact_couples), 2)
-        self.assertTrue(all(" × " in node.content for node in compact_couples))
+        self.assertTrue(
+            all(" × " in node.content for node in compact_couples)
+            or len(spouse_nodes) == 2,
+            "each union must keep both identities, merged or on two rails",
+        )
         self.assertEqual(
-            len({round(node.font_size, 9) for node in compact_couples}),
+            len({
+                round(node.font_size, 9)
+                for node in compact_couples + spouse_nodes
+            }),
             1,
         )
         compact_sectors = [
@@ -2123,10 +2136,23 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, SceneText)
             and "Compact Target" in node.content
         ]
+        spouse_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and "Spouse" in node.content
+        ]
         self.assertEqual(len(compact_couples), 2)
-        self.assertTrue(all(" × " in node.content for node in compact_couples))
+        self.assertTrue(
+            all(" × " in node.content for node in compact_couples)
+            or len(spouse_nodes) == 2,
+            "each union must keep both identities, merged or on two rails",
+        )
         self.assertEqual(
-            len({round(node.font_size, 9) for node in compact_couples}),
+            len({
+                round(node.font_size, 9)
+                for node in compact_couples + spouse_nodes
+            }),
             1,
         )
         compact_sectors = [

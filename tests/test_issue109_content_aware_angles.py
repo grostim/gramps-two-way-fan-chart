@@ -95,6 +95,53 @@ class Issue109ContentAwareAnglesTests(unittest.TestCase):
             places=9,
         )
 
+    def test_first_generation_budget_keeps_union_labels_aligned_with_children(self):
+        dense_children = (
+            person_branch("dense-child-a", 2, spouse="spouse-a"),
+            person_branch("dense-child-b", 2, spouse="spouse-b"),
+        )
+        root = DescendantBranch(
+            position_id="descendant-multi-root",
+            person=PersonNode("multi-root", "multi-root"),
+            generation=1,
+            unions=(
+                UnionBranch("wide-label-union", "wide-spouse", (), ()),
+                UnionBranch(
+                    "dense-union",
+                    "short-spouse",
+                    tuple(child.person.handle for child in dense_children),
+                    ("birth", "birth"),
+                ),
+            ),
+            children=dense_children,
+            children_by_union=((), dense_children),
+        )
+        per_union_demands = (10.0, 1.0)
+
+        budget = _descendant_branch_angular_budget(
+            root,
+            angular_budgets=self.profile,
+            text_demands={root.position_id: sum(per_union_demands)},
+            union_text_demands={root.position_id: per_union_demands},
+        )
+        dense_preferred = sum(
+            _descendant_branch_angular_budget(
+                child,
+                angular_budgets=self.profile,
+            ).preferred_sweep
+            for child in dense_children
+        )
+
+        self.assertAlmostEqual(
+            budget.preferred_sweep,
+            10.0 + max(1.0, dense_preferred),
+            places=9,
+        )
+        self.assertGreater(
+            budget.preferred_sweep,
+            max(sum(per_union_demands), dense_preferred),
+        )
+
     def test_one_child_singleton_chain_does_not_accumulate_ring_floors(self):
         final_singleton = person_branch("mathis", 3)
         sparse_chain = person_branch(

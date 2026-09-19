@@ -2382,6 +2382,7 @@ def _descendant_branch_angular_budget(
         int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
     ],
     text_demands: dict[str, float] | None = None,
+    union_text_demands: dict[str, tuple[float, ...]] | None = None,
 ) -> _DescendantAngularBudget:
     """Fold presentation and child budgets through the union hierarchy."""
     groups = list(_children_grouped_by_union(branch))
@@ -2414,6 +2415,28 @@ def _descendant_branch_angular_budget(
         )
         for _union, children in cells
     ]
+
+    if (
+        branch.generation == 1
+        and union_text_demands is not None
+        and branch.position_id in union_text_demands
+    ):
+        per_union = union_text_demands[branch.position_id]
+        minimum = sum(
+            max(
+                per_union[index] if index < len(per_union) else 0.0,
+                child_budget.minimum_sweep,
+            )
+            for index, child_budget in enumerate(child_budgets)
+        )
+        preferred = sum(
+            max(
+                per_union[index] if index < len(per_union) else 0.0,
+                child_budget.preferred_sweep,
+            )
+            for index, child_budget in enumerate(child_budgets)
+        )
+        return _DescendantAngularBudget(minimum, preferred)
 
     if (
         branch.generation == 1
@@ -2752,6 +2775,7 @@ def _allocate_descendant_branches_by_demand(
     start_angle: float,
     total_sweep: float,
     text_demands: dict[str, float] | None = None,
+    union_text_demands: dict[str, tuple[float, ...]] | None = None,
     angular_budgets: dict[
         int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
     ] | None = None,
@@ -2776,6 +2800,7 @@ def _allocate_descendant_branches_by_demand(
                 branch,
                 angular_budgets=angular_budgets,
                 text_demands=text_demands,
+                union_text_demands=union_text_demands,
             )
             for branch in branches
         ]
@@ -3568,6 +3593,7 @@ def layout_descendants(
         start_angle=_DESC_START_ANGLE,
         total_sweep=_DESC_TOTAL_SWEEP,
         text_demands=text_demands,
+        union_text_demands=union_text_demands,
         angular_budgets=angular_budgets,
     )
     source_allocations = tuple(reversed(allocations))

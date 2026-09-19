@@ -1854,6 +1854,14 @@ class DescendantBranchAllocation:
 
 
 @dataclass(frozen=True, slots=True)
+class _DescendantAngularBudget:
+    """Readable and preferred angular sweep for one rendered cell."""
+
+    minimum_sweep: float
+    preferred_sweep: float
+
+
+@dataclass(frozen=True, slots=True)
 class _DescendantUnionAllocation:
     """One contiguous angular block belonging to one recorded union."""
 
@@ -2053,9 +2061,116 @@ def layout_descendant_node(
     return SceneNode(children=tuple(children))
 
 
-# ---------------------------------------------------------------------------
-# Full descendant tree placement
-# ---------------------------------------------------------------------------
+def _descendant_first_generation_text_demand(
+    branch: DescendantBranch,
+    *,
+    name_lookup,
+    shortener,
+    inner_radius: float,
+    outer_radius: float,
+) -> float:
+    """Measure the GEN1 sweep required by its longest displayed identity.
+
+    The direct-child text is laid on an arc.  Convert the widest label at the
+    accepted GEN1 target size into an angular demand at the text lane radius,
+    including the renderer's one-degree safety margin and two millimetres of
+    side clearance.  This replaces a fixed sector floor without changing the
+    typography when a sector can afford the target size.
+    """
+    labels: list[str] = []
+    person_handle = branch.person.handle if branch.person else None
+    if person_handle:
+        labels.append(name_lookup(person_handle))
+    for union in branch.unions:
+        if union.spouse_handle:
+            labels.append(name_lookup(union.spouse_handle))
+    if shortener is not None:
+        shortened: list[str] = []
+        for label in labels:
+            if not label:
+                continue
+            try:
+                label = shortener(label, 1)
+            except Exception:
+                pass
+            shortened.append(label)
+        labels = shortened
+    labels = [label for label in labels if label]
+    if not labels:
+        return _DESC_MIN_SWEEP_BY_GENERATION[1]
+
+    ring_width = max(outer_radius - inner_radius, 0.0)
+    text_radius = max(inner_radius + 1.0, inner_radius + ring_width * 0.72)
+    longest_width = max(
+        estimate_text_width(label, _DESCENDANT_DENSE_FIRST_GEN_TARGET_MM)
+        for label in labels
+    )
+    required_arc = longest_width + 2.0
+    measured_sweep = math.degrees(required_arc / text_radius) + 1.0
+    return max(measured_sweep, 0.1)
+
+
+
+
+def _descendant_first_generation_union_text_demands(
+    branch: DescendantBranch,
+    *,
+    name_lookup,
+    shortener,
+    inner_radius: float,
+    outer_radius: float,
+    combined_couple_labels: bool = False,
+) -> tuple[float, ...]:
+    """Return one measured GEN1 demand for each displayed union cell."""
+    ring_width = max(outer_radius - inner_radius, 0.0)
+    text_radius = max(inner_radius + 1.0, inner_radius + ring_width * 0.72)
+
+    def demand_for(labels: list[str]) -> float:
+        cleaned: list[str] = []
+        for label in labels:
+            if not label:
+                continue
+            if shortener is not None:
+                try:
+                    label = shortener(label, 1)
+                except Exception:
+                    pass
+            cleaned.append(label)
+        if not cleaned:
+            return _DESC_MIN_SWEEP_BY_GENERATION[1]
+        longest_width = max(
+            estimate_text_width(label, _DESCENDANT_DENSE_FIRST_GEN_TARGET_MM)
+            for label in cleaned
+        )
+        return max(
+            math.degrees((longest_width + 2.0) / text_radius) + 1.0,
+            0.1,
+        )
+
+    person_label = (
+        name_lookup(branch.person.handle)
+        if branch.person
+        else ""
+    )
+    if not branch.unions:
+        return (demand_for([person_label]),)
+    demands = []
+    for union in branch.unions:
+        spouse_label = (
+            name_lookup(union.spouse_handle)
+            if union.spouse_handle
+            else ""
+        )
+        demands.append(
+            demand_for(
+                [f"{person_label} × {spouse_label}"]
+                if combined_couple_labels and person_label and spouse_label
+                else [person_label, spouse_label]
+            )
+        )
+    return tuple(demands)
+
+
 
 _DESC_START_ANGLE = 96.0  # mockup: 6° waist gap on the right
 _DESC_TOTAL_SWEEP = 168.0  # descendants end at 264°, leaving 6° on the left
@@ -2067,9 +2182,57 @@ _DESC_MIN_SWEEP_BY_GENERATION = {
     1: 21.0,
     2: 5.25,
     3: 2.1,
-    4: 1.5,
+    # Issue #105: a G4 couple needs the same minimum angular reservation as
+    # G3 to keep a two-rail name from touching the neighbouring separator.
+    4: 2.1,
     5: 1.2,
 }
+
+
+def _descendant_angular_budget_profile(
+    ring_bounds: tuple[tuple[float, float], ...],
+) -> dict[int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]]:
+    """Return geometry-derived (singleton, couple) budgets for every ring.
+
+    Intermediate labels run radially, so their angular footprint is the glyph
+    box crossing the sector.  The inverse below mirrors the renderer's usable
+    arc calculation: a 0.25-degree separator margin and one millimetre of side
+    clearance.  A singleton consumes one glyph box; a couple consumes two rail
+    offsets plus one glyph box.  This lets sparse one-rail branches yield angle
+    to two-rail couples instead of assigning both a generation-wide constant.
+    """
+    profile: dict[int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]] = {}
+    for depth, (ring_inner, ring_outer) in enumerate(ring_bounds, 1):
+        if depth == 1:
+            continue
+        text_radius = max((ring_inner + ring_outer) / 2.0, 1.0)
+        minimum_size = 3.2 if depth == 2 else _DESCENDANT_NAME_FLOOR_MM
+        preferred_size = _descendant_name_target(depth)
+
+        def required_sweep(em: float, font_size: float) -> float:
+            required_arc = em * font_size + 1.0
+            return 0.25 + math.degrees(required_arc / text_radius)
+
+        profile[depth] = (
+            _DescendantAngularBudget(
+                minimum_sweep=required_sweep(
+                    _COUPLE_GLYPH_BOX_EM, minimum_size
+                ),
+                preferred_sweep=required_sweep(
+                    _COUPLE_GLYPH_BOX_EM, preferred_size
+                ),
+            ),
+            _DescendantAngularBudget(
+                minimum_sweep=required_sweep(
+                    _COUPLE_TANGENTIAL_EM, minimum_size
+                ),
+                preferred_sweep=required_sweep(
+                    _COUPLE_TANGENTIAL_EM, preferred_size
+                ),
+            ),
+        )
+    return profile
+
 
 # Below this radius a circle is perceived as a dot rather than a medallion on
 # large-format output. Narrow sectors degrade to text-only instead of shrinking
@@ -2109,11 +2272,33 @@ def _descendant_generation_counts(branch: DescendantBranch) -> dict[int, int]:
     return counts
 
 
-def _descendant_angle_demand(branch: DescendantBranch) -> float:
-    """Return the branch sweep needed by its visible generations and cells."""
+def _descendant_angle_demand(
+    branch: DescendantBranch,
+    *,
+    text_demands: dict[str, float] | None = None,
+    angular_budgets: dict[
+        int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
+    ] | None = None,
+) -> float:
+    """Return the branch sweep needed by its visible generations and cells.
+
+    ``text_demands`` is populated only for the direct-child crown.  Keeping it
+    optional preserves the low-level allocator's historical contract while the
+    report can replace the fixed GEN1 floor with a measured label demand.
+    Geometry-aware callers pass ``angular_budgets`` so one-rail singleton cells
+    no longer inherit the same preferred sweep as two-rail couples.
+    """
+    if angular_budgets is not None:
+        return _descendant_branch_angular_budget(
+            branch,
+            angular_budgets=angular_budgets,
+            text_demands=text_demands,
+        ).preferred_sweep
     demand = 0.0
     for generation, count in _descendant_generation_counts(branch).items():
         slot = _DESC_MIN_SWEEP_BY_GENERATION.get(generation, 1.2)
+        if generation == 1 and text_demands is not None:
+            slot = text_demands.get(branch.position_id, slot)
         demand = max(demand, count * slot)
     # Propagate the deepest group demand through unsplit ancestors as well.
     # Without this, a zero/one-union branch can receive enough room for its
@@ -2137,6 +2322,12 @@ def _descendant_angle_demand(branch: DescendantBranch) -> float:
     elif branch.children:
         child_group = groups[0] if groups else branch.children
         demand = max(demand, _descendant_group_angle_demand(child_group))
+    if (
+        text_demands is not None
+        and branch.generation == 1
+        and branch.position_id in text_demands
+    ):
+        return demand
     return max(demand, _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2))
 
 
@@ -2184,6 +2375,207 @@ def _children_grouped_by_union(
     return tuple(groups)
 
 
+def _descendant_branch_angular_budget(
+    branch: DescendantBranch,
+    *,
+    angular_budgets: dict[
+        int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
+    ],
+    text_demands: dict[str, float] | None = None,
+    union_text_demands: dict[str, tuple[float, ...]] | None = None,
+) -> _DescendantAngularBudget:
+    """Fold presentation and child budgets through the union hierarchy."""
+    groups = list(_children_grouped_by_union(branch))
+    if branch.unions:
+        if len(groups) < len(branch.unions):
+            groups.extend(() for _ in range(len(branch.unions) - len(groups)))
+        cells = [
+            (union, groups[index])
+            for index, union in enumerate(branch.unions)
+        ]
+    else:
+        cells = [(None, branch.children)]
+
+    child_budgets = [
+        _DescendantAngularBudget(
+            minimum_sweep=sum(
+                _descendant_branch_angular_budget(
+                    child,
+                    angular_budgets=angular_budgets,
+                ).minimum_sweep
+                for child in children
+            ),
+            preferred_sweep=sum(
+                _descendant_branch_angular_budget(
+                    child,
+                    angular_budgets=angular_budgets,
+                ).preferred_sweep
+                for child in children
+            ),
+        )
+        for _union, children in cells
+    ]
+
+    if (
+        branch.generation == 1
+        and union_text_demands is not None
+        and branch.position_id in union_text_demands
+    ):
+        per_union = union_text_demands[branch.position_id]
+        minimum = sum(
+            max(
+                per_union[index] if index < len(per_union) else 0.0,
+                child_budget.minimum_sweep,
+            )
+            for index, child_budget in enumerate(child_budgets)
+        )
+        preferred = sum(
+            max(
+                per_union[index] if index < len(per_union) else 0.0,
+                child_budget.preferred_sweep,
+            )
+            for index, child_budget in enumerate(child_budgets)
+        )
+        return _DescendantAngularBudget(minimum, preferred)
+
+    if (
+        branch.generation == 1
+        and text_demands is not None
+        and branch.position_id in text_demands
+    ):
+        own = text_demands[branch.position_id]
+        return _DescendantAngularBudget(
+            minimum_sweep=max(own, sum(b.minimum_sweep for b in child_budgets)),
+            preferred_sweep=max(own, sum(b.preferred_sweep for b in child_budgets)),
+        )
+
+    single_budget, couple_budget = angular_budgets.get(
+        branch.generation,
+        (
+            _DescendantAngularBudget(
+                _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
+                _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
+            ),
+        ) * 2,
+    )
+    minimum = 0.0
+    preferred = 0.0
+    for (union, _children), child_budget in zip(cells, child_budgets):
+        own_budget = (
+            couple_budget
+            if union is not None and union.spouse_handle
+            else single_budget
+        )
+        minimum += max(own_budget.minimum_sweep, child_budget.minimum_sweep)
+        preferred += max(own_budget.preferred_sweep, child_budget.preferred_sweep)
+    return _DescendantAngularBudget(minimum, preferred)
+
+
+def _descendant_branch_protected_couple_minimum(
+    branch: DescendantBranch,
+    *,
+    angular_budgets: dict[
+        int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
+    ],
+) -> float:
+    """Return the Gen3+ couple minima that survive an overflow squeeze."""
+    groups = list(_children_grouped_by_union(branch))
+    if branch.unions:
+        if len(groups) < len(branch.unions):
+            groups.extend(() for _ in range(len(branch.unions) - len(groups)))
+        cells = [
+            (union, groups[index])
+            for index, union in enumerate(branch.unions)
+        ]
+    else:
+        cells = [(None, branch.children)]
+
+    couple_minimum = angular_budgets.get(
+        branch.generation,
+        (
+            _DescendantAngularBudget(0.0, 0.0),
+            _DescendantAngularBudget(0.0, 0.0),
+        ),
+    )[1].minimum_sweep
+    protected = 0.0
+    for union, children in cells:
+        child_minimum = sum(
+            _descendant_branch_protected_couple_minimum(
+                child,
+                angular_budgets=angular_budgets,
+            )
+            for child in children
+        )
+        own_minimum = (
+            couple_minimum
+            if (
+                branch.generation >= 3
+                and union is not None
+                and union.spouse_handle
+            )
+            else 0.0
+        )
+        protected += max(own_minimum, child_minimum)
+    return protected
+
+
+def _allocate_angular_budgets(
+    budgets: list[_DescendantAngularBudget],
+    total_sweep: float,
+    *,
+    protected_minima: list[float] | None = None,
+) -> list[float]:
+    """Fill minima first, then preferred deficits, then residual demand."""
+    if not budgets:
+        return []
+    minimum_total = sum(b.minimum_sweep for b in budgets)
+    preferred_total = sum(b.preferred_sweep for b in budgets)
+    if minimum_total > total_sweep:
+        if protected_minima is not None:
+            protected_total = sum(protected_minima)
+            if protected_total <= total_sweep:
+                deficits = [
+                    max(0.0, budget.minimum_sweep - protected)
+                    for budget, protected in zip(budgets, protected_minima)
+                ]
+                deficit_total = sum(deficits)
+                remaining = total_sweep - protected_total
+                if deficit_total > 0.0:
+                    return [
+                        protected + remaining * deficit / deficit_total
+                        for protected, deficit in zip(protected_minima, deficits)
+                    ]
+        weights = [b.preferred_sweep for b in budgets]
+        weight_total = sum(weights)
+        if weight_total <= 0.0:
+            return [total_sweep / len(budgets)] * len(budgets)
+        return [total_sweep * weight / weight_total for weight in weights]
+
+    widths = [b.minimum_sweep for b in budgets]
+    remaining = total_sweep - minimum_total
+    deficits = [
+        max(0.0, b.preferred_sweep - b.minimum_sweep)
+        for b in budgets
+    ]
+    deficit_total = sum(deficits)
+    if remaining <= deficit_total and deficit_total > 0.0:
+        return [
+            width + remaining * deficit / deficit_total
+            for width, deficit in zip(widths, deficits)
+        ]
+
+    widths = [b.preferred_sweep for b in budgets]
+    remaining = total_sweep - preferred_total
+    if remaining <= 0.0:
+        return widths
+    if preferred_total <= 0.0:
+        return [width + remaining / len(widths) for width in widths]
+    return [
+        width + remaining * budget.preferred_sweep / preferred_total
+        for width, budget in zip(widths, budgets)
+    ]
+
+
 def _descendant_group_angle_demand(
     children: tuple[DescendantBranch, ...],
 ) -> float:
@@ -2210,6 +2602,10 @@ def _allocate_descendant_union_groups(
     total_sweep: float,
     include_empty: bool = False,
     reverse_display: bool = False,
+    text_demands: tuple[float, ...] | None = None,
+    angular_budgets: dict[
+        int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
+    ] | None = None,
 ) -> tuple[_DescendantUnionAllocation, ...]:
     """Allocate one contiguous angular block per recorded union.
 
@@ -2248,53 +2644,133 @@ def _allocate_descendant_union_groups(
     if reverse_display:
         indexed_groups.reverse()
 
-    demands = []
-    for _union_index, group in indexed_groups:
-        demand = _descendant_group_angle_demand(group) if group else 0.0
-        if len(branch.unions) > 1:
-            # A sparse/empty union still needs enough angular room for its
-            # first-generation couple label. All later child sectors inherit
-            # this same floor so their radial boundaries remain aligned.
-            demand = max(
-                demand,
-                _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
-            )
-        demands.append(demand or 1.2)
-    total_demand = sum(demands) or float(len(indexed_groups))
-    # A demand floor is an absolute angular requirement, not a weight. The old
-    # proportional pass scaled `_DESC_MIN_SWEEP_BY_GENERATION` away when one
-    # union had many descendants: a G3 couple floor of 2.1° became 0.57° in the
-    # reporter's chart. Grant every couple cell its final floor first whenever
-    # the parent sweep can afford the set, then distribute only the demand
-    # surplus. If the parent cannot afford all floors, retain every cell and
-    # fall back to proportional packing; the renderer can then omit a couple
-    # label whose own cell is physically too narrow (see the render guard).
-    if len(branch.unions) > 1:
-        floors = [
-            min(
-                _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
-                total_sweep,
-            )
-            for _union_index, _group in indexed_groups
-        ]
-        if sum(floors) <= total_sweep:
-            extras = [
-                max(0.0, demand - floor)
-                for demand, floor in zip(demands, floors)
+    if angular_budgets is not None:
+        single_budget, couple_budget = angular_budgets.get(
+            branch.generation,
+            (
+                _DescendantAngularBudget(
+                    _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
+                    _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
+                ),
+            ) * 2,
+        )
+        budgets: list[_DescendantAngularBudget] = []
+        protected_minima: list[float] = []
+        for union_index, group in indexed_groups:
+            child_budgets = [
+                _descendant_branch_angular_budget(
+                    child,
+                    angular_budgets=angular_budgets,
+                )
+                for child in group
             ]
-            extra_total = sum(extras)
-            if extra_total > 0.0:
-                remaining = total_sweep - sum(floors)
-                widths = [
-                    floor + remaining * extra / extra_total
-                    for floor, extra in zip(floors, extras)
-                ]
+            children_minimum = sum(b.minimum_sweep for b in child_budgets)
+            children_preferred = sum(b.preferred_sweep for b in child_budgets)
+            if (
+                text_demands is not None
+                and 0 <= union_index < len(text_demands)
+            ):
+                own_budget = _DescendantAngularBudget(
+                    text_demands[union_index], text_demands[union_index]
+                )
             else:
-                widths = [total_sweep / len(indexed_groups)] * len(indexed_groups)
+                union = (
+                    branch.unions[union_index]
+                    if 0 <= union_index < len(branch.unions)
+                    else None
+                )
+                own_budget = (
+                    couple_budget
+                    if union is not None and union.spouse_handle
+                    else single_budget
+                )
+            budgets.append(_DescendantAngularBudget(
+                minimum_sweep=max(own_budget.minimum_sweep, children_minimum),
+                preferred_sweep=max(own_budget.preferred_sweep, children_preferred),
+            ))
+            protected_children = sum(
+                _descendant_branch_protected_couple_minimum(
+                    child,
+                    angular_budgets=angular_budgets,
+                )
+                for child in group
+            )
+            union = (
+                branch.unions[union_index]
+                if 0 <= union_index < len(branch.unions)
+                else None
+            )
+            protected_own = (
+                couple_budget.minimum_sweep
+                if (
+                    branch.generation >= 3
+                    and union is not None
+                    and union.spouse_handle
+                )
+                else 0.0
+            )
+            protected_minima.append(max(protected_own, protected_children))
+        widths = _allocate_angular_budgets(
+            budgets,
+            total_sweep,
+            protected_minima=protected_minima,
+        )
+    else:
+        widths = None
+
+    if widths is None:
+        demands = []
+        for _union_index, group in indexed_groups:
+            demand = _descendant_group_angle_demand(group) if group else 0.0
+            if (
+                text_demands is not None
+                and 0 <= _union_index < len(text_demands)
+            ):
+                demand = max(demand, text_demands[_union_index])
+            if len(branch.unions) > 1:
+                # A sparse/empty union still needs enough angular room for its
+                # first-generation couple label. All later child sectors inherit
+                # this same floor so their radial boundaries remain aligned.
+                demand = max(
+                    demand,
+                    _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
+                )
+            demands.append(demand or 1.2)
+        total_demand = sum(demands) or float(len(indexed_groups))
+        # A demand floor is an absolute angular requirement, not a weight. The old
+        # proportional pass scaled `_DESC_MIN_SWEEP_BY_GENERATION` away when one
+        # union had many descendants: a G3 couple floor of 2.1° became 0.57° in the
+        # reporter's chart. Grant every couple cell its final floor first whenever
+        # the parent sweep can afford the set, then distribute only the demand
+        # surplus. If the parent cannot afford all floors, retain every cell and
+        # fall back to proportional packing; the renderer can then omit a couple
+        # label whose own cell is physically too narrow (see the render guard).
+        if len(branch.unions) > 1:
+            floors = [
+                min(
+                    _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2),
+                    total_sweep,
+                )
+                for _union_index, _group in indexed_groups
+            ]
+            if sum(floors) <= total_sweep:
+                extras = [
+                    max(0.0, demand - floor)
+                    for demand, floor in zip(demands, floors)
+                ]
+                extra_total = sum(extras)
+                if extra_total > 0.0:
+                    remaining = total_sweep - sum(floors)
+                    widths = [
+                        floor + remaining * extra / extra_total
+                        for floor, extra in zip(floors, extras)
+                    ]
+                else:
+                    widths = [total_sweep / len(indexed_groups)] * len(indexed_groups)
+            else:
+                widths = [total_sweep * demand / total_demand for demand in demands]
         else:
             widths = [total_sweep * demand / total_demand for demand in demands]
-    else:
-        widths = [total_sweep * demand / total_demand for demand in demands]
     allocations: list[_DescendantUnionAllocation] = []
     angle = start_angle
     for group_index, ((union_index, group), width) in enumerate(
@@ -2320,6 +2796,10 @@ def _allocate_descendant_union_cells(
     start_angle: float,
     total_sweep: float,
     reverse_display: bool = False,
+    text_demands: tuple[float, ...] | None = None,
+    angular_budgets: dict[
+        int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
+    ] | None = None,
 ) -> tuple[_DescendantUnionAllocation, ...]:
     """Allocate one cell per recorded union at any descendant depth.
 
@@ -2337,6 +2817,8 @@ def _allocate_descendant_union_cells(
             start_angle=start_angle,
             total_sweep=total_sweep,
             reverse_display=reverse_display,
+            text_demands=text_demands,
+            angular_budgets=angular_budgets,
         )
     return _allocate_descendant_union_groups(
         branch,
@@ -2344,6 +2826,8 @@ def _allocate_descendant_union_cells(
         total_sweep=total_sweep,
         include_empty=True,
         reverse_display=reverse_display,
+        text_demands=text_demands,
+        angular_budgets=angular_budgets,
     )
 
 
@@ -2381,6 +2865,11 @@ def _allocate_descendant_branches_by_demand(
     *,
     start_angle: float,
     total_sweep: float,
+    text_demands: dict[str, float] | None = None,
+    union_text_demands: dict[str, tuple[float, ...]] | None = None,
+    angular_budgets: dict[
+        int, tuple[_DescendantAngularBudget, _DescendantAngularBudget]
+    ] | None = None,
 ) -> tuple[DescendantBranchAllocation, ...]:
     """Allocate siblings by deepest-generation demand with a hard minimum.
 
@@ -2396,17 +2885,92 @@ def _allocate_descendant_branches_by_demand(
     """
     if not branches:
         return ()
-    demands = [_descendant_angle_demand(branch) for branch in branches]
+    if angular_budgets is not None:
+        budgets = [
+            _descendant_branch_angular_budget(
+                branch,
+                angular_budgets=angular_budgets,
+                text_demands=text_demands,
+                union_text_demands=union_text_demands,
+            )
+            for branch in branches
+        ]
+        protected_minima = [
+            _descendant_branch_protected_couple_minimum(
+                branch,
+                angular_budgets=angular_budgets,
+            )
+            for branch in branches
+        ]
+        widths = _allocate_angular_budgets(
+            budgets,
+            total_sweep,
+            protected_minima=protected_minima,
+        )
+        allocations: list[DescendantBranchAllocation] = []
+        angle = start_angle
+        for index, (branch, width) in enumerate(zip(branches, widths)):
+            if index == len(branches) - 1:
+                width = start_angle + total_sweep - angle
+            allocations.append(DescendantBranchAllocation(
+                start_angle=angle,
+                sweep_angle=width,
+                leaf_count=_count_leaves(branch),
+            ))
+            angle += width
+        return tuple(allocations)
+    demands = [
+        _descendant_angle_demand(branch, text_demands=text_demands)
+        for branch in branches
+    ]
     total_demand = sum(demands)
     if total_demand <= 0:
         demands = [1.0] * len(branches)
         total_demand = float(len(branches))
 
+    # Issue #100: Gen3+ couples have priority over singleton cells. A couple
+    # needs the generation floor to keep two names on readable rails; a
+    # singleton may use a narrower cell and fall back to a compact name/date
+    # presentation. Preserve the historical floors whenever the complete fan
+    # can afford them, but do not sacrifice a couple to oversized singleton
+    # floors when the fan is dense.
     floors = [
-        min(_DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2), total_sweep)
+        min(
+            (
+                text_demands.get(branch.position_id, _DESC_MIN_SWEEP_BY_GENERATION[1])
+                if branch.generation == 1 and text_demands is not None
+                else _DESC_MIN_SWEEP_BY_GENERATION.get(branch.generation, 1.2)
+            ),
+            total_sweep,
+        )
         for branch in branches
     ]
-    if sum(floors) <= total_sweep:
+    couple_cell_counts = [
+        sum(1 for union in branch.unions if union.spouse_handle)
+        if branch.generation >= 3
+        else 0
+        for branch in branches
+    ]
+    for index, branch in enumerate(branches):
+        if couple_cell_counts[index]:
+            # A multi-union branch is subdivided again by
+            # `_allocate_descendant_union_cells`; reserve one couple floor per
+            # spouse cell and retain any deeper demand surplus at branch level.
+            couple_floor = floors[index] * couple_cell_counts[index]
+            floors[index] = min(
+                total_sweep,
+                max(couple_floor, demands[index]),
+            )
+    couple_priority = [count > 0 for count in couple_cell_counts]
+    priority_total = sum(
+        floor for floor, is_priority in zip(floors, couple_priority) if is_priority
+    )
+    if priority_total >= total_sweep:
+        # The couple floor is infeasible if it consumes the whole sector: keep
+        # every sibling represented with a positive proportional share rather
+        # than assigning zero width to singleton branches.
+        widths = [total_sweep * demand / total_demand for demand in demands]
+    elif sum(floors) <= total_sweep:
         extras = [
             max(0.0, demand - floor)
             for demand, floor in zip(demands, floors)
@@ -2419,13 +2983,46 @@ def _allocate_descendant_branches_by_demand(
                 for floor, extra in zip(floors, extras)
             ]
         else:
-            # Every branch sits exactly at its floor: split evenly instead
-            # of dumping the whole surplus onto the last branch.
-            widths = [total_sweep / len(branches)] * len(branches)
+            # Keep promoted floors (which may be unequal because a branch has
+            # several couple cells), then distribute only the unallocated
+            # remainder. Text-driven GEN1 demands retain their proportion here;
+            # equal redistribution would erase the measured difference whenever
+            # both labels fit below the total fan sweep.
+            remaining = total_sweep - sum(floors)
+            if text_demands is not None:
+                weight_total = sum(demands)
+                weights = [
+                    remaining * demand / weight_total
+                    for demand in demands
+                ] if weight_total > 0.0 else [
+                    remaining / len(branches)
+                ] * len(branches)
+            else:
+                weights = [remaining / len(branches)] * len(branches)
+            widths = [
+                floor + extra
+                for floor, extra in zip(floors, weights)
+            ]
     else:
-        # The floor budget overflows the fan: proportional squeeze keeps the
-        # shape intact and every branch shrinks uniformly.
-        widths = [total_sweep * demand / total_demand for demand in demands]
+        # Only singleton floors are negotiable in this dense case. Reserve the
+        # couple slots, then distribute what remains among singleton branches.
+        widths = [0.0] * len(branches)
+        remaining = total_sweep - priority_total
+        singleton_indices = [
+            index for index, is_priority in enumerate(couple_priority)
+            if not is_priority
+        ]
+        singleton_demand = sum(demands[index] for index in singleton_indices)
+        for index, is_priority in enumerate(couple_priority):
+            if is_priority:
+                widths[index] = floors[index]
+        if singleton_indices and singleton_demand > 0.0:
+            for index in singleton_indices:
+                widths[index] = remaining * demands[index] / singleton_demand
+        elif singleton_indices:
+            share = remaining / len(singleton_indices)
+            for index in singleton_indices:
+                widths[index] = share
 
     allocations: list[DescendantBranchAllocation] = []
     angle = start_angle
@@ -3101,18 +3698,10 @@ def layout_descendants(
         return SceneNode(children=())
 
     # Allocate every first-generation branch from the densest visible depth,
-    # not merely its immediate child count. This prevents deep lineages from
-    # collapsing into sub-degree outer sectors while sparse branches stay wide.
-    # The fan sweeps clockwise from the right waist to the left waist, so walk
-    # source-ordered children in reverse for display: oldest ends up left,
-    # youngest right. The source index is restored when assigning colors below.
+    # not merely its immediate child count. The text demand is measured per
+    # direct-child sector, so a long name gets room without penalising a short
+    # neighbouring branch (issue #103).
     display_branches = tuple(reversed(branches))
-    allocations = _allocate_descendant_branches_by_demand(
-        display_branches,
-        start_angle=_DESC_START_ANGLE,
-        total_sweep=_DESC_TOTAL_SWEEP,
-    )
-    source_allocations = tuple(reversed(allocations))
 
     all_children: list = []
     measure_only = True
@@ -3141,9 +3730,42 @@ def layout_descendants(
         max_gen,
         show_marriages=show_descendant_marriages,
     )
+    angular_budgets = _descendant_angular_budget_profile(ring_bounds)
     rings = _descendant_ring_ratios(max_gen)
     ring_widths = [total_depth * ratio for ratio in rings]
+    gen1_inner, gen1_outer = ring_bounds[0]
 
+    def _measured_name_label(handle: str | None) -> str:
+        if not handle:
+            return ""
+        if handle not in name_cache:
+            name_cache[handle] = name_lookup(handle)
+        return name_cache[handle]
+
+    union_text_demands = {
+        branch.position_id: _descendant_first_generation_union_text_demands(
+            branch,
+            name_lookup=_measured_name_label,
+            shortener=shortener,
+            inner_radius=gen1_inner,
+            outer_radius=gen1_outer,
+            combined_couple_labels=max_gen == 2,
+        )
+        for branch in display_branches
+    }
+    text_demands = {
+        position_id: sum(demands)
+        for position_id, demands in union_text_demands.items()
+    }
+    allocations = _allocate_descendant_branches_by_demand(
+        display_branches,
+        start_angle=_DESC_START_ANGLE,
+        total_sweep=_DESC_TOTAL_SWEEP,
+        text_demands=text_demands,
+        union_text_demands=union_text_demands,
+        angular_budgets=angular_budgets,
+    )
+    source_allocations = tuple(reversed(allocations))
     cx = canvas.center_cx_mm
     cy = canvas.center_cy_mm
 
@@ -3362,6 +3984,7 @@ def layout_descendants(
         label: str,
         portrait: str | None,
         highlighted: bool = False,
+        initials_font_size: float | None = None,
     ) -> None:
         if measure_only:
             return
@@ -3393,7 +4016,7 @@ def layout_descendants(
                 x=x,
                 y=y + radius * 0.25,
                 content=initials,
-                font_size=radius * 0.55,
+                font_size=initials_font_size or radius * 0.55,
                 fill=TEXT_DARK,
                 anchor="middle",
             ))
@@ -3436,6 +4059,8 @@ def layout_descendants(
                 start_angle=alloc_start,
                 total_sweep=alloc_sweep,
                 reverse_display=True,
+                text_demands=union_text_demands.get(branch.position_id),
+                angular_budgets=angular_budgets,
             )
             if len(branch.unions) > 1
             else ()
@@ -3975,6 +4600,7 @@ def layout_descendants(
                     child_label or raw_label,
                     child_portrait_data,
                     _highlight(branch.person.handle),
+                    initials_font_size=(3.1 if adaptive_dense else None),
                 )
                 _emit_medallion(
                     mx + tangent_x * pair_offset,
@@ -3983,6 +4609,7 @@ def layout_descendants(
                     spouse_medallion_label,
                     spouse_portrait_data,
                     _highlight(spouse_handle),
+                    initials_font_size=(3.1 if adaptive_dense else None),
                 )
             else:
                 child_radius = (
@@ -3997,6 +4624,7 @@ def layout_descendants(
                     child_label or raw_label,
                     child_portrait_data,
                     _highlight(branch.person.handle),
+                    initials_font_size=(3.1 if adaptive_dense else None),
                 )
         elif not union_cells:
             # Later-generation people are text-only by design. When highlight
@@ -4138,6 +4766,7 @@ def layout_descendants(
                         cell_child_label or raw_label,
                         cell_child_portrait,
                         _highlight(branch.person.handle),
+                        initials_font_size=(3.1 if adaptive_dense else None),
                     )
                     _emit_medallion(
                         cell_mx + tangent_x * cell_pair_offset,
@@ -4146,6 +4775,7 @@ def layout_descendants(
                         cell_spouse_label,
                         cell_spouse_portrait,
                         _highlight(cell_spouse_handle),
+                        initials_font_size=(3.1 if adaptive_dense else None),
                     )
                 else:
                     cell_child_radius = (
@@ -4160,6 +4790,7 @@ def layout_descendants(
                         cell_child_label or raw_label,
                         cell_child_portrait,
                         _highlight(branch.person.handle),
+                        initials_font_size=(3.1 if adaptive_dense else None),
                     )
             if union_text_inners:
                 med_text_inner = min(union_text_inners)
@@ -4576,6 +5207,72 @@ def layout_descendants(
                             max_width=text_width,
                             allow_ellipsis=False,
                         )
+                        # Issue #109: singleton dates use one radial rail from
+                        # Gen2 onward. A singleton therefore spends angular room
+                        # on one glyph box while its date consumes radial length,
+                        # leaving the two-rail budget to actual couples.
+                        if depth >= 2 and fitted_name and date_fit:
+                            name_width = estimate_text_width(fitted_name, name_size)
+                            dates_width = estimate_text_width(date_fit, date_size)
+                            gap = name_size * 0.35
+                            total = name_width + gap + dates_width
+                            if total > text_width:
+                                if depth >= 3:
+                                    # Deep singletons keep the historical
+                                    # compact form: their sector cannot host the
+                                    # parallel date lane either, so only the
+                                    # name is emitted.
+                                    if not measure_only:
+                                        all_children.append(SceneText(
+                                            x=base_x,
+                                            y=base_y,
+                                            content=fitted_name,
+                                            font_size=name_size,
+                                            fill=TEXT_DARK,
+                                            anchor="middle",
+                                            rotation=rotation,
+                                            max_width=text_width,
+                                        ))
+                                    return
+                                # A Gen2 name that leaves no radial room for its
+                                # dates falls through to the parallel date lane
+                                # below. The rail is the preferred compact form,
+                                # not a licence to drop known dates: the lane is
+                                # already guarded by its own angular capacity.
+                                show_radial_rail = False
+                            else:
+                                show_radial_rail = True
+                            if show_radial_rail:
+                                if not measure_only:
+                                    name_offset = -total / 2.0 + name_width / 2.0
+                                    date_offset = total / 2.0 - dates_width / 2.0
+                                    rail_angle = math.radians(rotation)
+                                    axis_x, axis_y = math.cos(rail_angle), math.sin(rail_angle)
+                                    name_x = base_x + axis_x * name_offset
+                                    name_y = base_y + axis_y * name_offset
+                                    all_children.append(SceneText(
+                                        x=name_x,
+                                        y=name_y,
+                                        content=fitted_name,
+                                        font_size=name_size,
+                                        fill=TEXT_DARK,
+                                        anchor="middle",
+                                        rotation=rotation,
+                                        max_width=text_width,
+                                    ))
+                                    date_x = base_x + axis_x * date_offset
+                                    date_y = base_y + axis_y * date_offset
+                                    all_children.append(SceneText(
+                                        x=date_x,
+                                        y=date_y,
+                                        content=date_fit,
+                                        font_size=date_size,
+                                        fill=TEXT_GREY,
+                                        anchor="middle",
+                                        rotation=rotation,
+                                        max_width=text_width,
+                                    ))
+                                return
                         show_date_lane = bool(
                             date_fit
                             and date_target > 0.0
@@ -4824,6 +5521,8 @@ def layout_descendants(
                 total_sweep=alloc_sweep,
                 include_empty=True,
                 reverse_display=True,
+                text_demands=union_text_demands.get(branch.position_id),
+                angular_budgets=angular_budgets,
             )
             for union_allocation in union_allocations:
                 display_children = tuple(reversed(union_allocation.children))
@@ -4831,6 +5530,7 @@ def layout_descendants(
                     display_children,
                     start_angle=union_allocation.start_angle,
                     total_sweep=union_allocation.sweep_angle,
+                    angular_budgets=angular_budgets,
                 )
                 source_child_allocs = tuple(reversed(child_allocs))
                 for child, child_alloc in zip(

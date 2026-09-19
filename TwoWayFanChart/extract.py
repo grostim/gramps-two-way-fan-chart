@@ -282,6 +282,38 @@ def _spouse_handle(family: Any, person_handle: str) -> str | None:
     return None
 
 
+def _birth_sort_key(database: Any, child_ref: Any, attachment_index: int) -> tuple[int, int]:
+    """Sort a child by birth date, retaining attachment order when unknown."""
+    child_handle = child_ref.get_reference_handle()
+    child = database.get_person_from_handle(child_handle)
+    get_birth_ref = getattr(child, "get_birth_ref", None) if child is not None else None
+    if callable(get_birth_ref):
+        birth_ref = get_birth_ref()
+        get_reference_handle = getattr(birth_ref, "get_reference_handle", None)
+        event_handle = (
+            get_reference_handle() if callable(get_reference_handle) else None
+        )
+        if event_handle:
+            event = database.get_event_from_handle(event_handle)
+            date = event.get_date_object() if event is not None else None
+            if date is not None and date.is_valid():
+                return 0, date.get_sort_value()
+    return 1, attachment_index
+
+
+def _sort_child_refs_by_birth(
+    database: Any, child_refs_with_relations: list[tuple[Any, str]]
+) -> list[tuple[Any, str]]:
+    """Return children chronologically, with stable fallback ordering."""
+    return [
+        child_ref_with_relation
+        for _index, child_ref_with_relation in sorted(
+            enumerate(child_refs_with_relations),
+            key=lambda item: _birth_sort_key(database, item[1][0], item[0]),
+        )
+    ]
+
+
 def _relation_for_parent(family: Any, child_ref: Any, parent_handle: str) -> str:
     """Return the relation recorded for the role occupied by one parent."""
     if family.get_father_handle() == parent_handle:
@@ -374,6 +406,9 @@ def extract_descendant_branches(
                 for ref, child_relation in child_refs_with_relations
                 if allowed is None or child_relation in allowed
             ]
+            child_refs_with_relations = _sort_child_refs_by_birth(
+                database, child_refs_with_relations
+            )
             if generation == generations:
                 # Final-generation children are not materialized, so validate
                 # their handles before retaining them as continuation evidence.
@@ -452,10 +487,15 @@ def extract_descendant_branches(
     center_parent_handle = (
         center_family.get_father_handle() or center_family.get_mother_handle()
     )
-    for index, child_ref in enumerate(center_family.get_child_ref_list()):
-        relation = _relation_for_parent(
-            center_family, child_ref, center_parent_handle
+    center_child_refs = [
+        (
+            child_ref,
+            _relation_for_parent(center_family, child_ref, center_parent_handle),
         )
+        for child_ref in center_family.get_child_ref_list()
+    ]
+    center_child_refs = _sort_child_refs_by_birth(database, center_child_refs)
+    for index, (child_ref, relation) in enumerate(center_child_refs):
         if allowed is not None and relation not in allowed:
             continue
         branch = build_branch(

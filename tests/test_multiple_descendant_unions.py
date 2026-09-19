@@ -8,6 +8,7 @@ from TwoWayFanChart.extract import extract_descendant_branches
 from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
     _DESCENDANT_CONTINUATION_DOT_RADIUS_MM,
+    _DESC_MIN_SWEEP_BY_GENERATION,
     _allocate_descendant_branches_by_demand,
     _allocate_descendant_union_cells,
     _allocate_descendant_union_groups,
@@ -694,7 +695,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertAlmostEqual(
             _descendant_group_angle_demand((nested,)),
-            3.0,
+            2 * _DESC_MIN_SWEEP_BY_GENERATION[4],
         )
         parent_groups = _allocate_descendant_union_groups(
             parent,
@@ -1060,10 +1061,23 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, SceneText)
             and "Compact Target" in node.content
         ]
+        spouse_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and "Spouse" in node.content
+        ]
         self.assertEqual(len(compact_couples), 2)
-        self.assertTrue(all(" × " in node.content for node in compact_couples))
+        self.assertTrue(
+            all(" × " in node.content for node in compact_couples)
+            or len(spouse_nodes) == 2,
+            "each union must keep both identities, merged or on two rails",
+        )
         self.assertEqual(
-            len({round(node.font_size, 9) for node in compact_couples}),
+            len({
+                round(node.font_size, 9)
+                for node in compact_couples + spouse_nodes
+            }),
             1,
         )
         compact_sectors = [
@@ -1756,7 +1770,7 @@ class MultipleDescendantUnionTests(unittest.TestCase):
 
         self.assertAlmostEqual(
             _descendant_group_angle_demand((nested,)),
-            3.0,
+            2 * _DESC_MIN_SWEEP_BY_GENERATION[4],
         )
         parent_groups = _allocate_descendant_union_groups(
             parent,
@@ -2122,10 +2136,23 @@ class MultipleDescendantUnionTests(unittest.TestCase):
             if isinstance(node, SceneText)
             and "Compact Target" in node.content
         ]
+        spouse_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, SceneText)
+            and "Spouse" in node.content
+        ]
         self.assertEqual(len(compact_couples), 2)
-        self.assertTrue(all(" × " in node.content for node in compact_couples))
+        self.assertTrue(
+            all(" × " in node.content for node in compact_couples)
+            or len(spouse_nodes) == 2,
+            "each union must keep both identities, merged or on two rails",
+        )
         self.assertEqual(
-            len({round(node.font_size, 9) for node in compact_couples}),
+            len({
+                round(node.font_size, 9)
+                for node in compact_couples + spouse_nodes
+            }),
             1,
         )
         compact_sectors = [

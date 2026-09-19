@@ -14,6 +14,8 @@ from TwoWayFanChart.layout import (
     _DESCENDANT_OUTER_RADIUS_RATIO,
     _DESC_TOTAL_SWEEP,
     _allocate_descendant_union_cells,
+    _descendant_angular_budget_profile,
+    _descendant_first_generation_union_text_demands,
     _descendant_ring_bounds,
     _descendant_ring_layout,
     _MIN_INITIALS_MEDALLION_RADIUS_MM,
@@ -1084,11 +1086,26 @@ class DescendantReadabilityTests(unittest.TestCase):
         ]
         self.assertEqual(len(dots), 3)
 
+        ring_bounds, _bands = _descendant_ring_layout(
+            canvas.descendant_inner_radius_mm,
+            canvas.descendant_outer_radius_mm,
+            1,
+            show_marriages=False,
+        )
+        text_demands = _descendant_first_generation_union_text_demands(
+            root,
+            name_lookup=lambda handle: handle,
+            shortener=None,
+            inner_radius=ring_bounds[0][0],
+            outer_radius=ring_bounds[0][1],
+        )
         cells = _allocate_descendant_union_cells(
             root,
             start_angle=96.0,
             total_sweep=_DESC_TOTAL_SWEEP,
             reverse_display=True,
+            text_demands=text_demands,
+            angular_budgets=_descendant_angular_budget_profile(ring_bounds),
         )
         continuation_cell = next(cell for cell in cells if cell.union_index == 0)
         expected_angle = (

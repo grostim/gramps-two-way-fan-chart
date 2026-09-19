@@ -2813,11 +2813,61 @@ def _descendant_marriage_plan(
         capacity,
         inner_r=inner_r,
         outer_r=outer_r,
+        sweep=sweep,
         common_size=common_size,
     )
     if not label:
         return (), 0.0
     return (label,), size
+
+
+def _shrunk_marriage_size(
+    label: str,
+    *,
+    text_radius: float,
+    sweep: float,
+    ceiling: float,
+) -> float:
+    """Return the size that fits *label* in its own arc, at or below *ceiling*.
+
+    Issue #111: a marriage line leads with the enlarged emblem, and an emblem
+    line cannot be compressed by the renderer's ``textLength`` (rescaling would
+    cancel the 1.5x enlargement). A sector too narrow to carry the crown's
+    shared size therefore used to lose its date outright, leaving a coloured
+    band with no readable fact. Shrinking the font keeps the date and its
+    emblem.
+
+    The size is measured against the arc the line is actually DRAWN on, not the
+    band's mid radius: the date line sits one half-leading inside the text
+    radius, where its arc is shorter (the same correction issue #90 applied to
+    the two-line path). Sizing on the mid radius let a shrunk emblem date
+    overflow its own sector by a few per cent.
+
+    The returned size never exceeds *ceiling*, so the crown keeps its shared
+    size as the ceiling and issue #56 (a marriage label never outgrows the
+    individuals it concerns) still holds. The floor is the absolute date size,
+    which is deliberately below the readability floor: this path exists only
+    for sectors that would otherwise render nothing at all.
+    """
+    if sweep <= 0.0:
+        return 0.0
+    # The leading depends on the size, so solve the fixed point by starting from
+    # the ceiling: shrinking only shortens the leading and therefore lengthens
+    # the arc, so one pass from the ceiling is the safe (never-overflowing) fit.
+    probe = max(ceiling, _MIN_DATE_FONT_SIZE_MM)
+    line_radius = _marriage_line_radii(text_radius, probe)[0]
+    capacity = _ancestor_arc_text_capacity(
+        text_radius=line_radius,
+        sweep_angle=sweep,
+    )
+    if capacity <= 0.0:
+        return 0.0
+    return _font_size_for_width(
+        label,
+        target_size=ceiling,
+        max_width=capacity,
+        minimum_size=_MIN_DATE_FONT_SIZE_MM,
+    )
 
 
 def _descendant_marriage_label_and_size(
@@ -2827,6 +2877,7 @@ def _descendant_marriage_label_and_size(
     *,
     inner_r: float,
     outer_r: float,
+    sweep: float = 0.0,
     common_size: float | None = None,
 ) -> tuple[str, float]:
     """Return the best-fit single-line label and its font size.
@@ -2861,28 +2912,44 @@ def _descendant_marriage_label_and_size(
         # different label can be selected at render time (the year instead of
         # the full date-and-place), so the fit is re-checked here rather than
         # assumed. An emblem line cannot be compressed by the renderer, so a
-        # sector whose arc cannot carry the shared size omits its date and keeps
-        # its colored band; the ring keeps one size for every label it does
-        # render (issue #56).
+        # sector whose arc cannot carry the shared size used to omit its date
+        # and keep only its colored band (issue #56).
+        #
+        # Issue #111: that omission is now the LAST resort. A sector too narrow
+        # for the crown's shared size shrinks its own font instead, so the date
+        # and its emblem survive wherever any readable-or-smaller size fits.
         if common_size < _DESCENDANT_MARRIAGE_FLOOR_MM:
-            return "", 0.0
+            shrunk = _shrunk_marriage_size(
+                label,
+                text_radius=(inner_r + outer_r) / 2.0,
+                sweep=sweep,
+                ceiling=common_size,
+            )
+            return (label, shrunk) if shrunk > 0.0 else ("", 0.0)
         if (
             _marriage_has_emblem(label)
             and estimate_emblem_text_width(label, common_size) > capacity
         ):
-            return "", 0.0
+            shrunk = _shrunk_marriage_size(
+                label,
+                text_radius=(inner_r + outer_r) / 2.0,
+                sweep=sweep,
+                ceiling=common_size,
+            )
+            return (label, shrunk) if shrunk > 0.0 else ("", 0.0)
         return label, common_size
     # Issue #90: the single-line fit is floored exactly like a name. The label
     # choice above is made at the readability threshold, but the SIZE used to
     # fall back to `_MIN_DATE_FONT_SIZE_MM` (0.25 mm) once the arc capacity
     # collapsed — an unreadable date on any print size.
     #
-    # Above the floor the renderer protects itself wherever it can: a line
-    # without an emblem is compressed through `textLength`. An emblem line
-    # forbids that (it would rescale the glyphs and cancel the 1.5x
-    # enlargement), so a year that still overflows its arc is omitted and the
-    # band keeps its color — the repository's established treatment for a date
-    # that cannot be read.
+    # Issue #111: this branch is the MEASUREMENT / local-fit pass (no common
+    # size), and it feeds `min(sizes)` for the whole crown. It must therefore
+    # keep omitting a sector it cannot carry at the readable floor: returning a
+    # shrunk size here would drag the crown's shared size down to that of its
+    # tightest single sector and render every date in the ring unreadable. The
+    # shrink for an impossible sector is applied at render time instead, where
+    # the crown's shared size is already fixed.
     font_size = _font_size_for_width(
         label,
         target_size=min(2.8, max(0.8, (outer_r - inner_r) * 0.42)),

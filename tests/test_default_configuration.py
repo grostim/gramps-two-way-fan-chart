@@ -22,8 +22,8 @@ class DefaultConfigurationTests(unittest.TestCase):
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
 
-        self.assertIn('version="1.2.87"', registration)
-        self.assertIn('VERSION = "1.2.87"', builder)
+        self.assertIn('version="1.2.88"', registration)
+        self.assertIn('VERSION = "1.2.88"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
@@ -37,6 +37,7 @@ class DefaultConfigurationTests(unittest.TestCase):
         self.assertTrue(config.include_private)
         self.assertEqual(config.living_people_mode, 99)
         self.assertFalse(config.show_highlight_markers)
+        self.assertFalse(config.highlight_source_ok_dates)
         self.assertTrue(config.show_ancestor_marriages)
         self.assertTrue(config.show_descendant_marriages)
 

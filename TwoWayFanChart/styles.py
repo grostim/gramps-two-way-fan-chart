@@ -153,7 +153,7 @@ MEDALLION_FILL = "#FFFFFF"
 HIDDEN_FILL = "#D0D0D0"
 TEXT_DARK = "#4A4A4A"
 TEXT_GREY = "#888888"
-# Optional evidence accent for dates carrying the exact ``source OK`` tag.
+# Optional evidence accent for dates carrying the exact ``Source OK`` tag.
 SOURCE_OK_DATE_FILL = "#00A83B"
 CONTINUATION_DOT_FILL = TEXT_DARK
 SECTOR_STROKE = "#FFFFFF"

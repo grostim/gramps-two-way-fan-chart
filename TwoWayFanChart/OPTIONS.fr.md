@@ -228,7 +228,7 @@ filtre à travers la confidentialité.
 - Défaut : `false`
 
 Quand elle est activée, les dates de naissance ou de décès dont
-l'événement porte exactement l'étiquette Gramps `source OK` sont
+l'événement porte exactement l'étiquette Gramps `Source OK` sont
 affichées en vert vif. L'option respecte la confidentialité et conserve
 le gris par défaut quand elle est désactivée.
 

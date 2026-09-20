@@ -94,7 +94,7 @@ class SourceOkDateTests(unittest.TestCase):
         self.assertEqual(dates[-1].fill, SOURCE_OK_DATE_FILL)
 
     def test_named_tag_adapter_is_supported_without_approximate_matching(self):
-        birth = FakeEvent("birth", EventType.BIRTH, tags=(FakeNamedTag("source OK"),))
+        birth = FakeEvent("birth", EventType.BIRTH, tags=(FakeNamedTag("Source OK"),))
         death = FakeEvent("death", EventType.DEATH)
         db = FakeDatabase((birth, death), FakePerson(birth, death))
 
@@ -108,7 +108,7 @@ class SourceOkDateTests(unittest.TestCase):
                 (True, False),
             )
             self.assertEqual(
-                source_ok_vital_dates(db, "person", "source-ok", "source ok"),
+                source_ok_vital_dates(db, "person", "source-ok", "source OK"),
                 (False, False),
             )
 

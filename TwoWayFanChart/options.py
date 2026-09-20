@@ -323,7 +323,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
         menu.add_option(
             _(CATEGORY_COLORS),
             "highlight_source_ok_dates",
-            BooleanOption(_("Highlight dates tagged source OK"), False),
+            BooleanOption(_("Highlight dates tagged Source OK"), False),
         )
         menu.add_option(
             _(CATEGORY_PRIVACY),

@@ -32,6 +32,7 @@ ACTIVE_CONFIG_FIELDS = {
     "years_past_death",
     "highlight_tag",
     "show_highlight_markers",
+    "highlight_source_ok_dates",
 }
 
 ACTIVE_MENU_KEYS = {
@@ -56,6 +57,7 @@ ACTIVE_MENU_KEYS = {
     "privacy_mode",
     "highlight_tag",
     "show_highlight_markers",
+    "highlight_source_ok_dates",
 }
 
 

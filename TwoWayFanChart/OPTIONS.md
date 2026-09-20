@@ -211,6 +211,14 @@ medallions whose person carries the configured `highlight_tag`. The
 marker is cleared automatically for masked or excluded people so no
 signal leaks through privacy filtering.
 
+### highlight_source_ok_dates
+- Type: boolean
+- Default: `false`
+
+When enabled, vital-date labels whose birth or death event carries the
+exact Gramps tag `source OK` are shown in vivid green. The option is
+privacy-safe and leaves the default grey date styling unchanged.
+
 ---
 
 ## Privacy

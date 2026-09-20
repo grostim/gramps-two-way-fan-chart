@@ -15,7 +15,12 @@ from typing import Any
 try:
     from TwoWayFanChart.config import ChartConfig, PrivacyMode
     from TwoWayFanChart.extract import extract_chart_graph
-    from TwoWayFanChart.facts import extract_union, simple_name, simple_dates
+    from TwoWayFanChart.facts import (
+        extract_union,
+        simple_name,
+        simple_dates,
+        source_ok_vital_dates,
+    )
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -42,7 +47,12 @@ try:
 except ModuleNotFoundError:
     from config import ChartConfig, PrivacyMode  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
-    from facts import extract_union, simple_name, simple_dates  # type: ignore[no-redef]
+    from facts import (  # type: ignore[no-redef]
+        extract_union,
+        simple_name,
+        simple_dates,
+        source_ok_vital_dates,
+    )
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -387,6 +397,11 @@ def _build_scene(
     highlight_tag_handle = (
         _resolve_highlight_tag_handle() if config.show_highlight_markers else None
     )
+    source_ok_tag_handle = (
+        resolve_highlight_tag_handle(db, "source OK")
+        if config.highlight_source_ok_dates
+        else None
+    )
 
     def _person_visibility(handle: str | None) -> tuple[Any | None, VisibilityState]:
         if not handle:
@@ -437,6 +452,16 @@ def _build_scene(
         if not decision_for_state(state).expose_details:
             return ""
         return _public_dates(db, handle)
+
+    def _safe_source_ok_dates(handle: str | None) -> bool:
+        """Return whether at least one displayed vital date is source-validated."""
+        if not handle or not source_ok_tag_handle:
+            return False
+        _person, state = _person_visibility(handle)
+        if not decision_for_state(state).expose_details:
+            return False
+        birth_ok, death_ok = source_ok_vital_dates(db, handle, source_ok_tag_handle)
+        return birth_ok or death_ok
 
     def _safe_portrait(handle: str | None) -> str | None:
         if not handle or not config.show_portraits:
@@ -507,6 +532,8 @@ def _build_scene(
         right_label=right_label,
         left_dates=left_dates,
         right_dates=right_dates,
+        left_dates_source_ok=_safe_source_ok_dates(center_left_handle),
+        right_dates_source_ok=_safe_source_ok_dates(center_right_handle),
         marriage_label=center_marriage_label,
         left_portrait=left_portrait,
         right_portrait=right_portrait,
@@ -528,7 +555,7 @@ def _build_scene(
 
     # --- Ancestor fan with real person names ---
     # Each slot carries its privacy-safe label, dates and optional portrait.
-    ancestor_slots: list[tuple[str, str, str, str | None, bool]] = []
+    ancestor_slots: list[tuple[str, str, str, str | None, bool, bool]] = []
     for slot in graph.ancestor_slots:
         if slot.person is not None:
             full_label = _safe_name(slot.person.handle)
@@ -550,6 +577,7 @@ def _build_scene(
                     if config.show_highlight_markers and slot.person
                     else False
                 ),
+                _safe_source_ok_dates(slot.person.handle) if slot.person else False,
             )
         )
     ancestor_marriages = tuple(
@@ -584,6 +612,9 @@ def _build_scene(
     def _dates_lookup(handle: str | None) -> str:
         return _safe_dates(handle)
 
+    def _source_ok_dates_lookup(handle: str | None) -> bool:
+        return _safe_source_ok_dates(handle)
+
     descendant_marriages = (
         _descendant_marriage_labels(
             db,
@@ -602,6 +633,7 @@ def _build_scene(
         graph.descendant_branches,
         name_lookup=_name_lookup,
         dates_lookup=_dates_lookup,
+        source_ok_dates_lookup=_source_ok_dates_lookup,
         shortener=_descendant_short_label,
         portrait_lookup=_safe_portrait,
         highlight_lookup=_safe_highlight,

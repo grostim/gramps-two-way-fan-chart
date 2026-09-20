@@ -321,6 +321,11 @@ class TwoWayFanChartOptions(MenuReportOptions):
             BooleanOption(_("Show citation markers"), False),
         )
         menu.add_option(
+            _(CATEGORY_COLORS),
+            "highlight_source_ok_dates",
+            BooleanOption(_("Highlight dates tagged source OK"), False),
+        )
+        menu.add_option(
             _(CATEGORY_PRIVACY),
             "privacy_mode",
             _enum(
@@ -380,6 +385,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "years_past_death": config.years_past_death,
             "highlight_tag": config.highlight_tag,
             "show_highlight_markers": config.show_highlight_markers,
+            "highlight_source_ok_dates": config.highlight_source_ok_dates,
         }
 
     def apply_selected_preset(self) -> None:
@@ -524,6 +530,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 years_past_death=value("years_past_death"),
                 highlight_tag=value("highlight_tag"),
                 show_highlight_markers=value("show_highlight_markers"),
+                highlight_source_ok_dates=value("highlight_source_ok_dates"),
             )
         except (TypeError, ValueError) as error:
             raise ReportError(

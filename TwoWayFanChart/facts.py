@@ -169,24 +169,40 @@ def extract_vital_dates(
     )
 
 
-def _object_has_tag(value, tag_handle: str) -> bool:
-    """Return whether a Gramps object carries the resolved evidence tag."""
+def _object_has_tag(value, tag_handle: str, tag_name: str = "source OK") -> bool:
+    """Return whether a Gramps object carries the resolved evidence tag.
+
+    Gramps normally stores tag handles on primary objects. Some database
+    adapters expose tag names or lightweight tag objects instead, so accept
+    those representations too while retaining an exact-name comparison.
+    """
     if value is None:
         return False
     getter = getattr(value, "get_tag_list", None)
     if not callable(getter):
         return False
     try:
-        return tag_handle in tuple(getter())
+        for tag in tuple(getter()):
+            if isinstance(tag, str) and tag in {tag_handle, tag_name}:
+                return True
+            get_handle = getattr(tag, "get_handle", None)
+            if callable(get_handle) and get_handle() == tag_handle:
+                return True
+            get_name = getattr(tag, "get_name", None)
+            if callable(get_name) and get_name() == tag_name:
+                return True
+        return False
     except Exception:
         return False
 
 
-def _event_has_source_ok_tag(database, event, tag_handle: str) -> bool:
+def _event_has_source_ok_tag(
+    database, event, tag_handle: str, tag_name: str = "source OK"
+) -> bool:
     """Check the event and its citation/source chain for the evidence tag."""
     if event is None or not tag_handle:
         return False
-    if _object_has_tag(event, tag_handle):
+    if _object_has_tag(event, tag_handle, tag_name):
         return True
     try:
         references = event.get_citation_ref_list()
@@ -198,14 +214,14 @@ def _event_has_source_ok_tag(database, event, tag_handle: str) -> bool:
             citation = database.get_citation_from_handle(citation_handle)
         except Exception:
             continue
-        if _object_has_tag(citation, tag_handle):
+        if _object_has_tag(citation, tag_handle, tag_name):
             return True
         try:
             source_handle = citation.get_reference_handle()
             source = database.get_source_from_handle(source_handle)
         except Exception:
             continue
-        if _object_has_tag(source, tag_handle):
+        if _object_has_tag(source, tag_handle, tag_name):
             return True
     return False
 
@@ -214,6 +230,7 @@ def source_ok_vital_dates(
     database,
     handle: str | None,
     tag_handle: str,
+    tag_name: str = "source OK",
 ) -> tuple[bool, bool]:
     """Return source-tag state for the person's birth and death events.
 
@@ -229,13 +246,13 @@ def source_ok_vital_dates(
         # Gramps users commonly apply validation tags to the person rather
         # than to each vital event. In that case the tag validates the vital
         # dates as a pair; event/citation/source tags remain supported below.
-        if _object_has_tag(person, tag_handle):
+        if _object_has_tag(person, tag_handle, tag_name):
             return True, True
         birth = get_birth_or_fallback(database, person)
         death = get_death_or_fallback(database, person)
         return (
-            _event_has_source_ok_tag(database, birth, tag_handle),
-            _event_has_source_ok_tag(database, death, tag_handle),
+            _event_has_source_ok_tag(database, birth, tag_handle, tag_name),
+            _event_has_source_ok_tag(database, death, tag_handle, tag_name),
         )
     except Exception:
         return False, False

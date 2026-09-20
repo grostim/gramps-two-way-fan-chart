@@ -33,6 +33,14 @@ class FakePerson:
         self.death = death
 
 
+class FakeNamedTag:
+    def __init__(self, name):
+        self.name = name
+
+    def get_name(self):
+        return self.name
+
+
 class FakeDatabase:
     def __init__(self, events, person):
         self.events = {event.handle: event for event in events}
@@ -84,6 +92,25 @@ class SourceOkDateTests(unittest.TestCase):
         )
         dates = [node for node in scene.children if isinstance(node, SceneText)]
         self.assertEqual(dates[-1].fill, SOURCE_OK_DATE_FILL)
+
+    def test_named_tag_adapter_is_supported_without_approximate_matching(self):
+        birth = FakeEvent("birth", EventType.BIRTH, tags=(FakeNamedTag("source OK"),))
+        death = FakeEvent("death", EventType.DEATH)
+        db = FakeDatabase((birth, death), FakePerson(birth, death))
+
+        with patch(
+            "TwoWayFanChart.facts.get_birth_or_fallback", return_value=birth
+        ), patch(
+            "TwoWayFanChart.facts.get_death_or_fallback", return_value=death
+        ):
+            self.assertEqual(
+                source_ok_vital_dates(db, "person", "source-ok"),
+                (True, False),
+            )
+            self.assertEqual(
+                source_ok_vital_dates(db, "person", "source-ok", "source ok"),
+                (False, False),
+            )
 
 
 if __name__ == "__main__":

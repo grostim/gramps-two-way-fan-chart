@@ -398,7 +398,7 @@ def _build_scene(
         _resolve_highlight_tag_handle() if config.show_highlight_markers else None
     )
     source_ok_tag_handle = (
-        resolve_highlight_tag_handle(db, "source OK")
+        resolve_highlight_tag_handle(db, "Source OK")
         if config.highlight_source_ok_dates
         else None
     )

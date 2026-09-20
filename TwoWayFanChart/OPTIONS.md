@@ -216,7 +216,7 @@ signal leaks through privacy filtering.
 - Default: `false`
 
 When enabled, vital-date labels whose birth or death event carries the
-exact Gramps tag `source OK` are shown in vivid green. The option is
+exact Gramps tag `Source OK` are shown in vivid green. The option is
 privacy-safe and leaves the default grey date styling unchanged.
 
 ---

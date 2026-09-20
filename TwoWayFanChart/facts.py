@@ -169,7 +169,7 @@ def extract_vital_dates(
     )
 
 
-def _object_has_tag(value, tag_handle: str, tag_name: str = "source OK") -> bool:
+def _object_has_tag(value, tag_handle: str, tag_name: str = "Source OK") -> bool:
     """Return whether a Gramps object carries the resolved evidence tag.
 
     Gramps normally stores tag handles on primary objects. Some database
@@ -197,7 +197,7 @@ def _object_has_tag(value, tag_handle: str, tag_name: str = "source OK") -> bool
 
 
 def _event_has_source_ok_tag(
-    database, event, tag_handle: str, tag_name: str = "source OK"
+    database, event, tag_handle: str, tag_name: str = "Source OK"
 ) -> bool:
     """Check the event and its citation/source chain for the evidence tag."""
     if event is None or not tag_handle:
@@ -230,7 +230,7 @@ def source_ok_vital_dates(
     database,
     handle: str | None,
     tag_handle: str,
-    tag_name: str = "source OK",
+    tag_name: str = "Source OK",
 ) -> tuple[bool, bool]:
     """Return source-tag state for the person's birth and death events.
 

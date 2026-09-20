@@ -169,6 +169,78 @@ def extract_vital_dates(
     )
 
 
+def _object_has_tag(value, tag_handle: str) -> bool:
+    """Return whether a Gramps object carries the resolved evidence tag."""
+    if value is None:
+        return False
+    getter = getattr(value, "get_tag_list", None)
+    if not callable(getter):
+        return False
+    try:
+        return tag_handle in tuple(getter())
+    except Exception:
+        return False
+
+
+def _event_has_source_ok_tag(database, event, tag_handle: str) -> bool:
+    """Check the event and its citation/source chain for the evidence tag."""
+    if event is None or not tag_handle:
+        return False
+    if _object_has_tag(event, tag_handle):
+        return True
+    try:
+        references = event.get_citation_ref_list()
+    except Exception:
+        references = ()
+    for reference in references:
+        try:
+            citation_handle = reference.get_reference_handle()
+            citation = database.get_citation_from_handle(citation_handle)
+        except Exception:
+            continue
+        if _object_has_tag(citation, tag_handle):
+            return True
+        try:
+            source_handle = citation.get_reference_handle()
+            source = database.get_source_from_handle(source_handle)
+        except Exception:
+            continue
+        if _object_has_tag(source, tag_handle):
+            return True
+    return False
+
+
+def source_ok_vital_dates(
+    database,
+    handle: str | None,
+    tag_handle: str,
+) -> tuple[bool, bool]:
+    """Return source-tag state for the person's birth and death events.
+
+    The result is a render-neutral pair. Missing, invalid, private, or
+    otherwise unreadable events are treated as unvalidated.
+    """
+    if not handle or not tag_handle:
+        return False, False
+    try:
+        person = database.get_person_from_handle(handle)
+        if person is None:
+            return False, False
+        # Gramps users commonly apply validation tags to the person rather
+        # than to each vital event. In that case the tag validates the vital
+        # dates as a pair; event/citation/source tags remain supported below.
+        if _object_has_tag(person, tag_handle):
+            return True, True
+        birth = get_birth_or_fallback(database, person)
+        death = get_death_or_fallback(database, person)
+        return (
+            _event_has_source_ok_tag(database, birth, tag_handle),
+            _event_has_source_ok_tag(database, death, tag_handle),
+        )
+    except Exception:
+        return False, False
+
+
 def _place_hierarchy_is_private(database, place) -> bool:
     """Return whether a place or any of its parents is private."""
     pending = [place]

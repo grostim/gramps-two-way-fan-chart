@@ -71,6 +71,7 @@ class ChartConfig:
     years_past_death: int = 0
     highlight_tag: str = ""
     show_highlight_markers: bool = False
+    highlight_source_ok_dates: bool = False
     show_ancestor_marriages: bool = True
     show_descendant_marriages: bool = True
 

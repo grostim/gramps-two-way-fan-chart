@@ -223,6 +223,15 @@ l'étiquette `highlight_tag` configurée. Le marqueur est automatiquement
 effacé pour les personnes masquées ou exclues, afin qu'aucun signal ne
 filtre à travers la confidentialité.
 
+### highlight_source_ok_dates
+- Type : booléen
+- Défaut : `false`
+
+Quand elle est activée, les dates de naissance ou de décès dont
+l'événement porte exactement l'étiquette Gramps `source OK` sont
+affichées en vert vif. L'option respecte la confidentialité et conserve
+le gris par défaut quand elle est désactivée.
+
 ---
 
 ## Confidentialité

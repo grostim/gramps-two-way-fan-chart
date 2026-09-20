@@ -31,6 +31,7 @@ try:
         HIDDEN_FILL,
         TEXT_DARK,
         TEXT_GREY,
+        SOURCE_OK_DATE_FILL,
         CONTINUATION_DOT_FILL,
         SECTOR_STROKE,
         SECTOR_STROKE_WIDTH,
@@ -60,6 +61,7 @@ except ModuleNotFoundError:
         HIDDEN_FILL,
         TEXT_DARK,
         TEXT_GREY,
+        SOURCE_OK_DATE_FILL,
         CONTINUATION_DOT_FILL,
         SECTOR_STROKE,
         SECTOR_STROKE_WIDTH,
@@ -791,7 +793,7 @@ def layout_ancestors(
 
     # Parse all slots to get
     # (pid, lineage, generation, label, dates_label, portrait_data_uri).
-    parsed: list[tuple[str, str, int, str, str, str | None, bool]] = []
+    parsed: list[tuple[str, str, int, str, str, str | None, bool, bool]] = []
     for entry in ancestor_slots:
         if len(entry) >= 4:
             pid, label, dates_label, portrait = (
@@ -802,16 +804,19 @@ def layout_ancestors(
                 if show_highlight_markers and len(entry) >= 5
                 else False
             )
+            source_ok_dates = bool(entry[5]) if len(entry) >= 6 else False
         elif len(entry) == 3:
             pid, label, dates_label = entry[0], entry[1], entry[2]
             portrait = None
             highlighted = False
+            source_ok_dates = False
         elif len(entry) >= 2:
             # Backward-compatible 2-tuple (position_id, label)
             pid, label = entry[0], entry[1]
             dates_label = ""
             portrait = None
             highlighted = False
+            source_ok_dates = False
         else:
             continue
         info = _parse_position_id(pid)
@@ -821,7 +826,7 @@ def layout_ancestors(
             # Fallback: determine from position in list
             lineage = "a"
             gen = 1
-        parsed.append((pid, lineage, gen, label, dates_label, portrait, highlighted))
+        parsed.append((pid, lineage, gen, label, dates_label, portrait, highlighted, source_ok_dates))
 
     marriage_labels: dict[tuple[int, str, int], str] = {}
     for marriage in ancestor_marriages:
@@ -834,7 +839,7 @@ def layout_ancestors(
         marriage_labels[key] = label
 
     # Determine actual generations present
-    max_gen = max(g for _, _, g, _, _, _, _ in parsed) if parsed else 1
+    max_gen = max(g for _, _, g, _, _, _, _, _ in parsed) if parsed else 1
     num_gens = max_gen
 
     total_depth = outer_r - inner_r
@@ -864,7 +869,7 @@ def layout_ancestors(
 
     # Collect the gen-1 surname per lineage for the LIGNÉE labels.
     lineage_surnames: dict[str, str] = {}
-    for pid, lineage, gen, label, _dates, _portrait, _highlighted in parsed:
+    for pid, lineage, gen, label, _dates, _portrait, _highlighted, _source_ok_dates in parsed:
         if gen == 1 and label:
             # Label is "Surname, Given…" — take the part before the comma.
             if ", " in label:
@@ -891,8 +896,8 @@ def layout_ancestors(
         radial_cursor = gen_inner + ring_width
 
         gen_slots = [
-            (pid, lin, lbl, dt, portrait, highlighted)
-            for pid, lin, g, lbl, dt, portrait, highlighted in parsed
+            (pid, lin, lbl, dt, portrait, highlighted, source_ok_dates)
+            for pid, lin, g, lbl, dt, portrait, highlighted, source_ok_dates in parsed
             if g == gen
         ]
         if not gen_slots:
@@ -929,6 +934,7 @@ def layout_ancestors(
                 _dates,
                 candidate_portrait,
                 _highlighted,
+                _source_ok_dates,
             ) in candidate_slots:
                 if not candidate_label:
                     continue
@@ -1061,12 +1067,13 @@ def layout_ancestors(
 
         # Place lineage a (paternal, left side: -90° to 0°)
         gen_medallion_radii: list[float] = []
-        for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_a):
+        for i, (pid, _, label, dates_label, portrait, highlighted, source_ok_dates) in enumerate(slots_a):
             start_angle = -_ANCESTOR_HALF_SPAN_DEG + i * sweep_a
             emitted = _emit_ancestor_sector(
                 children, cx, cy, gen_inner, gen_outer,
                 start_angle, sweep_a, outer_r,
                 gen, "a", label, dates_label, portrait, highlighted,
+                source_ok_dates=source_ok_dates,
                 name_font_size=generation_name_sizes.get(gen),
                 date_font_size=generation_date_sizes.get(gen),
                 max_image_r=previous_min_image_r,
@@ -1075,12 +1082,13 @@ def layout_ancestors(
                 gen_medallion_radii.append(emitted)
 
         # Place lineage b (maternal, right side: 0° to 90°)
-        for i, (pid, _, label, dates_label, portrait, highlighted) in enumerate(slots_b):
+        for i, (pid, _, label, dates_label, portrait, highlighted, source_ok_dates) in enumerate(slots_b):
             start_angle = 0.0 + i * sweep_b
             emitted = _emit_ancestor_sector(
                 children, cx, cy, gen_inner, gen_outer,
                 start_angle, sweep_b, outer_r,
                 gen, "b", label, dates_label, portrait, highlighted,
+                source_ok_dates=source_ok_dates,
                 name_font_size=generation_name_sizes.get(gen),
                 date_font_size=generation_date_sizes.get(gen),
                 max_image_r=previous_min_image_r,
@@ -1168,6 +1176,7 @@ def _emit_ancestor_sector(
     dates_label: str = "",
     portrait: str | None = None,
     highlighted: bool = False,
+    source_ok_dates: bool = False,
     name_font_size: float | None = None,
     date_font_size: float | None = None,
     max_image_r: float | None = None,
@@ -1283,7 +1292,7 @@ def _emit_ancestor_sector(
                 path=life_path,
                 content=dates_label,
                 font_size=effective_date_size,
-                fill=TEXT_GREY,
+                fill=SOURCE_OK_DATE_FILL if source_ok_dates else TEXT_GREY,
                 max_width=_ancestor_arc_text_capacity(
                     text_radius=life_r,
                     sweep_angle=sweep,
@@ -1410,7 +1419,7 @@ def _emit_ancestor_sector(
                     y=dy,
                     content=fitted_dates,
                     font_size=effective_date_size,
-                    fill=TEXT_GREY,
+                    fill=SOURCE_OK_DATE_FILL if source_ok_dates else TEXT_GREY,
                     anchor="middle",
                     rotation=rot,
                     max_width=date_width,
@@ -1438,7 +1447,7 @@ def _emit_ancestor_sector(
                 x=ltx, y=lty,
                 content=dates_label,
                 font_size=effective_date_size,
-                fill=TEXT_GREY,
+                fill=SOURCE_OK_DATE_FILL if source_ok_dates else TEXT_GREY,
                 anchor="middle",
                 max_width=radial_width,
                 rotation=rot,
@@ -1461,7 +1470,7 @@ def _emit_ancestor_sector(
                 path=life_path,
                 content=dates_label,
                 font_size=effective_date_size,
-                fill=TEXT_GREY,
+                fill=SOURCE_OK_DATE_FILL if source_ok_dates else TEXT_GREY,
                 max_width=_ancestor_arc_text_capacity(
                     text_radius=life_r,
                     sweep_angle=sweep,
@@ -1553,6 +1562,8 @@ def layout_center(
     right_label: str | None = None,
     left_dates: str = "",
     right_dates: str = "",
+    left_dates_source_ok: bool = False,
+    right_dates_source_ok: bool = False,
     marriage_label: str = "",
     left_portrait: str | None = None,
     right_portrait: str | None = None,
@@ -1664,7 +1675,7 @@ def layout_center(
                 x=left_cx, y=date_y,
                 content=left_dates,
                 font_size=date_size,
-                fill=TEXT_GREY,
+                fill=SOURCE_OK_DATE_FILL if left_dates_source_ok else TEXT_GREY,
                 anchor="middle",
             ))
         if right_dates:
@@ -1672,7 +1683,7 @@ def layout_center(
                 x=right_cx, y=date_y,
                 content=right_dates,
                 font_size=date_size,
-                fill=TEXT_GREY,
+                fill=SOURCE_OK_DATE_FILL if right_dates_source_ok else TEXT_GREY,
                 anchor="middle",
             ))
         if marriage_label:
@@ -1729,7 +1740,7 @@ def layout_center(
                 x=cx, y=cy + r * (72.0 / 190.0),
                 content=left_dates,
                 font_size=r * (13.0 / 190.0),
-                fill=TEXT_GREY,
+                fill=SOURCE_OK_DATE_FILL if left_dates_source_ok else TEXT_GREY,
                 anchor="middle",
             ))
         if marriage_label:
@@ -3674,6 +3685,7 @@ def layout_descendants(
     *,
     name_lookup,
     dates_lookup=None,
+    source_ok_dates_lookup=None,
     shortener=None,
     portrait_lookup=None,
     highlight_lookup=None,
@@ -3723,6 +3735,7 @@ def layout_descendants(
     generation_marriage_sizes: dict[int, float] = {}
     name_cache: dict[str, str] = {}
     date_cache: dict[str, str] = {}
+    source_ok_date_cache: dict[str, bool] = {}
     inner_r = canvas.descendant_inner_radius_mm
     outer_r = canvas.descendant_outer_radius_mm
     max_gen = max(_max_desc_depth(b) for b in branches) if branches else 1
@@ -3790,6 +3803,16 @@ def layout_descendants(
         if handle not in date_cache:
             date_cache[handle] = dates_lookup(handle)
         return date_cache[handle]
+
+    def _date_source_ok(handle: str | None) -> bool:
+        if source_ok_dates_lookup is None or not handle:
+            return False
+        if handle not in source_ok_date_cache:
+            try:
+                source_ok_date_cache[handle] = bool(source_ok_dates_lookup(handle))
+            except Exception:
+                source_ok_date_cache[handle] = False
+        return source_ok_date_cache[handle]
 
     def _short(label: str, depth: int) -> str:
         if shortener is None or not label:
@@ -5275,7 +5298,11 @@ def layout_descendants(
                                         y=date_y,
                                         content=date_fit,
                                         font_size=date_size,
-                                        fill=TEXT_GREY,
+                                        fill=(
+                                            SOURCE_OK_DATE_FILL
+                                            if _date_source_ok(branch.person.handle)
+                                            else TEXT_GREY
+                                        ),
                                         anchor="middle",
                                         rotation=rotation,
                                         max_width=text_width,
@@ -5312,7 +5339,11 @@ def layout_descendants(
                                     y=date_y,
                                     content=date_fit,
                                     font_size=_generation_date_size(depth, name_size),
-                                    fill=TEXT_GREY,
+                                    fill=(
+                                        SOURCE_OK_DATE_FILL
+                                        if _date_source_ok(branch.person.handle)
+                                        else TEXT_GREY
+                                    ),
                                     anchor="middle",
                                     rotation=rotation,
                                     max_width=date_width,
@@ -5477,7 +5508,11 @@ def layout_descendants(
                             ),
                             content=child_dates,
                             font_size=generation_date_size,
-                            fill=TEXT_GREY,
+                            fill=(
+                                SOURCE_OK_DATE_FILL
+                                if _date_source_ok(branch.person.handle)
+                                else TEXT_GREY
+                            ),
                             max_width=_ancestor_arc_text_capacity(
                                 text_radius=date_radius,
                                 sweep_angle=cell_sweep,
@@ -5513,7 +5548,14 @@ def layout_descendants(
                                 ),
                                 content=spouse_dates,
                                 font_size=generation_date_size,
-                                fill=TEXT_GREY,
+                                fill=(
+                                    SOURCE_OK_DATE_FILL
+                                    if (
+                                        cell_entry
+                                        and _date_source_ok(cell_entry[0])
+                                    )
+                                    else TEXT_GREY
+                                ),
                                 max_width=_ancestor_arc_text_capacity(
                                     text_radius=spouse_date_radius,
                                     sweep_angle=cell_sweep,

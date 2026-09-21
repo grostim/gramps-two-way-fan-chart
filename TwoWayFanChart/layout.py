@@ -828,15 +828,17 @@ def layout_ancestors(
             gen = 1
         parsed.append((pid, lineage, gen, label, dates_label, portrait, highlighted, source_ok_dates))
 
-    marriage_labels: dict[tuple[int, str, int], str] = {}
+    marriage_labels: dict[tuple[int, str, int], tuple[str, bool]] = {}
     for marriage in ancestor_marriages:
         if hasattr(marriage, "generation"):
             key = (marriage.generation, marriage.lineage, marriage.index)
             label = marriage.label
+            source_ok = bool(getattr(marriage, "source_ok", False))
         else:
             generation, lineage, index, label = marriage[:4]
+            source_ok = bool(marriage[4]) if len(marriage) >= 5 else False
             key = (generation, lineage, index)
-        marriage_labels[key] = label
+        marriage_labels[key] = (label, source_ok)
 
     # Determine actual generations present
     max_gen = max(g for _, _, g, _, _, _, _, _ in parsed) if parsed else 1
@@ -1020,7 +1022,11 @@ def layout_ancestors(
                     continue
                 marriage_sweep = _ANCESTOR_HALF_SPAN_DEG / marriage_count
                 labels = [
-                    marriage_labels.get((gen, lineage, marriage_index), "")
+                    marriage_labels.get((gen, lineage, marriage_index), ("", False))[0]
+                    for marriage_index in range(marriage_count)
+                ]
+                source_ok_labels = [
+                    marriage_labels.get((gen, lineage, marriage_index), ("", False))[1]
                     for marriage_index in range(marriage_count)
                 ]
                 marriage_sizes: list[float] = []
@@ -1062,6 +1068,7 @@ def layout_ancestors(
                         gen,
                         lineage,
                         labels[marriage_index],
+                        source_ok=source_ok_labels[marriage_index],
                         font_size=shared_size,
                     )
 
@@ -1116,6 +1123,7 @@ def _emit_ancestor_marriage_sector(
     generation: int,
     lineage: str,
     label: str,
+    source_ok: bool = False,
     font_size: float | None = None,
 ) -> None:
     """Emit one optional inter-generation sector for a parent couple.
@@ -1160,7 +1168,7 @@ def _emit_ancestor_marriage_sector(
         ),
         content=label,
         font_size=font_size,
-        fill=TEXT_DARK,
+        fill=SOURCE_OK_DATE_FILL if source_ok else TEXT_DARK,
         max_width=capacity,
     ))
 
@@ -1565,6 +1573,7 @@ def layout_center(
     left_dates_source_ok: bool = False,
     right_dates_source_ok: bool = False,
     marriage_label: str = "",
+    marriage_source_ok: bool = False,
     left_portrait: str | None = None,
     right_portrait: str | None = None,
     left_fallback: str = "",
@@ -1692,7 +1701,7 @@ def layout_center(
                 y=cy + r * (94.0 / 190.0),
                 content=marriage_label,
                 font_size=r * (11.0 / 190.0),
-                fill=TEXT_GREY,
+                fill=SOURCE_OK_DATE_FILL if marriage_source_ok else TEXT_GREY,
                 anchor="middle",
                 max_width=r * 1.72,
             ))
@@ -1749,7 +1758,7 @@ def layout_center(
                 y=cy + r * (94.0 / 190.0),
                 content=marriage_label,
                 font_size=r * (11.0 / 190.0),
-                fill=TEXT_GREY,
+                fill=SOURCE_OK_DATE_FILL if marriage_source_ok else TEXT_GREY,
                 anchor="middle",
                 max_width=r * 1.72,
             ))
@@ -3608,7 +3617,9 @@ def _emit_descendant_marriage_sector(
         cx=cx,
         cy=cy,
     ))
-    full_label, year_label = labels.get(family_handle, ("", ""))
+    marriage_data = labels.get(family_handle, ("", "", False))
+    full_label, year_label = marriage_data[:2]
+    source_ok = bool(marriage_data[2]) if len(marriage_data) >= 3 else False
     if not full_label and not year_label:
         return
     # A place is retained only when it fits at the minimum practical label
@@ -3645,7 +3656,7 @@ def _emit_descendant_marriage_sector(
             ),
             content=content,
             font_size=size,
-            fill=TEXT_DARK,
+            fill=SOURCE_OK_DATE_FILL if source_ok else TEXT_DARK,
             max_width=_ancestor_arc_text_capacity(
                 text_radius=line_radius,
                 sweep_angle=sweep,
@@ -3664,7 +3675,9 @@ def _collect_descendant_marriage_size(
     family_handle: str,
 ) -> None:
     """Record the sector-local fitted size for one marriage, per generation."""
-    full_label, year_label = labels.get(family_handle, ("", ""))
+    marriage_data = labels.get(family_handle, ("", "", False))
+    full_label, year_label = marriage_data[:2]
+    source_ok = bool(marriage_data[2]) if len(marriage_data) >= 3 else False
     if not full_label and not year_label:
         return
     _lines, size = _descendant_marriage_plan(

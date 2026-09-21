@@ -258,6 +258,25 @@ def source_ok_vital_dates(
         return False, False
 
 
+def source_ok_marriage(
+    database,
+    family,
+    tag_handle: str | None,
+    tag_name: str = "Source OK",
+) -> bool:
+    """Return whether the first marriage event of a family carries the tag."""
+    if family is None or not tag_handle:
+        return False
+    try:
+        events = _events_for(database, family, EventType.MARRIAGE)
+        return bool(
+            events
+            and _event_has_source_ok_tag(database, events[0], tag_handle, tag_name)
+        )
+    except Exception:
+        return False
+
+
 def _place_hierarchy_is_private(database, place) -> bool:
     """Return whether a place or any of its parents is private."""
     pending = [place]

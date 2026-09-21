@@ -20,6 +20,7 @@ try:
         simple_name,
         simple_dates,
         source_ok_vital_dates,
+        source_ok_marriage,
     )
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
@@ -52,6 +53,7 @@ except ModuleNotFoundError:
         simple_name,
         simple_dates,
         source_ok_vital_dates,
+        source_ok_marriage,
     )
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
@@ -247,6 +249,7 @@ def _descendant_marriage_labels(
     visibility_lookup,
     *,
     include_private: bool,
+    source_ok_lookup=None,
 ) -> dict[str, tuple[str, str]]:
     """Return full/year marriage labels for every rendered descendant union."""
     labels: dict[str, tuple[str, str]] = {}
@@ -294,7 +297,13 @@ def _descendant_marriage_labels(
                 continue
             year = fact.date_text
             full = " · ".join(value for value in (year, fact.place) if value)
-            labels[union.family_handle] = (full, year)
+            labels[union.family_handle] = (
+                full,
+                year,
+                bool(source_ok_lookup(union.family_handle))
+                if source_ok_lookup
+                else False,
+            )
     return labels
 
 
@@ -463,6 +472,21 @@ def _build_scene(
         birth_ok, death_ok = source_ok_vital_dates(db, handle, source_ok_tag_handle)
         return birth_ok or death_ok
 
+    def _safe_source_ok_marriage(family_handle: str | None) -> bool:
+        if not family_handle or not source_ok_tag_handle:
+            return False
+        try:
+            family = db.get_family_from_handle(family_handle)
+            if family is None:
+                return False
+            if not decision_for_state(_person_visibility(family.get_father_handle())[1]).expose_details:
+                return False
+            if not decision_for_state(_person_visibility(family.get_mother_handle())[1]).expose_details:
+                return False
+            return source_ok_marriage(db, family, source_ok_tag_handle)
+        except Exception:
+            return False
+
     def _safe_portrait(handle: str | None) -> str | None:
         if not handle or not config.show_portraits:
             return None
@@ -535,6 +559,7 @@ def _build_scene(
         left_dates_source_ok=_safe_source_ok_dates(center_left_handle),
         right_dates_source_ok=_safe_source_ok_dates(center_right_handle),
         marriage_label=center_marriage_label,
+        marriage_source_ok=_safe_source_ok_marriage(graph.center_family_handle),
         left_portrait=left_portrait,
         right_portrait=right_portrait,
         left_fallback=_safe_fallback(center_left_handle, left_label),
@@ -594,6 +619,7 @@ def _build_scene(
                     and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
                 ),
             ),
+            _safe_source_ok_marriage(marriage.family_handle),
         )
         for marriage in graph.ancestor_marriages
     ) if config.show_ancestor_marriages else ()
@@ -624,6 +650,7 @@ def _build_scene(
                 config.include_private
                 and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
             ),
+            source_ok_lookup=_safe_source_ok_marriage,
         )
         if config.show_descendant_marriages
         else {}

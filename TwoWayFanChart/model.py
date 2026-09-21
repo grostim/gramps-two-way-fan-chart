@@ -148,6 +148,7 @@ class AncestorMarriage:
     index: int
     family_handle: str
     label: str = ""
+    source_ok: bool = False
 
     def __post_init__(self) -> None:
         if self.generation < 1:
@@ -167,6 +168,7 @@ class UnionBranch:
     child_handles: tuple[str, ...]
     child_relations: tuple[str, ...]
     family_gramps_id: str | None = None
+    source_ok: bool = False
 
     def __post_init__(self) -> None:
         if len(self.child_handles) != len(self.child_relations):

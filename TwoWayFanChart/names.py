@@ -7,8 +7,10 @@ from dataclasses import dataclass
 
 try:
     from .model import PersonViewSeed, VisibilityState
+    from .config import CURRENT_REPORT_NAME_FORMAT
 except ImportError:  # Gramps loads add-ons as top-level modules.
     from model import PersonViewSeed, VisibilityState  # type: ignore[no-redef]
+    from config import CURRENT_REPORT_NAME_FORMAT  # type: ignore[no-redef]
 
 from gramps.gen.const import GRAMPS_LOCALE as glocale
 from gramps.gen.display.name import NameDisplay, displayer as global_name_displayer
@@ -25,6 +27,34 @@ _STRATEGIES = {
     "nickname_and_call",
     "gramps",
 }
+
+
+def create_name_displayer(name_format: str | int, *, locale=glocale):
+    """Create a report-scoped Gramps name displayer for the selected format.
+
+    ``current_report`` deliberately returns ``None`` so callers retain the
+    report's historical usage-name formatting. Gramps' format ID 0 means the
+    user's current Gramps preference; other IDs select named formats.
+    """
+    if name_format == CURRENT_REPORT_NAME_FORMAT:
+        return None
+    if not isinstance(name_format, int) or isinstance(name_format, bool):
+        raise ValueError("name_format must be current_report or a Gramps format ID")
+
+    formats = global_name_displayer.get_name_format(only_active=False)
+    format_ids = {number for number, _name, _format, _active in formats}
+    selected_format = (
+        global_name_displayer.get_default_format()
+        if name_format == 0
+        else name_format
+    )
+    if selected_format not in format_ids:
+        raise ValueError(f"Gramps name format {selected_format} is not available")
+
+    local_display = NameDisplay(locale)
+    local_display.set_name_format(formats)
+    local_display.set_default_format(selected_format)
+    return local_display
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,10 +91,15 @@ class NameFormatter:
     @classmethod
     def from_config(cls, config, *, locale=glocale, name_formats=None):
         """Create an isolated formatter from the validated report configuration."""
+        default_format = getattr(config, "name_format", None)
+        if default_format == CURRENT_REPORT_NAME_FORMAT:
+            default_format = None
+        elif default_format == 0:
+            default_format = global_name_displayer.get_default_format()
         return cls(
             locale=locale,
             name_formats=name_formats,
-            default_format=getattr(config, "name_format", None),
+            default_format=default_format,
             name_case=getattr(config, "name_case", "stored"),
         )
 

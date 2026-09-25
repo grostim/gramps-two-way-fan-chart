@@ -26,6 +26,7 @@ from gramps.gen.proxy import LivingProxyDb
 try:
     from .config import (
         ChartConfig,
+        CURRENT_REPORT_NAME_FORMAT,
         Orientation,
         PaperSize,
         PresetName,
@@ -40,6 +41,7 @@ except ImportError:
         sys.path.insert(0, _dir)
     from config import (  # type: ignore[no-redef]
         ChartConfig,
+        CURRENT_REPORT_NAME_FORMAT,
         Orientation,
         PaperSize,
         PresetName,
@@ -56,6 +58,7 @@ _ = _trans.gettext
 
 CATEGORY_SUBJECT = "Subject and generations"
 CATEGORY_FAMILIES = "People and families"
+CATEGORY_NAMES = "Names"
 CATEGORY_PORTRAITS = "Portraits and medallions"
 CATEGORY_PAPER = "Paper and layout"
 CATEGORY_COLORS = "Colors and styles"
@@ -248,6 +251,17 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "show_descendant_marriages",
             BooleanOption(_("Show descendant marriages"), True),
         )
+        name_format = stdoptions.add_name_format_option(menu, _(CATEGORY_NAMES))
+        format_items = name_format.get_items()
+        name_format.set_items(
+            [
+                (CURRENT_REPORT_NAME_FORMAT, _("Current report format")),
+                (0, _("Gramps default")),
+                *((number, label) for number, label in format_items if number != 0),
+            ]
+        )
+        name_format.set_value(CURRENT_REPORT_NAME_FORMAT)
+        name_format.set_help(_("Choose the name format used in the chart."))
         menu.add_option(
             _(CATEGORY_PORTRAITS),
             "show_portraits",
@@ -531,6 +545,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 highlight_tag=value("highlight_tag"),
                 show_highlight_markers=value("show_highlight_markers"),
                 highlight_source_ok_dates=value("highlight_source_ok_dates"),
+                name_format=value("name_format"),
             )
         except (TypeError, ValueError) as error:
             raise ReportError(

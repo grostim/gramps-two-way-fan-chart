@@ -105,6 +105,24 @@ keeps one line and the marriage symbol with the year only.
 
 ---
 
+## Names
+
+### name_format
+- Type: enumerated — current report format, Gramps default, or an available Gramps name format
+- Default: `current_report`
+
+Controls how names are displayed for the center couple, ancestors and
+descendants.
+
+- `current_report` preserves the report's existing output, including the
+  usage name and nickname. This is the default so existing saved report
+  settings keep their appearance.
+- `Gramps default` uses the name format selected in Gramps preferences.
+- Any other entry applies that Gramps name format to this report only;
+  it does not change the global preference.
+
+---
+
 ## Portraits and medallions
 
 ### show_portraits

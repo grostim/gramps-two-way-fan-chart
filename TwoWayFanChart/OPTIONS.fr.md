@@ -113,6 +113,25 @@ ne garde qu'une ligne, avec le symbole de mariage et l'année.
 
 ---
 
+## Noms
+
+### name_format
+- Type : liste — format actuel du rapport, défaut Gramps ou format Gramps disponible
+- Défaut : `current_report`
+
+Contrôle l'affichage des noms du couple central, des ancêtres et des
+descendants.
+
+- `current_report` conserve exactement l'affichage existant du rapport,
+  notamment le prénom d'usage et le surnom. C'est le défaut : les
+  configurations enregistrées gardent ainsi leur apparence.
+- `Gramps default` utilise le format de nom choisi dans les préférences
+  Gramps.
+- Tout autre choix applique le format Gramps correspondant à ce rapport
+  uniquement, sans modifier la préférence globale.
+
+---
+
 ## Portraits et médaillons
 
 ### show_portraits

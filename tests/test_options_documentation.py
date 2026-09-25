@@ -19,6 +19,12 @@ def _menu_keys() -> set[str]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add_name_format_option"
+        ):
+            keys.add("name_format")
+            continue
         if not isinstance(node.func, ast.Attribute) or node.func.attr != "add_option":
             continue
         if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):

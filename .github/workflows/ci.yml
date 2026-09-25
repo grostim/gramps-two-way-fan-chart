@@ -236,23 +236,69 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          publish_root="$(mktemp -d "$RUNNER_TEMP/twfc-experimental.XXXXXX")"
+          publish_worktree="$publish_root/repository"
+          cleanup() {
+            if [[ -d "$publish_worktree" ]]; then
+              git worktree remove --force "$publish_worktree"
+            fi
+            rm -rf "$publish_root"
+          }
+          trap cleanup EXIT
           branch_head="$(git ls-remote origin "refs/heads/${RELEASE_BRANCH}" | cut -f1)"
           if [[ -n "$branch_head" ]]; then
             git fetch origin "$RELEASE_BRANCH"
-            git reset --hard FETCH_HEAD
+            git worktree add --detach "$publish_worktree" FETCH_HEAD
+            publication_state="$(python3 - \
+              "$publish_worktree/gramps60" "$GITHUB_WORKSPACE/gramps60" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          previous_root, candidate_root = map(Path, sys.argv[1:])
+
+          def listing_version(root):
+              path = root / "listings/addons-en.json"
+              entries = json.loads(path.read_text(encoding="utf-8"))
+              version = next(entry["v"] for entry in entries if entry.get("i") == "two_way_fan_chart")
+              return tuple(map(int, version.split("."))), version
+
+          previous, previous_text = listing_version(previous_root)
+          candidate, candidate_text = listing_version(candidate_root)
+          if previous > candidate:
+              raise SystemExit(f"experimental listing already newer: {previous_text} > {candidate_text}")
+          if previous == candidate:
+              def digest_tree(root):
+                  return {
+                      path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                      for path in root.rglob("*") if path.is_file()
+                  }
+              if digest_tree(previous_root) != digest_tree(candidate_root):
+                  raise SystemExit(f"experimental version {candidate_text} exists with different artifacts")
+              print("already-current")
+          else:
+              print("publish")
+          PY
+            )"
+            if [[ "$publication_state" == "already-current" ]]; then
+              echo "experimental_distribution=already-current"
+              exit 0
+            fi
+          else
+            git worktree add --detach "$publish_worktree" "$RELEASE_SHA"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf "$publish_worktree/gramps60"
+          cp -a "$GITHUB_WORKSPACE/gramps60" "$publish_worktree/gramps60"
+          git -C "$publish_worktree" config user.name "github-actions[bot]"
+          git -C "$publish_worktree" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           gh auth setup-git
-          git checkout "$RELEASE_SHA" -- gramps60
-          git add gramps60
-          if git diff --cached --quiet; then
-            echo "experimental_distribution=already-current"
-            exit 0
-          fi
-          git commit -m "ci: publish experimental addon ${RELEASE_SHA:0:12}" \
+          git -C "$publish_worktree" add gramps60
+          git -C "$publish_worktree" commit -m "ci: publish experimental addon ${RELEASE_SHA:0:12}" \
             -m "Generated from ${RELEASE_BRANCH} commit ${RELEASE_SHA}."
-          git push origin "HEAD:refs/heads/${RELEASE_BRANCH}"
+          git -C "$publish_worktree" push origin "HEAD:refs/heads/${RELEASE_BRANCH}"
+          git worktree remove --force "$publish_worktree"
+          rmdir "$publish_root"
 
       - name: Create archive checksum
         working-directory: gramps60/download

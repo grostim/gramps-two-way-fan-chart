@@ -1,10 +1,10 @@
 [
  {
   "n": "Two-Way Fan Chart",
-  "i": "TwoWayFanChart",
+  "i": "two_way_fan_chart",
   "t": 0,
   "d": "Generates a bidirectional fan chart with ancestors, descendants, and portraits around a center family.",
-  "v": "1.2.96",
+  "v": "1.2.97",
   "g": "6.0",
   "s": 3,
   "z": "TwoWayFanChart.addon.tgz",

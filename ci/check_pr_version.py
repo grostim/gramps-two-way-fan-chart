@@ -51,21 +51,15 @@ def claimed_by(
     return None
 
 
-def open_pulls(owner_repo: str, base: str, *, runner=subprocess.run) -> list[dict]:
-    """List open pull requests targeting *base*.
-
-    Returns a list of ``{number, head_ref, title, repo, sha}`` for every
-    open PR. The repository has a handful of PRs; one call suffices. The
-    filters travel in the query string: ``gh api`` treats ``-f`` fields
-    as a POST request body, which the list endpoint rejects.
-    """
+def open_pulls(owner_repo: str, *, runner=subprocess.run) -> list[dict]:
+    """List all open pull requests for cross-channel version checks."""
     result = runner(
         [
             "gh",
             "api",
-            f"repos/{owner_repo}/pulls?state=open&base={base}&per_page=100",
+            f"repos/{owner_repo}/pulls?state=open&per_page=100",
             "--jq",
-            ".[] | {number, head_ref: .head.ref, title: .title, repo: .head.repo.full_name, sha: .head.sha}",
+            ".[] | {number, head_ref: .head.ref, title: .title, repo: .head.repo.full_name, sha: .head.sha, base_ref: .base.ref}",
         ],
         capture_output=True,
         text=True,
@@ -120,8 +114,13 @@ def check_claimed_versions(
     runner=subprocess.run,
     warn=sys.stderr.write,
 ) -> None:
-    """Raise when another open PR announces the same version."""
-    pulls = open_pulls(owner_repo, base, runner=runner)
+    """Raise when another open PR to a release branch claims the version."""
+    release_branches = {"main", "experimental"}
+    pulls = [
+        pull
+        for pull in open_pulls(owner_repo, runner=runner)
+        if pull.get("base_ref") in release_branches
+    ]
     readable: list[dict] = []
     for pull in pulls:
         if current_pr is not None and pull["number"] == current_pr:

@@ -1,4 +1,10 @@
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from gramps.gen.plug.docgen import PAPER_LANDSCAPE, PAPER_PORTRAIT
+from gramps.gen.plug.report import _options as gramps_report_options
 
 from TwoWayFanChart.config import Orientation, PresetName, PrivacyMode, PaperSize
 from TwoWayFanChart.options import (
@@ -87,6 +93,48 @@ class LegacyOptionMigrationTests(unittest.TestCase):
         menu_option.set_value("surname_only")  # rejected: kept default
 
         self.assertEqual(menu_option.get_value(), "include_all")
+
+    def test_new_report_page_setup_defaults_to_a0_landscape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_options_path = Path(directory) / "report-options.xml"
+            with patch.object(
+                gramps_report_options, "REPORT_OPTIONS", str(report_options_path)
+            ):
+                options = TwoWayFanChartOptions("new-page-default-test", _FakeDatabase())
+                options.load_previous_values()
+                handler = options.handler
+                assert handler is not None
+
+                self.assertEqual(handler.get_paper_name(), "A0")
+                self.assertEqual(handler.get_orientation(), PAPER_LANDSCAPE)
+                config = options.build_chart_config()
+                self.assertEqual(config.paper_size, PaperSize.A0)
+                self.assertEqual(config.orientation, Orientation.LANDSCAPE)
+
+    def test_saved_report_page_setup_is_not_overridden_by_defaults(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_options_path = Path(directory) / "report-options.xml"
+            with patch.object(
+                gramps_report_options, "REPORT_OPTIONS", str(report_options_path)
+            ):
+                options = TwoWayFanChartOptions("saved-page-test", _FakeDatabase())
+                options.load_previous_values()
+                handler = options.handler
+                assert handler is not None
+                handler.set_paper_name("A4")
+                handler.set_orientation(PAPER_PORTRAIT)
+                handler.save_options()
+
+                reloaded = TwoWayFanChartOptions("saved-page-test", _FakeDatabase())
+                reloaded.load_previous_values()
+                reloaded_handler = reloaded.handler
+                assert reloaded_handler is not None
+
+                self.assertEqual(reloaded_handler.get_paper_name(), "A4")
+                self.assertEqual(reloaded_handler.get_orientation(), PAPER_PORTRAIT)
+                config = reloaded.build_chart_config()
+                self.assertEqual(config.paper_size, PaperSize.A4)
+                self.assertEqual(config.orientation, Orientation.PORTRAIT)
 
     def test_chart_page_uses_gramps_standard_paper_and_orientation(self):
         options = TwoWayFanChartOptions("native-page-test", _FakeDatabase())

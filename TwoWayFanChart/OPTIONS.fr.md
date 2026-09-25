@@ -23,7 +23,9 @@ vivantes) sont documentées à la fin.
 
 Applique un profil aux options propres au graphique en un clic. Le
 format et l'orientation de page restent contrôlés par la mise en page
-standard de Gramps.
+standard de Gramps. Sans choix de page déjà enregistré pour ce rapport,
+les valeurs par défaut sont A0 et Paysage ; les choix enregistrés sont
+conservés.
 
 - `publication` — le profil maquette public : 5 générations d'ancêtres
   + 4 de descendants, options de confidentialité ouvertes et portraits

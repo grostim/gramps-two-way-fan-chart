@@ -682,7 +682,7 @@ _EMPTY_VITALS = VitalDates(
 )
 
 
-def simple_name(database, handle: str | None) -> str:
+def simple_name(database, handle: str | None, *, name_displayer=None) -> str:
     """Return the preferred short display name for a person handle.
 
     Priority is: call name, then the first given name as a fallback. A
@@ -697,6 +697,8 @@ def simple_name(database, handle: str | None) -> str:
     if person is None:
         return ""
     name = person.get_primary_name()
+    if name_displayer is not None:
+        return name_displayer.display_name(name).strip(" ,")
 
     try:
         call = name.get_call_name().strip()

@@ -22,6 +22,7 @@ try:
         source_ok_vital_dates,
         source_ok_marriage,
     )
+    from TwoWayFanChart.names import create_name_displayer
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -55,6 +56,7 @@ except ModuleNotFoundError:
         source_ok_vital_dates,
         source_ok_marriage,
     )
+    from names import create_name_displayer  # type: ignore[no-redef]
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -141,6 +143,12 @@ def _descendant_short_label(label: str, depth: int) -> str:
     return _mockup_name_order(label)
 
 
+def _preserve_name_format(label: str, depth: int) -> str:
+    """Keep a Gramps-selected label verbatim through descendant layout."""
+    del depth
+    return label
+
+
 def _label_initials(label: str) -> str:
     """Build two-letter initials from a display label.
 
@@ -170,14 +178,15 @@ def _center_name_order(label: str) -> str:
     return _mockup_name_order(label)
 
 
-def _public_name(database, handle: str | None) -> str:
+def _public_name(database, handle: str | None, name_displayer=None) -> str:
     """Return the usage-name label used in public output."""
-    return simple_name(database, handle)
+    return simple_name(database, handle, name_displayer=name_displayer)
 
 
-def _public_usage_name(database, handle: str | None) -> str:
+def _public_usage_name(database, handle: str | None, name_displayer=None) -> str:
     """Return the privacy-safe usage-name label for a descendant."""
-    return _mockup_name_order(simple_name(database, handle))
+    label = simple_name(database, handle, name_displayer=name_displayer)
+    return label if name_displayer is not None else _mockup_name_order(label)
 
 
 def _public_dates(database, handle: str | None) -> str:
@@ -384,6 +393,7 @@ def _build_scene(
     Returns (page, root_scene_node) ready for rendering.
     """
     paper = _build_paper_region(config)
+    name_displayer = create_name_displayer(config.name_format)
     canvas = calculate_canvas(
         paper,
         ancestor_generations=config.ancestor_generations,
@@ -446,7 +456,7 @@ def _build_scene(
             return "Personne privée"
         if state is VisibilityState.EXCLUDED:
             return ""
-        return _public_name(db, handle)
+        return _public_name(db, handle, name_displayer)
 
     def _safe_usage_name(handle: str | None) -> str:
         _person, state = _person_visibility(handle)
@@ -454,7 +464,7 @@ def _build_scene(
             return "Personne privée"
         if state is VisibilityState.EXCLUDED:
             return ""
-        return _public_usage_name(db, handle)
+        return _public_usage_name(db, handle, name_displayer)
 
     def _safe_dates(handle: str | None) -> str:
         _person, state = _person_visibility(handle)
@@ -527,10 +537,20 @@ def _build_scene(
     center_right_handle = (
         graph.center_people[1].handle if graph.center_people[1] else None
     )
-    left_label = _center_name_order(_safe_name(center_left_handle)) or "—"
+    left_safe_name = _safe_name(center_left_handle)
+    left_label = (
+        _center_name_order(left_safe_name)
+        if name_displayer is None
+        else left_safe_name
+    ) or "—"
+    right_safe_name = _safe_name(center_right_handle) if center_right_handle else None
     right_label = (
-        _center_name_order(_safe_name(center_right_handle))
-        if center_right_handle
+        (
+            _center_name_order(right_safe_name)
+            if name_displayer is None
+            else right_safe_name
+        )
+        if right_safe_name is not None
         else None
     )
     left_portrait = _safe_portrait(center_left_handle)
@@ -584,7 +604,11 @@ def _build_scene(
     for slot in graph.ancestor_slots:
         if slot.person is not None:
             full_label = _safe_name(slot.person.handle)
-            label = _ancestor_short_label(full_label, slot.generation)
+            label = (
+                _ancestor_short_label(full_label, slot.generation)
+                if name_displayer is None
+                else full_label
+            )
             dates_label = _safe_dates(slot.person.handle)
             portrait = _safe_portrait(slot.person.handle)
         else:
@@ -661,7 +685,11 @@ def _build_scene(
         name_lookup=_name_lookup,
         dates_lookup=_dates_lookup,
         source_ok_dates_lookup=_source_ok_dates_lookup,
-        shortener=_descendant_short_label,
+        shortener=(
+            _descendant_short_label
+            if name_displayer is None
+            else _preserve_name_format
+        ),
         portrait_lookup=_safe_portrait,
         highlight_lookup=_safe_highlight,
         show_highlight_markers=config.show_highlight_markers,

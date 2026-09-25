@@ -33,6 +33,7 @@ ACTIVE_CONFIG_FIELDS = {
     "highlight_tag",
     "show_highlight_markers",
     "highlight_source_ok_dates",
+    "name_format",
 }
 
 ACTIVE_MENU_KEYS = {
@@ -58,6 +59,7 @@ ACTIVE_MENU_KEYS = {
     "highlight_tag",
     "show_highlight_markers",
     "highlight_source_ok_dates",
+    "name_format",
 }
 
 
@@ -83,6 +85,12 @@ class OptionContractTests(unittest.TestCase):
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_name_format_option"
+            ):
+                keys.add("name_format")
+                continue
             if not isinstance(node.func, ast.Attribute) or node.func.attr != "add_option":
                 continue
             if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
@@ -96,11 +104,11 @@ class OptionContractTests(unittest.TestCase):
     def test_menu_contains_only_production_options(self):
         self.assertEqual(self._menu_keys(), ACTIVE_MENU_KEYS)
 
-    def test_standard_privacy_options_remain_and_unused_standard_options_are_gone(self):
+    def test_standard_privacy_and_name_format_options_are_used(self):
         source = OPTIONS_PATH.read_text(encoding="utf-8")
         self.assertIn("add_private_data_option", source)
         self.assertIn("add_living_people_option", source)
-        self.assertNotIn("add_name_format_option", source)
+        self.assertIn("add_name_format_option", source)
         self.assertNotIn("add_localization_option", source)
 
 

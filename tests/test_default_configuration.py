@@ -22,8 +22,8 @@ class DefaultConfigurationTests(unittest.TestCase):
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
 
-        self.assertIn('version="1.2.92"', registration)
-        self.assertIn('VERSION = "1.2.92"', builder)
+        self.assertIn('version="1.2.93"', registration)
+        self.assertIn('VERSION = "1.2.93"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
@@ -38,6 +38,7 @@ class DefaultConfigurationTests(unittest.TestCase):
         self.assertEqual(config.living_people_mode, 99)
         self.assertFalse(config.show_highlight_markers)
         self.assertFalse(config.highlight_source_ok_dates)
+        self.assertEqual(config.name_format, "current_report")
         self.assertTrue(config.show_ancestor_marriages)
         self.assertTrue(config.show_descendant_marriages)
 
@@ -74,6 +75,9 @@ class DefaultConfigurationTests(unittest.TestCase):
             'BooleanOption(_("Show citation markers"), False)',
             'BooleanOption(_("Show ancestor marriages"), True)',
             'BooleanOption(_("Show descendant marriages"), True)',
+            'stdoptions.add_name_format_option(menu, _(CATEGORY_NAMES))',
+            '(0, _("Gramps default"))',
+            'name_format.set_value(CURRENT_REPORT_NAME_FORMAT)',
         ):
             self.assertIn(expected, source)
 

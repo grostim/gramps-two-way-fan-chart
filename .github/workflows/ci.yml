@@ -366,6 +366,7 @@ jobs:
     concurrency:
       group: twfc-release-tags
       cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
     runs-on: ubuntu-24.04

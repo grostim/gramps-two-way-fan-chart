@@ -38,38 +38,49 @@ Download `TwoWayFanChart.addon.tgz` from the [latest GitHub release](https://git
 
 ## Release and Gramps Web deployment
 
-Every successful `push` to `main`—including a merged pull request—runs the
-following gates in order:
+`main` is the stable channel; `experimental` publishes GitHub pre-releases. Both
+branches use the same numeric version sequence and tags (`vX.Y.Z`), with each
+release strictly newer than every existing tag. Do not use a `-beta` suffix:
+Gramps' version comparator does not interpret it correctly.
 
-1. test and compile the add-on;
-2. rebuild and validate the committed Gramps distribution;
-3. create the GitHub release `vX.Y.Z` with `TwoWayFanChart.addon.tgz` and its
-   SHA-256 checksum.
+Desktop users select a channel by adding the corresponding Addon Manager project
+URL and keeping only one project enabled for this add-on:
 
-The pull request supplies the version. A release PR must update the version in
-`build_addon.py` and `TwoWayFanChart/TwoWayFanChart.gpr.py`, then regenerate the
-archive and both listings with `python3 build_addon.py`. Reusing an existing
-version is rejected rather than replacing an existing tag or release.
+- Stable: `https://raw.githubusercontent.com/grostim/gramps-two-way-fan-chart/main/gramps60`
+- Experimental: `https://raw.githubusercontent.com/grostim/gramps-two-way-fan-chart/experimental/gramps60`
+
+On Gramps Web there is only one shared installation. If deployment is enabled,
+a successful release from either branch replaces the active add-on for every
+user on that server; an experimental deployment remains active until a later
+stable release is deployed. Web plugin discovery requires recreating the web
+and Celery services, so this path is opt-in and must be operated deliberately.
+
+A release PR must update the version in `build_addon.py` and
+`TwoWayFanChart/TwoWayFanChart.gpr.py`, then regenerate the stable archive and
+both listings with `python3 build_addon.py`. Reusing an existing version is
+rejected rather than replacing an existing tag or release. Experimental CI
+builds transform only the archived registration/listings to experimental
+status; the tracked source registration remains stable.
 
 The optional `deploy / GrampsWeb` job is skipped unless the repository variable
-`GRAMPSWEB_DEPLOY_ENABLED` is exactly `true`. To enable it:
+`GRAMPSWEB_DEPLOY_ENABLED` is exactly `true`. To enable it, configure the
+`PORTAINER_UTIL_TOKEN` secret with Contents read/write on `grostim/portainer-util`
+and keep the Portainer stack connected to that repository's `main` branch with
+its existing push webhook. No SSH key or GrampsWeb credential is stored here.
 
-1. merge the matching `portainer-util` change that adds the
-   `grampsweb_addon` downloader service and its persistent add-on mount;
-2. configure the repository secret `PORTAINER_UTIL_TOKEN` with a fine-grained
-   token limited to **Contents: read/write** on `grostim/portainer-util`;
-3. set the repository variable `GRAMPSWEB_DEPLOY_ENABLED=true`;
-4. keep the Portainer stack connected to `grostim/portainer-util` on `main` with
-   its existing push webhook.
+The deployment job commits only the validated channel, version, and rollout
+markers to `portainer-util`. Portainer retrieves the exact GitHub release asset,
+verifies its checksum, stages it outside the plugin scan root, promotes it
+atomically, and recreates the web/Celery services.
 
-The deployment job commits only the two validated rollout markers to
-`portainer-util`. Portainer then runs the downloader, which retrieves the exact
-GitHub release asset, verifies its checksum, stages it outside the plugin scan
-root, and promotes it atomically. The web and Celery services share the
-read-only add-on mount and are recreated by the semantic rollout marker.
-
-No SSH key or GrampsWeb credential is stored in this repository. Keep
-`PORTAINER_UTIL_TOKEN` in GitHub Actions secrets only.
+Rollback is explicit and manual: run the workflow on `main` with `rollback_version`
+set to an exact previously published stable tag (for example `v1.2.96`). The
+job rejects drafts, prereleases and releases missing either archive or checksum,
+then writes a distinct stable rollback marker; the normal release path still
+rejects downgrades. The downloader verifies the immutable archive checksum
+before promotion. Do not treat a successful release or a Portainer marker update
+as proof that Gramps Web has loaded the add-on; verify both services and the
+report runtime.
 
 ## Usage
 
@@ -143,7 +154,7 @@ No real genealogy database, family portrait, or generated chart based on private
 ## Compatibility
 
 - Gramps: **6.0.x**
-- Add-on version: **1.2.96**
+- Add-on version: **1.2.97**
 - SVG: no optional dependency
 - PDF/PNG: Cairo/Pango support required in the Gramps runtime
 

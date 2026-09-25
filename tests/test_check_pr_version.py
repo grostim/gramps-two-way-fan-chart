@@ -45,7 +45,8 @@ def _pulls_json(pulls):
             f'"head_ref":"{pull["head_ref"]}",'
             f'"title":"{pull.get("title", "")}",'
             f'"repo":"{pull.get("repo", "grostim/gramps-two-way-fan-chart")}",'
-            f'"sha":"{pull["sha"]}"'
+            f'"sha":"{pull["sha"]}",'
+            f'"base_ref":"{pull.get("base_ref", "main")}"'
             "}"
         )
         for pull in pulls
@@ -98,7 +99,7 @@ class FetchBuilderVersionTests(unittest.TestCase):
         runner = FakeRunner(
             [
                 (
-                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&base=main&per_page=100"],
+                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&per_page=100"],
                     FakeResult(stdout=_pulls_json([])),
                 ),
                 (
@@ -147,7 +148,7 @@ class CheckClaimedVersionsTests(unittest.TestCase):
         runner = FakeRunner(
             [
                 (
-                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&base=main&per_page=100"],
+                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&per_page=100"],
                     FakeResult(stdout=_pulls_json(pulls)),
                 ),
                 (
@@ -169,6 +170,40 @@ class CheckClaimedVersionsTests(unittest.TestCase):
                 runner=runner,
             )
 
+    def test_detects_version_claimed_by_experimental_pr(self):
+        pulls = [
+            {
+                "number": 73,
+                "head_ref": "experimental",
+                "sha": "sha-beta",
+                "base_ref": "experimental",
+            },
+        ]
+        runner = FakeRunner(
+            [
+                (
+                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&per_page=100"],
+                    FakeResult(stdout=_pulls_json(pulls)),
+                ),
+                (
+                    [
+                        "gh",
+                        "api",
+                        "repos/grostim/gramps-two-way-fan-chart/contents/build_addon.py?ref=sha-beta",
+                    ],
+                    FakeResult(stdout=_content_json('VERSION = "1.2.58"')),
+                ),
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "already claimed by open PR #73"):
+            check_claimed_versions(
+                "1.2.58",
+                "grostim/gramps-two-way-fan-chart",
+                "main",
+                current_pr=None,
+                runner=runner,
+            )
+
     def test_ignores_the_current_pr(self):
         pulls = [
             {"number": 70, "head_ref": "fix/issue43-symbol-size", "sha": "sha-70"},
@@ -177,7 +212,7 @@ class CheckClaimedVersionsTests(unittest.TestCase):
         runner = FakeRunner(
             [
                 (
-                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&base=main&per_page=100"],
+                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&per_page=100"],
                     FakeResult(stdout=_pulls_json(pulls)),
                 ),
                 (
@@ -215,7 +250,7 @@ class CheckClaimedVersionsTests(unittest.TestCase):
         runner = FakeRunner(
             [
                 (
-                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&base=main&per_page=100"],
+                    ["gh", "api", "repos/grostim/gramps-two-way-fan-chart/pulls?state=open&per_page=100"],
                     FakeResult(stdout=_pulls_json(pulls)),
                 ),
                 (

@@ -11,14 +11,21 @@ Produces:
 """
 import glob
 import gzip
+import io
 import json
 import os
 import tarfile
 
+from ci.release_channel import channel_from_env, channel_status, transform_registration
+
 ADDON = "TwoWayFanChart"
+PLUGIN_ID = "two_way_fan_chart"
 GRAMPS_VERSION = "6.0"
 
-VERSION = "1.2.96"
+VERSION = "1.2.97"
+
+channel = channel_from_env()
+status_token, listing_status = channel_status(channel)
 
 # ── Build .addon.tgz ──
 
@@ -70,7 +77,15 @@ with open(tgz_path, "wb") as raw_archive:
             fileobj=compressed, mode="w", format=tarfile.GNU_FORMAT
         ) as tar:
             for f in sorted(unique_files):
-                tar.add(f, filter=tar_filt)
+                if f == f"{ADDON}/{ADDON}.gpr.py":
+                    with open(f, "r", encoding="utf-8") as source:
+                        transformed = transform_registration(source.read(), channel)
+                    info = tar_filt(tar.gettarinfo(f))
+                    payload = transformed.encode("utf-8")
+                    info.size = len(payload)
+                    tar.addfile(info, io.BytesIO(payload))
+                else:
+                    tar.add(f, filter=tar_filt)
 
 print(f"Built: {tgz_path} ({os.path.getsize(tgz_path)} bytes)")
 
@@ -82,23 +97,23 @@ os.makedirs(listings_dir, exist_ok=True)
 listings = {
     "en": {
         "n": "Two-Way Fan Chart",
-        "i": ADDON,
+        "i": PLUGIN_ID,
         "t": 0,  # REPORT
         "d": "Generates a bidirectional fan chart with ancestors, descendants, and portraits around a center family.",
         "v": VERSION,
         "g": GRAMPS_VERSION,
-        "s": 3,  # STABLE
+        "s": listing_status,
         "z": f"{ADDON}.addon.tgz",
         "h": "https://github.com/grostim/gramps-two-way-fan-chart",
     },
     "fr": {
         "n": "Éventail généalogique bidirectionnel",
-        "i": ADDON,
+        "i": PLUGIN_ID,
         "t": 0,
         "d": "Génère un éventail généalogique bidirectionnel avec ascendants, descendants et portraits autour d'un couple central.",
         "v": VERSION,
         "g": GRAMPS_VERSION,
-        "s": 3,
+        "s": listing_status,
         "z": f"{ADDON}.addon.tgz",
         "h": "https://github.com/grostim/gramps-two-way-fan-chart",
     },

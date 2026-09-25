@@ -6,8 +6,14 @@ from __future__ import annotations
 import ast
 import json
 import re
+import sys
 import tarfile
 from pathlib import Path
+from typing import NoReturn
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from ci.release_channel import channel_from_env, channel_status, transform_registration
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +22,7 @@ ARCHIVE_NAME = f"{ADDON}.addon.tgz"
 ARCHIVE_PATH = ROOT / "gramps60" / "download" / ARCHIVE_NAME
 
 
-def fail(message: str) -> None:
+def fail(message: str) -> NoReturn:
     raise SystemExit(f"distribution validation failed: {message}")
 
 
@@ -44,6 +50,13 @@ def registration_value(text: str, field: str) -> str:
     return match.group(1)
 
 
+def registration_status(text: str) -> str:
+    match = re.search(r"\bstatus\s*=\s*(STABLE|EXPERIMENTAL)\b", text)
+    if match is None:
+        fail("registration is missing a supported status")
+    return match.group(1)
+
+
 def expected_archive_files() -> set[str]:
     manifest_path = ROOT / ADDON / "MANIFEST"
     manifest_entries = [
@@ -67,7 +80,7 @@ def expected_archive_files() -> set[str]:
     return set(manifest_entries) | python_files
 
 
-def validate_archive(expected_files: set[str]) -> int:
+def validate_archive(expected_files: set[str], channel: str) -> int:
     if not ARCHIVE_PATH.is_file():
         fail(f"missing archive {ARCHIVE_PATH.relative_to(ROOT)}")
 
@@ -95,13 +108,19 @@ def validate_archive(expected_files: set[str]) -> int:
             if extracted is None:
                 fail(f"cannot read archive member: {member.name}")
             source_bytes = (ROOT / member.name).read_bytes()
+            if member.name == f"{ADDON}/{ADDON}.gpr.py":
+                source_text = source_bytes.decode("utf-8")
+                source_bytes = transform_registration(source_text, channel).encode("utf-8")
             if extracted.read() != source_bytes:
-                fail(f"archive content differs from source: {member.name}")
+                fail(f"archive content differs from source/channel: {member.name}")
 
     return len(members)
 
 
-def validate_listings(version: str, gramps_version: str) -> None:
+def validate_listings(
+    version: str, gramps_version: str, plugin_id: str, channel: str
+) -> None:
+    _, listing_status = channel_status(channel)
     for language in ("en", "fr"):
         path = ROOT / "gramps60" / "listings" / f"addons-{language}.json"
         if not path.is_file():
@@ -116,10 +135,11 @@ def validate_listings(version: str, gramps_version: str) -> None:
         if not isinstance(entry, dict):
             fail(f"{path.relative_to(ROOT)} entry must be an object")
         expected = {
-            "i": ADDON,
+            "i": plugin_id,
             "v": version,
             "g": gramps_version,
             "z": ARCHIVE_NAME,
+            "s": listing_status,
         }
         for key, value in expected.items():
             if entry.get(key) != value:
@@ -135,10 +155,24 @@ def main() -> None:
     registration = registration_path.read_text(encoding="utf-8")
 
     addon = literal_assignment(builder_path, "ADDON")
+    plugin_id = literal_assignment(builder_path, "PLUGIN_ID")
     version = literal_assignment(builder_path, "VERSION")
     gramps_version = literal_assignment(builder_path, "GRAMPS_VERSION")
+    if not isinstance(plugin_id, str):
+        fail("builder PLUGIN_ID must be a string")
+    if not isinstance(version, str):
+        fail("builder VERSION must be a string")
+    if not isinstance(gramps_version, str):
+        fail("builder GRAMPS_VERSION must be a string")
     if addon != ADDON:
         fail(f"builder ADDON={addon!r}; expected {ADDON!r}")
+
+    registration_plugin_id = registration_value(registration, "id")
+    if plugin_id != registration_plugin_id:
+        fail(
+            "plugin ID mismatch between builder and registration: "
+            f"{plugin_id!r} != {registration_plugin_id!r}"
+        )
 
     registration_version = registration_value(registration, "version")
     registration_gramps_version = registration_value(
@@ -155,13 +189,19 @@ def main() -> None:
             f"{gramps_version!r} != {registration_gramps_version!r}"
         )
 
+    channel = channel_from_env()
+    expected_status, _ = channel_status(channel)
+    source_status = registration_status(registration)
+    if source_status != "STABLE":
+        fail(f"source registration status must remain STABLE; found {source_status!r}")
+
     expected_files = expected_archive_files()
-    archive_entries = validate_archive(expected_files)
-    validate_listings(version, gramps_version)
+    archive_entries = validate_archive(expected_files, channel)
+    validate_listings(version, gramps_version, registration_plugin_id, channel)
     print(
         "distribution=ok "
-        f"version={version} gramps={gramps_version} "
-        f"archive_entries={archive_entries}"
+        f"version={version} channel={channel} registration_status={expected_status} "
+        f"gramps={gramps_version} archive_entries={archive_entries}"
     )
 
 

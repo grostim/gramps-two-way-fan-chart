@@ -5,7 +5,13 @@ on:
   push:
     branches:
       - main
+      - experimental
   workflow_dispatch:
+    inputs:
+      rollback_version:
+        description: "Existing stable version to restore on Gramps Web (vX.Y.Z, manual rollback only)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -140,6 +146,7 @@ jobs:
       version: ${{ steps.release_metadata.outputs.version }}
       tag: ${{ steps.release_metadata.outputs.tag }}
       archive_name: ${{ steps.release_metadata.outputs.archive_name }}
+      channel: ${{ steps.release_channel.outputs.channel }}
 
     steps:
       - name: Checkout
@@ -153,8 +160,25 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Select release channel
+        id: release_channel
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            branch="$GITHUB_BASE_REF"
+          else
+            branch="$GITHUB_REF_NAME"
+          fi
+          case "$branch" in
+            experimental) channel=experimental ;;
+            *) channel=stable ;;
+          esac
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "TWFC_CHANNEL=$channel"
+
       - name: Read release metadata
         id: release_metadata
+        env:
+          TWFC_CHANNEL: ${{ steps.release_channel.outputs.channel }}
         run: python ci/release_metadata.py --github-output "$GITHUB_OUTPUT"
 
       - name: Reject non-increasing release versions
@@ -178,12 +202,17 @@ jobs:
           PY
 
       - name: Build distribution
+        env:
+          TWFC_CHANNEL: ${{ steps.release_channel.outputs.channel }}
         run: python build_addon.py
 
       - name: Validate distribution
+        env:
+          TWFC_CHANNEL: ${{ steps.release_channel.outputs.channel }}
         run: python ci/validate_distribution.py
 
       - name: Verify generated files are committed
+        if: steps.release_channel.outputs.channel == 'stable'
         run: git diff --exit-code -- gramps60
 
       - name: Create archive checksum
@@ -203,8 +232,14 @@ jobs:
     name: release
     needs: distribution
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      ((github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experimental')) ||
+      (github.event_name == 'workflow_dispatch' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experimental') &&
+      inputs.rollback_version == ''))
+    concurrency:
+      group: twfc-release-tags
+      cancel-in-progress: false
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -214,6 +249,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.distribution.outputs.version }}
       RELEASE_TAG: ${{ needs.distribution.outputs.tag }}
       RELEASE_ARCHIVE: ${{ needs.distribution.outputs.archive_name }}
+      RELEASE_CHANNEL: ${{ needs.distribution.outputs.channel }}
 
     steps:
       - name: Checkout
@@ -244,7 +280,8 @@ jobs:
               "$RELEASE_TAG" \
               "$RELEASE_ARCHIVE" \
               "$(sha256sum "release-artifacts/$RELEASE_ARCHIVE" | cut -d ' ' -f 1)" \
-              "$(sha256sum "release-artifacts/${RELEASE_ARCHIVE}.sha256" | cut -d ' ' -f 1)" <<'PY'
+              "$(sha256sum "release-artifacts/${RELEASE_ARCHIVE}.sha256" | cut -d ' ' -f 1)" \
+              "$RELEASE_CHANNEL" <<'PY'
           import json
           import sys
 
@@ -254,10 +291,14 @@ jobs:
               archive_name,
               archive_sha256,
               checksum_asset_sha256,
+              expected_channel,
           ) = sys.argv[1:]
           release = json.load(open(release_path, encoding="utf-8"))
-          if release.get("draft") or release.get("prerelease"):
-              raise SystemExit("release must be published and non-prerelease")
+          expected_prerelease = expected_channel == "experimental"
+          if release.get("draft") or release.get("prerelease") != expected_prerelease:
+              raise SystemExit(
+                  f"release classification mismatch for channel {expected_channel!r}"
+              )
           if release.get("tag_name") != expected_tag:
               raise SystemExit(
                   f"release tag mismatch: {release.get('tag_name')!r} != {expected_tag!r}"
@@ -283,7 +324,7 @@ jobs:
                   f"{checksum.get('digest')!r} != {expected_checksum_digest!r}"
               )
           print(
-              f"release_verified tag={release['tag_name']} "
+              f"release_verified tag={release['tag_name']} channel={expected_channel} "
               f"archive={archive_name} digest={expected_digest} "
               f"checksum_digest={expected_checksum_digest}"
           )
@@ -291,6 +332,19 @@ jobs:
           }
 
           git fetch --tags origin
+          if ! git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
+            python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          from ci.release_metadata import read_release_metadata, validate_version_is_newer
+
+          metadata = read_release_metadata(Path.cwd())
+          tags = subprocess.check_output(["git", "tag", "--list", "v*"], text=True).splitlines()
+          versions = [tag[1:] for tag in tags if tag.startswith("v")]
+          validate_version_is_newer(metadata.version, versions)
+          print(f"release_version_order_rechecked=ok version={metadata.version} tags={len(versions)}")
+          PY
+          fi
           if git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
             tag_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
             if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
@@ -310,13 +364,18 @@ jobs:
             exit 1
           fi
 
+          prerelease_args=()
+          if [[ "$RELEASE_CHANNEL" == "experimental" ]]; then
+            prerelease_args+=(--prerelease)
+          fi
           gh release create "$RELEASE_TAG" \
             "release-artifacts/$RELEASE_ARCHIVE" \
             "release-artifacts/${RELEASE_ARCHIVE}.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "TwoWayFanChart ${RELEASE_VERSION}" \
-            --generate-notes
+            --title "TwoWayFanChart ${RELEASE_VERSION} (${RELEASE_CHANNEL})" \
+            --generate-notes \
+            "${prerelease_args[@]}"
 
           git fetch --tags origin
           tag_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
@@ -331,13 +390,16 @@ jobs:
     name: deploy / GrampsWeb
     # No Portainer API or SSH call is made here. The only external write is a
     # commit to grostim/portainer-util; its existing push webhook deploys the
-    # updated stack on Portainer.
+    # updated stack.
     needs: [distribution, release]
     if: >-
       needs.release.result == 'success' &&
       vars.GRAMPSWEB_DEPLOY_ENABLED == 'true' &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+      ((github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experimental')) ||
+      (github.event_name == 'workflow_dispatch' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experimental') &&
+      inputs.rollback_version == ''))
     permissions:
       contents: read
     runs-on: ubuntu-24.04
@@ -349,6 +411,7 @@ jobs:
       GH_TOKEN: ${{ secrets.PORTAINER_UTIL_TOKEN }}
       RELEASE_VERSION: ${{ needs.distribution.outputs.version }}
       RELEASE_SHA: ${{ github.sha }}
+      RELEASE_CHANNEL: ${{ needs.distribution.outputs.channel }}
 
     steps:
       - name: Checkout add-on automation
@@ -372,7 +435,8 @@ jobs:
         working-directory: portainer-util
         run: |
           python3 ../addon/ci/update_portainer_rollout.py \
-            docker-compose.yml "$RELEASE_VERSION" "$RELEASE_SHA"
+            docker-compose.yml "$RELEASE_VERSION" "$RELEASE_SHA" \
+            --channel "$RELEASE_CHANNEL"
 
       - name: Verify the marker-only change
         working-directory: portainer-util
@@ -400,7 +464,7 @@ jobs:
             printf '%s' "$readback" | base64 --decode > /tmp/portainer-compose-readback.yml
             cmp -- docker-compose.yml /tmp/portainer-compose-readback.yml
             echo "portainer_util_commit=already-present"
-            echo "rollout_marker=${RELEASE_VERSION}-release-${RELEASE_SHA:0:12}"
+            echo "rollout_marker=${RELEASE_VERSION}-${RELEASE_CHANNEL}-release-${RELEASE_SHA:0:12}"
             exit 0
           fi
 
@@ -424,4 +488,99 @@ jobs:
           printf '%s' "$readback" | base64 --decode > /tmp/portainer-compose-readback.yml
           cmp -- docker-compose.yml /tmp/portainer-compose-readback.yml
           echo "portainer_util_commit=$commit_sha"
-          echo "rollout_marker=${RELEASE_VERSION}-release-${RELEASE_SHA:0:12}"
+          echo "rollout_marker=${RELEASE_VERSION}-${RELEASE_CHANNEL}-release-${RELEASE_SHA:0:12}"
+
+  rollback_grampsweb:
+    name: rollback / GrampsWeb to stable release
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.rollback_version != '' &&
+      vars.GRAMPSWEB_DEPLOY_ENABLED == 'true'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: grampsweb-addon-deploy
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.PORTAINER_UTIL_TOKEN }}
+      ROLLBACK_VERSION: ${{ inputs.rollback_version }}
+    steps:
+      - name: Validate selected stable release
+        run: |
+          set -euo pipefail
+          if [[ ! "$ROLLBACK_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::rollback_version must be an exact stable tag such as v1.2.96"
+            exit 1
+          fi
+          gh release view "$ROLLBACK_VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,tagName,assets --jq \
+            'if .isDraft or .isPrerelease then error("rollback target is not a published stable release") else . end | if ([.assets[].name] | index("TwoWayFanChart.addon.tgz") and index("TwoWayFanChart.addon.tgz.sha256")) then .tagName else error("stable rollback asset/checksum missing") end'
+
+      - name: Checkout release source and Portainer stack
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          path: addon
+          persist-credentials: false
+
+      - name: Resolve immutable release commit
+        working-directory: addon
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          tag_commit="$(git rev-parse "${ROLLBACK_VERSION}^{commit}")"
+          if [[ ! "$tag_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::rollback tag did not resolve to an immutable commit"
+            exit 1
+          fi
+          echo "ROLLBACK_SHA=$tag_commit" >> "$GITHUB_ENV"
+
+      - name: Checkout Portainer stack
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: grostim/portainer-util
+          ref: main
+          token: ${{ secrets.PORTAINER_UTIL_TOKEN }}
+          path: portainer-util
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set explicit stable rollback marker
+        working-directory: portainer-util
+        run: |
+          version="${ROLLBACK_VERSION#v}"
+          python3 ../addon/ci/update_portainer_rollout.py \
+            docker-compose.yml "$version" "$ROLLBACK_SHA" \
+            --channel stable --allow-rollback
+          git diff --check
+          changed="$(git diff --name-only)"
+          if [[ "$changed" != docker-compose.yml ]]; then
+            echo "::error::rollback must change only docker-compose.yml"
+            exit 1
+          fi
+          git diff -- docker-compose.yml
+
+      - name: Commit rollback markers to grostim/portainer-util
+        working-directory: portainer-util
+        run: |
+          set -euo pipefail
+          endpoint="repos/grostim/portainer-util/contents/docker-compose.yml"
+          remote_blob_sha="$(gh api "$endpoint?ref=main" --jq '.sha')"
+          local_blob_sha="$(git rev-parse HEAD:docker-compose.yml)"
+          if [[ "$remote_blob_sha" != "$local_blob_sha" ]]; then
+            echo "::error::portainer-util/main advanced; refusing a non-fast-forward rollback update"
+            exit 1
+          fi
+          content="$(base64 -w0 docker-compose.yml)"
+          response="$(gh api "$endpoint" --method PUT \
+            --field "message=ci: rollback TwoWayFanChart to ${ROLLBACK_VERSION}" \
+            --field "content=${content}" --field "sha=${remote_blob_sha}" --field branch=main)"
+          commit_sha="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"]["sha"])' <<<"$response")"
+          echo "portainer_util_rollback_commit=$commit_sha"
+          echo "rollback_release=$ROLLBACK_VERSION"
+          echo "rollback_addon_sha=$ROLLBACK_SHA"
+          readback="$(gh api "$endpoint?ref=main" --jq '.content' | tr -d '\r\n')"
+          printf '%s' "$readback" | base64 --decode > /tmp/portainer-compose-rollback-readback.yml
+          cmp -- docker-compose.yml /tmp/portainer-compose-rollback-readback.yml

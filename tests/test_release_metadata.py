@@ -1,3 +1,5 @@
+import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,10 +18,28 @@ class ReleaseMetadataTests(unittest.TestCase):
 
         self.assertEqual(metadata.addon, "TwoWayFanChart")
 
-        self.assertEqual(metadata.version, "1.2.96")
+        self.assertEqual(metadata.version, "1.2.97")
         self.assertEqual(metadata.gramps_version, "6.0")
-        self.assertEqual(metadata.tag, "v1.2.96")
+        self.assertEqual(metadata.tag, "v1.2.97")
         self.assertEqual(metadata.archive_name, "TwoWayFanChart.addon.tgz")
+
+    def test_addon_manager_listing_id_matches_registered_plugin_id(self):
+        root = Path(__file__).resolve().parents[1]
+        registration = (root / "TwoWayFanChart/TwoWayFanChart.gpr.py").read_text(
+            encoding="utf-8"
+        )
+        plugin_id_match = re.search(r'\bid="([^"]+)"', registration)
+        self.assertIsNotNone(plugin_id_match)
+        if plugin_id_match is None:
+            self.fail("plugin registration is missing its ID")
+        plugin_id = plugin_id_match.group(1)
+
+        for language in ("en", "fr"):
+            listing_path = (
+                root / "gramps60/listings" / f"addons-{language}.json"
+            )
+            listing = json.loads(listing_path.read_text(encoding="utf-8"))
+            self.assertEqual(listing[0]["i"], plugin_id, listing_path.name)
 
     def test_version_must_be_a_plain_semver_patch_version(self):
         validate_version("1.2.47")
@@ -50,8 +70,8 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(
             output,
 
-            "version=1.2.96\n"
-            "tag=v1.2.96\n"
+            "version=1.2.97\n"
+            "tag=v1.2.97\n"
             "archive_name=TwoWayFanChart.addon.tgz\n",
         )
 

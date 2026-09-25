@@ -15,6 +15,11 @@ _MARKER_PATTERNS = {
         r"(?P<value>[^#\r\n \t]+)(?P<suffix>[ \t]*(?:#.*)?)$",
         re.MULTILINE,
     ),
+    "channel": re.compile(
+        r"^(?P<prefix>[ \t]*-[ \t]*TWFC_ADDON_CHANNEL=)"
+        r"(?P<value>[^#\r\n \t]+)(?P<suffix>[ \t]*(?:#.*)?)$",
+        re.MULTILINE,
+    ),
     "rollout": re.compile(
         r"^(?P<prefix>[ \t]*-[ \t]*TWFC_ADDON_ROLLOUT=)"
         r"(?P<value>[^#\r\n \t]+)(?P<suffix>[ \t]*(?:#.*)?)$",
@@ -47,6 +52,8 @@ def update_compose(
     version: str,
     release_sha: str,
     *,
+    channel: str = "stable",
+    allow_rollback: bool = False,
     expected_occurrences: int = 2,
 ) -> str:
     """Update both marker copies and return the new rollout marker.
@@ -57,6 +64,10 @@ def update_compose(
     stack file.
     """
     _version_tuple(version)
+    if channel not in {"stable", "experimental"}:
+        raise ValueError("channel must be 'stable' or 'experimental'")
+    if allow_rollback and channel != "stable":
+        raise ValueError("rollback is allowed only for the stable channel")
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise ValueError("release SHA must be a 40-character lowercase hex string")
     if expected_occurrences < 1:
@@ -67,6 +78,7 @@ def update_compose(
         "grampsweb_addon:",
         "service_healthy",
         "apk add --no-cache ca-certificates curl",
+        "TWFC_ADDON_CHANNEL=",
         "sha256sum -c",
         "addons/TwoWayFanChart:/root/gramps/gramps60/plugins/TwoWayFanChart:ro",
     )
@@ -76,34 +88,34 @@ def update_compose(
             "Portainer stack is not ready for release deployment; missing: "
             + ", ".join(missing_fragments)
         )
-    version_matches = _matches(text, "version")
-    rollout_matches = _matches(text, "rollout")
-    if len(version_matches) != expected_occurrences:
-        raise ValueError(
-            "expected exactly "
-            f"{expected_occurrences} TWFC_ADDON_VERSION markers, found {len(version_matches)}"
-        )
-    if len(rollout_matches) != expected_occurrences:
-        raise ValueError(
-            "expected exactly "
-            f"{expected_occurrences} TWFC_ADDON_ROLLOUT markers, found {len(rollout_matches)}"
-        )
+    for marker in ("version", "channel", "rollout"):
+        matches = _matches(text, marker)
+        if len(matches) != expected_occurrences:
+            raise ValueError(
+                f"expected exactly {expected_occurrences} TWFC_ADDON_{marker.upper()} markers, "
+                f"found {len(matches)}"
+            )
 
-    current_versions = {match.group("value") for match in version_matches}
+    current_versions = {match.group("value") for match in _matches(text, "version")}
     if len(current_versions) != 1:
         raise ValueError(f"TWFC_ADDON_VERSION markers disagree: {sorted(current_versions)}")
     current_version = next(iter(current_versions))
-    if _version_tuple(current_version) > _version_tuple(version):
+    if _version_tuple(current_version) > _version_tuple(version) and not allow_rollback:
         raise ValueError(
             f"refusing to downgrade Portainer marker from {current_version} to {version}"
         )
 
-    current_rollouts = {match.group("value") for match in rollout_matches}
+    current_channels = {match.group("value") for match in _matches(text, "channel")}
+    if len(current_channels) != 1:
+        raise ValueError(f"TWFC_ADDON_CHANNEL markers disagree: {sorted(current_channels)}")
+    current_rollouts = {match.group("value") for match in _matches(text, "rollout")}
     if len(current_rollouts) != 1:
         raise ValueError(f"TWFC_ADDON_ROLLOUT markers disagree: {sorted(current_rollouts)}")
 
-    rollout = f"{version}-release-{release_sha[:12]}"
+    action = "rollback" if allow_rollback else "release"
+    rollout = f"{version}-{channel}-{action}-{release_sha[:12]}"
     updated = _replace_markers(text, "version", version)
+    updated = _replace_markers(updated, "channel", channel)
     updated = _replace_markers(updated, "rollout", rollout)
     if updated != text:
         compose_path.write_text(updated, encoding="utf-8", newline="")
@@ -115,6 +127,8 @@ def main() -> None:
     parser.add_argument("compose_path", type=Path)
     parser.add_argument("version")
     parser.add_argument("release_sha")
+    parser.add_argument("--channel", choices=("stable", "experimental"), default="stable")
+    parser.add_argument("--allow-rollback", action="store_true")
     parser.add_argument("--expected-occurrences", type=int, default=2)
     args = parser.parse_args()
 
@@ -122,9 +136,14 @@ def main() -> None:
         args.compose_path,
         args.version,
         args.release_sha,
+        channel=args.channel,
+        allow_rollback=args.allow_rollback,
         expected_occurrences=args.expected_occurrences,
     )
-    print(f"portainer_rollout=ok version={args.version} marker={rollout}")
+    print(
+        f"portainer_rollout=ok version={args.version} channel={args.channel} "
+        f"marker={rollout}"
+    )
 
 
 if __name__ == "__main__":

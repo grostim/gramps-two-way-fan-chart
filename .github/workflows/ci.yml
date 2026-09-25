@@ -247,7 +247,9 @@ jobs:
     needs: [test, pr_version, distribution, release]
     if: >-
       needs.release.result == 'success' &&
-      github.event_name == 'push' && github.ref == 'refs/heads/experimental'
+      github.ref == 'refs/heads/experimental' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.rollback_version == ''))
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -620,6 +622,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' &&
       inputs.rollback_version != '' &&
+      github.ref == 'refs/heads/main' &&
       vars.GRAMPSWEB_DEPLOY_ENABLED == 'true'
     permissions:
       contents: read

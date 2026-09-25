@@ -152,6 +152,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
         self.options_dict.tracking_enabled = False
         try:
             super().load_previous_values()
+            self._apply_default_page_setup()
             self._normalize_loaded_values()
         finally:
             self.options_dict.explicit_keys.clear()
@@ -182,6 +183,18 @@ class TwoWayFanChartOptions(MenuReportOptions):
             )
         center_option.set_value(family.get_gramps_id())
         self.refresh_dependencies()
+
+    def _apply_default_page_setup(self) -> None:
+        """Use A0 landscape unless this report already has saved page choices."""
+        handler = self.handler
+        if handler is None:
+            return
+
+        saved_page_options = getattr(handler, "saved_option_list", None)
+        if saved_page_options is None or not saved_page_options.get_paper_name():
+            handler.set_paper_name(PaperSize.A0.value)
+        if saved_page_options is None or saved_page_options.get_orientation() is None:
+            handler.set_orientation(PAPER_LANDSCAPE)
 
     def _normalize_loaded_values(self) -> None:
         """Rewrite persisted values that no longer exist to supported ones.

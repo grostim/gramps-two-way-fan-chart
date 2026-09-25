@@ -20,7 +20,9 @@ itself (privacy and living-people handling) are documented at the end.
 - Default: `publication`
 
 Applies a profile to the chart-specific options in one click. Page size
-and orientation remain controlled by Gramps' standard page setup.
+and orientation remain controlled by Gramps' standard page setup. For a
+report with no saved page choices, the defaults are A0 and Landscape;
+previously saved choices are preserved.
 
 - `publication` — the publication mockup profile: 5 ancestor + 4
   descendant generations, all privacy options fully open, portraits

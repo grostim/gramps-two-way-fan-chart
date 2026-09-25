@@ -1,7 +1,7 @@
 # Éventail généalogique bidirectionnel — Référence des options
 
-Ce document décrit chaque option configurable du rapport Éventail
-généalogique bidirectionnel **et son effet réel sur le rendu**. Il est
+Ce document décrit toutes les options actuellement exposées du rapport
+Éventail généalogique bidirectionnel **et leur effet réel sur le rendu**. Il est
 maintenu synchronisé avec le menu d'options par un test automatisé
 (`tests/test_option_contract.py`) : chaque option du menu doit avoir
 une section ici, et chaque section doit correspondre à une option
@@ -21,13 +21,15 @@ vivantes) sont documentées à la fin.
 - Type : liste — `publication`, `compact`, `custom`
 - Défaut : `publication`
 
-Applique un profil complet de configuration en un clic.
+Applique un profil aux options propres au graphique en un clic. Le
+format et l'orientation de page restent contrôlés par la mise en page
+standard de Gramps.
 
-- `publication` — le profil maquette public : papier A0 paysage,
-  5 générations d'ancêtres + 4 de descendants, options de
-  confidentialité ouvertes, portraits actifs, marqueurs désactivés.
-- `compact` — papier A4, 2 générations d'ancêtres + 1 de descendants,
-  pour un aperçu rapide de type fiche familiale.
+- `publication` — le profil maquette public : 5 générations d'ancêtres
+  + 4 de descendants, options de confidentialité ouvertes et portraits
+  actifs.
+- `compact` — 2 générations d'ancêtres + 1 de descendants, pour un
+  aperçu rapide de type fiche familiale.
 - `custom` — le profil n'est plus un préréglage ; le graphique utilise
   exactement les valeurs affichées dans le menu.
 
@@ -157,20 +159,10 @@ bichromie sépia.
 
 ## Papier et mise en page
 
-### paper_size
-- Type : liste — A5, A4, A3, A2, A1, A0, Letter, Legal, Tabloid,
-  Custom
-- Défaut : `A0`
-
-Format de papier standard du graphique. Choisir `Custom` active les
-deux dimensions personnalisées ci-dessous.
-
-### orientation
-- Type : liste — `portrait`, `landscape`
-- Défaut : `landscape`
-
-Échange la largeur et la hauteur du papier. L'éventail étant plus large
-que haut, le paysage est l'orientation recommandée.
+Le format et l'orientation de la page utilisent les options standard de
+mise en page de Gramps (`papers` et `papero`), plutôt que des options
+Two-Way Fan Chart en doublon. Les dimensions choisies sont utilisées pour
+les sorties SVG, PDF et PNG.
 
 ### margin_mm
 - Type : nombre (mm), 0–100
@@ -178,20 +170,6 @@ que haut, le paysage est l'orientation recommandée.
 
 Marge uniforme autour du graphique. La zone de dessin est le papier
 moins ces marges sur les quatre côtés.
-
-### custom_width_mm
-- Type : nombre (mm), 1–2000
-- Défaut : `594`
-- Disponible uniquement quand `paper_size` vaut `Custom`.
-
-Largeur du format de papier personnalisé.
-
-### custom_height_mm
-- Type : nombre (mm), 1–2000
-- Défaut : `420`
-- Disponible uniquement quand `paper_size` vaut `Custom`.
-
-Hauteur du format de papier personnalisé.
 
 ---
 
@@ -203,25 +181,6 @@ Hauteur du format de papier personnalisé.
 
 Couleur de fond du graphique (couleur du papier). Elle est utilisée
 comme fond de la page SVG et comme fond du PDF/PNG.
-
-### highlight_tag
-- Type : chaîne (nom d'étiquette Gramps)
-- Défaut : vide
-
-Quand `show_highlight_markers` est activé, les personnes portant cette
-étiquette Gramps sont visuellement marquées sur le graphique. Une
-valeur vide désactive le marquage même si l'option des marqueurs est
-activée.
-
-### show_highlight_markers
-- Type : booléen
-- Défaut : `false`
-
-Dessine un marqueur autour des médaillons centraux, des emplacements
-d'ancêtres et des médaillons de descendants dont la personne porte
-l'étiquette `highlight_tag` configurée. Le marqueur est automatiquement
-effacé pour les personnes masquées ou exclues, afin qu'aucun signal ne
-filtre à travers la confidentialité.
 
 ---
 

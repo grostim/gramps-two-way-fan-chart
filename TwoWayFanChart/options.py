@@ -10,6 +10,10 @@ from gramps.gen.plug.docgen import (
     GraphicsStyle,
     FONT_SANS_SERIF,
     PARA_ALIGN_CENTER,
+    PAPER_LANDSCAPE,
+    PAPER_PORTRAIT,
+    PaperSize as GrampsPaperSize,
+    PaperStyle,
     ParagraphStyle,
 )
 from gramps.gen.plug.menu import (
@@ -18,7 +22,6 @@ from gramps.gen.plug.menu import (
     EnumeratedListOption,
     FamilyOption,
     NumberOption,
-    StringOption,
 )
 from gramps.gen.plug.report import MenuReportOptions, stdoptions
 from gramps.gen.proxy import LivingProxyDb
@@ -104,7 +107,6 @@ class _ExplicitOptionsDict(dict[str, object]):
 # block report generation nor silently change privacy protection.
 _LEGACY_VALUE_ALIASES: dict[str, dict[str, str]] = {
     "preset": {"family": "publication"},
-    "orientation": {"automatic": "landscape"},
     "privacy_mode": {
         "surname_only": "full_name_only",
     },
@@ -168,8 +170,8 @@ class TwoWayFanChartOptions(MenuReportOptions):
     def _normalize_loaded_values(self) -> None:
         """Rewrite persisted values that no longer exist to supported ones.
 
-        Older releases stored ``preset=family``, ``orientation=automatic``
-        and ``privacy_mode=surname_only``. Those enum members were removed;
+        Older releases stored ``preset=family`` and
+        ``privacy_mode=surname_only``. Those enum members were removed;
         without this mapping, a stale persisted value would leave the menu
         option on its default (``privacy_mode=surname_only`` would silently
         weaken to ``include_all``) while ``build_chart_config()`` would
@@ -281,44 +283,10 @@ class TwoWayFanChartOptions(MenuReportOptions):
             ),
         )
         menu.add_option(
-            _(CATEGORY_PAPER),
-            "paper_size",
-            _enum(
-                "Paper size",
-                "A0",
-                tuple((value, value) for value in ("A5", "A4", "A3", "A2", "A1", "A0", "Letter", "Legal", "Tabloid", "Custom")),
-            ),
-        )
-        menu.add_option(
-            _(CATEGORY_PAPER),
-            "orientation",
-            _enum(
-                "Orientation",
-                "landscape",
-                (("portrait", "Portrait"), ("landscape", "Landscape")),
-            ),
-        )
-        menu.add_option(
             _(CATEGORY_PAPER), "margin_mm", NumberOption(_("Uniform margin (mm)"), 12, 0, 100)
         )
         menu.add_option(
-            _(CATEGORY_PAPER), "custom_width_mm", NumberOption(_("Custom width (mm)"), 594, 1, 2000)
-        )
-        menu.add_option(
-            _(CATEGORY_PAPER), "custom_height_mm", NumberOption(_("Custom height (mm)"), 420, 1, 2000)
-        )
-        menu.add_option(
             _(CATEGORY_COLORS), "background_color", ColorOption(_("Background color"), "#FAF9F5")
-        )
-        menu.add_option(
-            _(CATEGORY_COLORS),
-            "highlight_tag",
-            StringOption(_("Highlight tag"), ""),
-        )
-        menu.add_option(
-            _(CATEGORY_COLORS),
-            "show_highlight_markers",
-            BooleanOption(_("Show citation markers"), False),
         )
         menu.add_option(
             _(CATEGORY_PRIVACY),
@@ -343,10 +311,9 @@ class TwoWayFanChartOptions(MenuReportOptions):
             after_death_years=0,
         )
 
-        for controller in ("paper_size", "show_portraits"):
-            menu.get_option_by_name(controller).connect(
-                "value-changed", self.refresh_dependencies
-            )
+        menu.get_option_by_name("show_portraits").connect(
+            "value-changed", self.refresh_dependencies
+        )
         menu.get_option_by_name("preset").connect(
             "value-changed", self.apply_selected_preset
         )
@@ -370,16 +337,12 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "portrait_source": config.portrait_source,
             "respect_media_crop": config.respect_media_crop,
             "portrait_treatment": config.portrait_treatment,
-            "paper_size": config.paper_size.value,
-            "orientation": config.orientation.value,
             "margin_mm": config.margin_mm,
             "background_color": config.background_color,
             "privacy_mode": config.privacy_mode.value,
             "incl_private": config.include_private,
             "living_people": config.living_people_mode,
             "years_past_death": config.years_past_death,
-            "highlight_tag": config.highlight_tag,
-            "show_highlight_markers": config.show_highlight_markers,
         }
 
     def apply_selected_preset(self) -> None:
@@ -448,10 +411,6 @@ class TwoWayFanChartOptions(MenuReportOptions):
     def refresh_dependencies(self) -> None:
         """Coordinate pure option availability without depending on GTK widgets."""
         menu = self.menu
-        custom_paper = menu.get_option_by_name("paper_size").get_value() == "Custom"
-        for name in ("custom_width_mm", "custom_height_mm"):
-            menu.get_option_by_name(name).set_available(custom_paper)
-
         portraits_enabled = bool(
             menu.get_option_by_name("show_portraits").get_value()
         )
@@ -461,6 +420,107 @@ class TwoWayFanChartOptions(MenuReportOptions):
             "portrait_treatment",
         ):
             menu.get_option_by_name(name).set_available(portraits_enabled)
+
+    def _gramps_page_setup(
+        self,
+    ) -> tuple[PaperSize, Orientation, float | None, float | None]:
+        """Read the standard Gramps page size/orientation selected for the report."""
+        handler = self.handler
+        defaults = ChartConfig()
+        default_page_setup = (
+            defaults.paper_size,
+            defaults.orientation,
+            defaults.custom_width_mm,
+            defaults.custom_height_mm,
+        )
+        if handler is None:
+            return default_page_setup
+
+        handler_options = getattr(handler, "options_dict", {})
+        try:
+            raw_orientation = handler_options.get("papero")
+            if raw_orientation is None:
+                raw_orientation = handler.get_orientation()
+        except AttributeError:
+            return default_page_setup
+        if isinstance(raw_orientation, str):
+            lowered = raw_orientation.lower()
+            if lowered == "portrait":
+                native_orientation = PAPER_PORTRAIT
+            elif lowered == "landscape":
+                native_orientation = PAPER_LANDSCAPE
+            else:
+                try:
+                    native_orientation = int(raw_orientation)
+                except ValueError as error:
+                    raise ValueError("invalid Gramps page orientation") from error
+        else:
+            try:
+                native_orientation = int(raw_orientation)
+            except (TypeError, ValueError) as error:
+                raise ValueError("invalid Gramps page orientation") from error
+
+        if native_orientation == PAPER_PORTRAIT:
+            orientation = Orientation.PORTRAIT
+        elif native_orientation == PAPER_LANDSCAPE:
+            orientation = Orientation.LANDSCAPE
+        else:
+            raise ValueError("invalid Gramps page orientation")
+
+        try:
+            native_paper = handler.get_paper()
+        except AttributeError:
+            native_paper = None
+        raw_paper_name = handler_options.get("papers")
+        if raw_paper_name is None:
+            try:
+                raw_paper_name = (
+                    native_paper.get_name()
+                    if native_paper is not None
+                    else handler.get_paper_name()
+                )
+            except AttributeError:
+                return default_page_setup
+        if not isinstance(raw_paper_name, str):
+            raise ValueError("invalid Gramps page size")
+
+        if raw_paper_name in ("Custom", "Custom Size"):
+            paper_size = PaperSize.CUSTOM
+        else:
+            try:
+                paper_size = PaperSize(raw_paper_name)
+            except ValueError:
+                paper_size = PaperSize.CUSTOM
+
+        if paper_size is not PaperSize.CUSTOM:
+            return paper_size, orientation, None, None
+
+        if (
+            native_paper is not None
+            and native_paper.get_name() == raw_paper_name
+            and native_paper.get_width() > 0
+            and native_paper.get_height() > 0
+        ):
+            paper_for_layout = native_paper
+        else:
+            custom_size_cm = handler.get_custom_paper_size()
+            if (
+                not isinstance(custom_size_cm, (list, tuple))
+                or len(custom_size_cm) != 2
+            ):
+                raise ValueError("Gramps custom page size requires two dimensions")
+            paper_for_layout = GrampsPaperSize(
+                raw_paper_name,
+                float(custom_size_cm[0]),
+                float(custom_size_cm[1]),
+            )
+
+        page_size = PaperStyle(paper_for_layout, native_orientation).get_size()
+        custom_width_mm = float(page_size.get_width()) * 10
+        custom_height_mm = float(page_size.get_height()) * 10
+        if custom_width_mm <= 0 or custom_height_mm <= 0:
+            raise ValueError("Gramps page size must have positive dimensions")
+        return paper_size, orientation, custom_width_mm, custom_height_mm
 
     def build_chart_config(self) -> ChartConfig:
         """Project the complete Gramps menu into one validated value object."""
@@ -473,15 +533,17 @@ class TwoWayFanChartOptions(MenuReportOptions):
             """Menu value with removed legacy enum members mapped forward.
 
             The menu already rejected a stale persisted member on load, so
-            also consult ``options_dict`` (the same object the CLI/WebAPI
-            handler writes) as the last recorded source of truth.
+            consult ``options_dict`` only when it contains a known legacy
+            alias. A valid but older saved value must not override a value
+            the user has since selected in the menu.
             """
             raw = value(name)
             mapped = _normalize_legacy_value(name, raw)
             if mapped == raw:
-                mapped = _normalize_legacy_value(
-                    name, self.options_dict.get(name, raw)
-                )
+                stored = self.options_dict.get(name, raw)
+                stored_mapped = _normalize_legacy_value(name, stored)
+                if stored_mapped != stored:
+                    mapped = stored_mapped
             return mapped
 
         center_family = value("center_family")
@@ -493,12 +555,10 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 _("Select an existing family before generating the chart."),
             )
 
-        paper_size = PaperSize(value("paper_size"))
-        custom_width = value("custom_width_mm") if paper_size is PaperSize.CUSTOM else None
-        custom_height = (
-            value("custom_height_mm") if paper_size is PaperSize.CUSTOM else None
-        )
         try:
+            paper_size, orientation, custom_width, custom_height = (
+                self._gramps_page_setup()
+            )
             return ChartConfig(
                 center_family=center_family,
                 preset=PresetName(normalized("preset")),
@@ -513,7 +573,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 respect_media_crop=value("respect_media_crop"),
                 portrait_treatment=value("portrait_treatment"),
                 paper_size=paper_size,
-                orientation=Orientation(normalized("orientation")),
+                orientation=orientation,
                 margin_mm=value("margin_mm"),
                 custom_width_mm=custom_width,
                 custom_height_mm=custom_height,
@@ -522,8 +582,8 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 include_private=value("incl_private"),
                 living_people_mode=value("living_people"),
                 years_past_death=value("years_past_death"),
-                highlight_tag=value("highlight_tag"),
-                show_highlight_markers=value("show_highlight_markers"),
+                highlight_tag="",
+                show_highlight_markers=False,
             )
         except (TypeError, ValueError) as error:
             raise ReportError(

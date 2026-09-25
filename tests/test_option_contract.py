@@ -47,15 +47,9 @@ ACTIVE_MENU_KEYS = {
     "portrait_source",
     "respect_media_crop",
     "portrait_treatment",
-    "paper_size",
-    "orientation",
     "margin_mm",
-    "custom_width_mm",
-    "custom_height_mm",
     "background_color",
     "privacy_mode",
-    "highlight_tag",
-    "show_highlight_markers",
 }
 
 

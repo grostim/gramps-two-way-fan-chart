@@ -65,12 +65,9 @@ class DefaultConfigurationTests(unittest.TestCase):
             'NumberOption(_("Ancestor generations"), 5, 0, 8)',
             'NumberOption(_("Descendant generations"), 4, 0, 5)',
             'default_center = ChartConfig().center_family',
-            '"Orientation",\n                "landscape"',
-            '"Paper size",\n                "A0"',
             '"Privacy mode",\n                "include_all"',
             'add_private_data_option(menu, _(CATEGORY_PRIVACY), default=True)',
             'mode=LivingProxyDb.MODE_INCLUDE_ALL',
-            'BooleanOption(_("Show citation markers"), False)',
             'BooleanOption(_("Show ancestor marriages"), True)',
             'BooleanOption(_("Show descendant marriages"), True)',
         ):

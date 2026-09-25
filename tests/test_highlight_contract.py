@@ -1,4 +1,3 @@
-import ast
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,10 +17,6 @@ from TwoWayFanChart.model import (
 from TwoWayFanChart.highlight import resolve_highlight_tag_handle
 from TwoWayFanChart.privacy import highlighted_for_state
 from TwoWayFanChart.render_svg import render_svg
-
-
-ROOT = Path(__file__).parents[1]
-OPTIONS_PATH = ROOT / "TwoWayFanChart" / "options.py"
 
 
 def person(handle: str) -> PersonNode:
@@ -72,12 +67,6 @@ class HighlightContractTests(unittest.TestCase):
         self.assertEqual(resolve_highlight_tag_handle(db, tag_name), "dynamic-tag-handle")
         self.assertEqual(db.calls, [tag_name])
         self.assertIsNone(resolve_highlight_tag_handle(db, ""))
-
-    def test_menu_exposes_the_same_highlight_tag_field(self):
-        source = OPTIONS_PATH.read_text(encoding="utf-8")
-        ast.parse(source)
-        self.assertIn('"highlight_tag"', source)
-        self.assertIn('StringOption(_("Highlight tag"), "")', source)
 
     def test_privacy_clears_highlight_for_masked_and_excluded_people(self):
         from TwoWayFanChart.model import VisibilityState

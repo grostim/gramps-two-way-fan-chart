@@ -1,8 +1,8 @@
 # Two-Way Fan Chart — Report Options Reference
 
-This document describes every configurable option of the Two-Way Fan
-Chart report **and its real effect on the rendered chart**. It is kept
-in sync with the option menu by an automated test
+This document describes every currently exposed configurable option of
+the Two-Way Fan Chart report **and its real effect on the rendered chart**.
+It is kept in sync with the option menu by an automated test
 (`tests/test_option_contract.py`): every menu option must have a
 section here, and every section must correspond to an existing menu
 option. When you add, remove or rename an option, update this file (and
@@ -19,13 +19,14 @@ itself (privacy and living-people handling) are documented at the end.
 - Type: enumerated — `publication`, `compact`, `custom`
 - Default: `publication`
 
-Applies a full configuration profile in one click.
+Applies a profile to the chart-specific options in one click. Page size
+and orientation remain controlled by Gramps' standard page setup.
 
-- `publication` — the publication mockup profile: A0 landscape paper,
-  5 ancestor + 4 descendant generations, all privacy options fully
-  open, portraits enabled, highlight markers disabled.
-- `compact` — A4 paper, 2 ancestor + 1 descendant generation, for a
-  quick family-sheet look.
+- `publication` — the publication mockup profile: 5 ancestor + 4
+  descendant generations, all privacy options fully open, portraits
+  enabled.
+- `compact` — 2 ancestor + 1 descendant generation, for a quick
+  family-sheet look.
 - `custom` — the profile is no longer a preset; the chart uses exactly
   the values shown in the menu.
 
@@ -147,20 +148,9 @@ duotone.
 
 ## Paper and layout
 
-### paper_size
-- Type: enumerated — A5, A4, A3, A2, A1, A0, Letter, Legal, Tabloid,
-  Custom
-- Default: `A0`
-
-Standard paper format of the chart. Choosing `Custom` enables the two
-custom dimensions below.
-
-### orientation
-- Type: enumerated — `portrait`, `landscape`
-- Default: `landscape`
-
-Swaps the paper width and height. Because the fan chart is wider than
-tall, landscape is the recommended orientation.
+Page size and orientation use Gramps' standard page setup options
+(`papers` and `papero`), rather than duplicate Two-Way Fan Chart options.
+The selected page dimensions are used for SVG, PDF, and PNG output.
 
 ### margin_mm
 - Type: number (mm), 0–100
@@ -168,20 +158,6 @@ tall, landscape is the recommended orientation.
 
 Uniform margin around the chart. The drawing area is the paper minus
 these margins on all four sides.
-
-### custom_width_mm
-- Type: number (mm), 1–2000
-- Default: `594`
-- Available only when `paper_size` is `Custom`.
-
-Width of the custom paper format.
-
-### custom_height_mm
-- Type: number (mm), 1–2000
-- Default: `420`
-- Available only when `paper_size` is `Custom`.
-
-Height of the custom paper format.
 
 ---
 
@@ -193,23 +169,6 @@ Height of the custom paper format.
 
 Background color of the chart (paper color). It is used as the SVG
 page background and the PDF/PNG background.
-
-### highlight_tag
-- Type: string (Gramps tag name)
-- Default: empty
-
-When `show_highlight_markers` is enabled, persons carrying this Gramps
-tag are visually marked on the chart. An empty value disables the
-marking even when the markers option is enabled.
-
-### show_highlight_markers
-- Type: boolean
-- Default: `false`
-
-Draws a marker around center medallions, ancestor slots and descendant
-medallions whose person carries the configured `highlight_tag`. The
-marker is cleared automatically for masked or excluded people so no
-signal leaks through privacy filtering.
 
 ---
 

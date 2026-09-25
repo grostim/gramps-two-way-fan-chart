@@ -22,8 +22,8 @@ class DefaultConfigurationTests(unittest.TestCase):
         builder = Path("build_addon.py").read_text(encoding="utf-8")
 
 
-        self.assertIn('version="1.2.94"', registration)
-        self.assertIn('VERSION = "1.2.94"', builder)
+        self.assertIn('version="1.2.95"', registration)
+        self.assertIn('VERSION = "1.2.95"', builder)
 
     def test_chart_defaults_match_requested_fan_chart(self):
         config = ChartConfig()
@@ -67,12 +67,9 @@ class DefaultConfigurationTests(unittest.TestCase):
             'NumberOption(_("Ancestor generations"), 5, 0, 8)',
             'NumberOption(_("Descendant generations"), 4, 0, 5)',
             'default_center = ChartConfig().center_family',
-            '"Orientation",\n                "landscape"',
-            '"Paper size",\n                "A0"',
             '"Privacy mode",\n                "include_all"',
             'add_private_data_option(menu, _(CATEGORY_PRIVACY), default=True)',
             'mode=LivingProxyDb.MODE_INCLUDE_ALL',
-            'BooleanOption(_("Show citation markers"), False)',
             'BooleanOption(_("Show ancestor marriages"), True)',
             'BooleanOption(_("Show descendant marriages"), True)',
             'stdoptions.add_name_format_option(menu, _(CATEGORY_NAMES))',

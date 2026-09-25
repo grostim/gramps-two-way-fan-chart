@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   # PR runs share a ref-scoped group and may be cancelled. Release-producing
@@ -151,7 +152,7 @@ jobs:
     needs: [test, pr_version]
     if: github.event_name != 'workflow_dispatch' || inputs.rollback_version == ''
     permissions:
-      contents: write
+      contents: read
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -228,8 +229,51 @@ jobs:
         if: steps.release_channel.outputs.channel == 'stable'
         run: git diff --exit-code -- gramps60
 
-      - name: Publish experimental distribution branch
-        if: steps.release_channel.outputs.channel == 'experimental'
+      - name: Create archive checksum
+        working-directory: gramps60/download
+        run: sha256sum TwoWayFanChart.addon.tgz > TwoWayFanChart.addon.tgz.sha256
+
+      - name: Upload add-on archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: TwoWayFanChart-${{ github.sha }}
+          path: |
+            gramps60/download/TwoWayFanChart.addon.tgz
+            gramps60/download/TwoWayFanChart.addon.tgz.sha256
+          if-no-files-found: error
+
+  publish_experimental_distribution:
+    name: publish experimental distribution
+    needs: [test, pr_version, distribution]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/experimental'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Build experimental distribution
+        env:
+          TWFC_CHANNEL: experimental
+        run: python build_addon.py
+
+      - name: Validate experimental distribution
+        env:
+          TWFC_CHANNEL: experimental
+        run: python ci/validate_distribution.py
+
+      - name: Publish generated distribution
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_BRANCH: experimental
@@ -258,25 +302,33 @@ jobs:
 
           previous_root, candidate_root = map(Path, sys.argv[1:])
 
-          def listing_version(root):
+          def listing_metadata(root):
               path = root / "listings/addons-en.json"
               entries = json.loads(path.read_text(encoding="utf-8"))
-              version = next(entry["v"] for entry in entries if entry.get("i") == "two_way_fan_chart")
-              return tuple(map(int, version.split("."))), version
+              entry = next(item for item in entries if item.get("i") == "two_way_fan_chart")
+              version = entry["v"]
+              return tuple(map(int, version.split("."))), version, int(entry["s"])
 
-          previous, previous_text = listing_version(previous_root)
-          candidate, candidate_text = listing_version(candidate_root)
+          previous, previous_text, previous_status = listing_metadata(previous_root)
+          candidate, candidate_text, candidate_status = listing_metadata(candidate_root)
+          if candidate_status != 2:
+              raise SystemExit(f"expected experimental listing status 2, got {candidate_status}")
           if previous > candidate:
               raise SystemExit(f"experimental listing already newer: {previous_text} > {candidate_text}")
           if previous == candidate:
-              def digest_tree(root):
-                  return {
-                      path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-                      for path in root.rglob("*") if path.is_file()
-                  }
-              if digest_tree(previous_root) != digest_tree(candidate_root):
-                  raise SystemExit(f"experimental version {candidate_text} exists with different artifacts")
-              print("already-current")
+              if previous_status == 3:
+                  print("publish")
+              elif previous_status == 2:
+                  def digest_tree(root):
+                      return {
+                          path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                          for path in root.rglob("*") if path.is_file()
+                      }
+                  if digest_tree(previous_root) != digest_tree(candidate_root):
+                      raise SystemExit(f"experimental version {candidate_text} exists with different artifacts")
+                  print("already-current")
+              else:
+                  raise SystemExit(f"unexpected existing listing status: {previous_status}")
           else:
               print("publish")
           PY
@@ -297,21 +349,6 @@ jobs:
           git -C "$publish_worktree" commit -m "ci: publish experimental addon ${RELEASE_SHA:0:12}" \
             -m "Generated from ${RELEASE_BRANCH} commit ${RELEASE_SHA}."
           git -C "$publish_worktree" push origin "HEAD:refs/heads/${RELEASE_BRANCH}"
-          git worktree remove --force "$publish_worktree"
-          rmdir "$publish_root"
-
-      - name: Create archive checksum
-        working-directory: gramps60/download
-        run: sha256sum TwoWayFanChart.addon.tgz > TwoWayFanChart.addon.tgz.sha256
-
-      - name: Upload add-on archive
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: TwoWayFanChart-${{ github.sha }}
-          path: |
-            gramps60/download/TwoWayFanChart.addon.tgz
-            gramps60/download/TwoWayFanChart.addon.tgz.sha256
-          if-no-files-found: error
 
   release:
     name: release

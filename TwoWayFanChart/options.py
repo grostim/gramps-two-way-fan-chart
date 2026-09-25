@@ -63,6 +63,7 @@ CATEGORY_PORTRAITS = "Portraits and medallions"
 CATEGORY_PAPER = "Paper and layout"
 CATEGORY_COLORS = "Colors and styles"
 CATEGORY_PRIVACY = "Privacy"
+CURRENT_REPORT_NAME_FORMAT_OPTION_ID = -1
 
 
 def _enum(label: str, value: str, items: tuple[tuple[str, str], ...]):
@@ -122,6 +123,18 @@ def _normalize_legacy_value(key: str, value: object) -> object:
     return aliases.get(value, value)
 
 
+def _normalize_name_format_value(value: object) -> object:
+    """Migrate name-format values persisted by releases before 1.2.94."""
+    if value == CURRENT_REPORT_NAME_FORMAT:
+        return CURRENT_REPORT_NAME_FORMAT_OPTION_ID
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return value
+    return value
+
+
 class TwoWayFanChartOptions(MenuReportOptions):
     """Expose stable, headless-safe report options through Gramps."""
 
@@ -172,11 +185,10 @@ class TwoWayFanChartOptions(MenuReportOptions):
         """Rewrite persisted values that no longer exist to supported ones.
 
         Older releases stored ``preset=family``, ``orientation=automatic``
-        and ``privacy_mode=surname_only``. Those enum members were removed;
-        without this mapping, a stale persisted value would leave the menu
-        option on its default (``privacy_mode=surname_only`` would silently
-        weaken to ``include_all``) while ``build_chart_config()`` would
-        raise on the unknown enum member.
+        and ``privacy_mode=surname_only``. The previous name-format option
+        also stored its report-default sentinel as a string. Normalize these
+        persisted values before the menu/config adapter reads them. The menu
+        now uses integer IDs so the CLI/WebAPI parser can type its wire values.
         """
         for key, aliases in _LEGACY_VALUE_ALIASES.items():
             raw = self.options_dict.get(key)
@@ -187,6 +199,14 @@ class TwoWayFanChartOptions(MenuReportOptions):
             if menu_option is not None:
                 menu_option.set_value(mapped)
             self.options_dict[key] = mapped
+
+        raw_name_format = self.options_dict.get("name_format")
+        mapped_name_format = _normalize_name_format_value(raw_name_format)
+        if mapped_name_format != raw_name_format:
+            menu_option = self.menu.get_option_by_name("name_format")
+            if menu_option is not None:
+                menu_option.set_value(mapped_name_format)
+            self.options_dict["name_format"] = mapped_name_format
 
     def add_menu_options(self, menu) -> None:
         """Build the supported option categories without GTK widgets."""
@@ -255,12 +275,18 @@ class TwoWayFanChartOptions(MenuReportOptions):
         format_items = name_format.get_items()
         name_format.set_items(
             [
-                (CURRENT_REPORT_NAME_FORMAT, _("Current report format")),
+                (
+                    CURRENT_REPORT_NAME_FORMAT_OPTION_ID,
+                    _("Current report format"),
+                ),
                 (0, _("Gramps default")),
                 *((number, label) for number, label in format_items if number != 0),
             ]
         )
-        name_format.set_value(CURRENT_REPORT_NAME_FORMAT)
+        # Gramps' CLI/WebAPI parser converts incoming strings to the type of
+        # the option's current value. Keep every menu value an integer so a
+        # submitted value such as "1" reaches EnumeratedListOption as 1.
+        name_format.set_value(CURRENT_REPORT_NAME_FORMAT_OPTION_ID)
         name_format.set_help(_("Choose the name format used in the chart."))
         menu.add_option(
             _(CATEGORY_PORTRAITS),
@@ -518,6 +544,9 @@ class TwoWayFanChartOptions(MenuReportOptions):
         custom_height = (
             value("custom_height_mm") if paper_size is PaperSize.CUSTOM else None
         )
+        name_format = value("name_format")
+        if name_format == CURRENT_REPORT_NAME_FORMAT_OPTION_ID:
+            name_format = CURRENT_REPORT_NAME_FORMAT
         try:
             return ChartConfig(
                 center_family=center_family,
@@ -545,7 +574,7 @@ class TwoWayFanChartOptions(MenuReportOptions):
                 highlight_tag=value("highlight_tag"),
                 show_highlight_markers=value("show_highlight_markers"),
                 highlight_source_ok_dates=value("highlight_source_ok_dates"),
-                name_format=value("name_format"),
+                name_format=name_format,
             )
         except (TypeError, ValueError) as error:
             raise ReportError(

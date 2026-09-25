@@ -1,12 +1,13 @@
 import unittest
 from unittest.mock import patch
 
+from gramps.cli.plug import _convert_str_to_match_type
 from gramps.gen.const import GRAMPS_LOCALE
 from gramps.gen.display.name import NameDisplay, displayer as global_name_displayer
 from gramps.gen.lib import Name, Surname
 
 from TwoWayFanChart import pipeline
-from TwoWayFanChart.config import ChartConfig, PresetName
+from TwoWayFanChart.config import CURRENT_REPORT_NAME_FORMAT, ChartConfig, PresetName
 from TwoWayFanChart.facts import simple_name
 from TwoWayFanChart.names import NameFormatter, create_name_displayer
 from TwoWayFanChart.model import (
@@ -18,7 +19,10 @@ from TwoWayFanChart.model import (
     SceneText,
     UnionBranch,
 )
-from TwoWayFanChart.options import TwoWayFanChartOptions
+from TwoWayFanChart.options import (
+    CURRENT_REPORT_NAME_FORMAT_OPTION_ID,
+    TwoWayFanChartOptions,
+)
 from TwoWayFanChart.privacy import PersonPrivacyFacts
 
 
@@ -105,13 +109,13 @@ class NameDisplayOptionTests(unittest.TestCase):
         items = name_option.get_items()
         values = {value for value, _description in items}
 
-        self.assertEqual(name_option.get_value(), "current_report")
+        self.assertEqual(name_option.get_value(), CURRENT_REPORT_NAME_FORMAT_OPTION_ID)
         self.assertEqual(
             options.build_chart_config().name_format,
-            "current_report",
+            CURRENT_REPORT_NAME_FORMAT,
             "saved configurations without the new key keep the legacy report format",
         )
-        self.assertIn("current_report", values)
+        self.assertIn(CURRENT_REPORT_NAME_FORMAT_OPTION_ID, values)
         self.assertIn(0, values)
         self.assertTrue(
             set(number for number, _label, _format, _active in global_name_displayer.get_name_format())
@@ -120,6 +124,43 @@ class NameDisplayOptionTests(unittest.TestCase):
 
         name_option.set_value(1)
         self.assertEqual(options.build_chart_config().name_format, 1)
+
+    def test_all_web_name_format_strings_convert_to_supported_menu_ids(self):
+        options = TwoWayFanChartOptions("web-name-format-test", FakeDatabase({}))
+        name_option = options.menu.get_option_by_name("name_format")
+        assert name_option is not None
+        default_type_value = name_option.get_value()
+
+        for format_id, _label in name_option.get_items():
+            with self.subTest(format_id=format_id):
+                parsed = _convert_str_to_match_type(str(format_id), default_type_value)
+                self.assertIsInstance(parsed, int)
+                name_option.set_value(parsed)
+                options.options_dict["name_format"] = parsed
+                expected = (
+                    CURRENT_REPORT_NAME_FORMAT
+                    if format_id == CURRENT_REPORT_NAME_FORMAT_OPTION_ID
+                    else format_id
+                )
+                self.assertEqual(options.build_chart_config().name_format, expected)
+
+    def test_legacy_persisted_name_format_sentinel_is_migrated(self):
+        options = TwoWayFanChartOptions("legacy-name-format-test", FakeDatabase({}))
+        name_option = options.menu.get_option_by_name("name_format")
+        assert name_option is not None
+        options.options_dict["name_format"] = CURRENT_REPORT_NAME_FORMAT
+
+        options._normalize_loaded_values()
+
+        self.assertEqual(
+            options.options_dict["name_format"],
+            CURRENT_REPORT_NAME_FORMAT_OPTION_ID,
+        )
+        self.assertEqual(name_option.get_value(), CURRENT_REPORT_NAME_FORMAT_OPTION_ID)
+        self.assertEqual(
+            options.build_chart_config().name_format,
+            CURRENT_REPORT_NAME_FORMAT,
+        )
 
     def test_gramps_default_sentinel_resolves_to_current_global_format(self):
         with patch.object(global_name_displayer, "get_default_format", return_value=2):
@@ -177,15 +218,27 @@ class NameDisplayOptionTests(unittest.TestCase):
                 for handle in ("center", "ancestor", "descendant", "spouse")
             }
         )
-        config = ChartConfig(
-            preset=PresetName.CUSTOM,
-            ancestor_generations=1,
-            descendant_generations=1,
-            show_portraits=False,
-            show_ancestor_marriages=False,
-            show_descendant_marriages=False,
-            name_format=1,
-        )
+        options = TwoWayFanChartOptions("web-name-format-test", database)
+        options.load_previous_values()
+        self.assertIs(options.options_dict, options.handler.options_dict)
+        menu = options.menu
+        menu.get_option_by_name("preset").set_value("custom")
+        menu.get_option_by_name("ancestor_generations").set_value(1)
+        menu.get_option_by_name("descendant_generations").set_value(1)
+        menu.get_option_by_name("show_portraits").set_value(False)
+        menu.get_option_by_name("show_ancestor_marriages").set_value(False)
+        menu.get_option_by_name("show_descendant_marriages").set_value(False)
+
+        name_option = menu.get_option_by_name("name_format")
+        assert name_option is not None
+        parsed_value = _convert_str_to_match_type("1", name_option.get_value())
+        options.options_dict["name_format"] = parsed_value
+        name_option.set_value(parsed_value)
+        config = options.build_chart_config()
+        self.assertEqual(name_option.get_value(), 1)
+        self.assertEqual(options.options_dict["name_format"], 1)
+        self.assertEqual(options.handler.options_dict["name_format"], 1)
+        self.assertEqual(config.name_format, 1)
 
         with (
             patch.object(pipeline, "extract_chart_graph", return_value=synthetic_graph()),

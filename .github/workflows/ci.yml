@@ -109,6 +109,7 @@ jobs:
   pr_version:
     name: pr version claim
     needs: test
+    if: github.event_name != 'workflow_dispatch' || inputs.rollback_version == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -131,14 +132,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          current_pr=""
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            current_pr="${{ github.event.pull_request.number }}"
+            base_ref="$GITHUB_BASE_REF"
+          elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" == "experimental" ]]; then
+            base_ref=experimental
+          else
+            base_ref=main
+          fi
           python ci/check_pr_version.py \
             --repo "${{ github.repository }}" \
-            --base "${{ github.event.pull_request.base.ref }}" \
-            --current-pr "${{ github.event.pull_request.number }}"
+            --base "$base_ref" \
+            --current-pr "$current_pr"
 
   distribution:
     name: distribution
     needs: [test, pr_version]
+    if: github.event_name != 'workflow_dispatch' || inputs.rollback_version == ''
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -214,6 +227,32 @@ jobs:
       - name: Verify generated files are committed
         if: steps.release_channel.outputs.channel == 'stable'
         run: git diff --exit-code -- gramps60
+
+      - name: Publish experimental distribution branch
+        if: steps.release_channel.outputs.channel == 'experimental'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: experimental
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          branch_head="$(git ls-remote origin "refs/heads/${RELEASE_BRANCH}" | cut -f1)"
+          if [[ -n "$branch_head" ]]; then
+            git fetch origin "$RELEASE_BRANCH"
+            git reset --hard FETCH_HEAD
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          gh auth setup-git
+          git checkout "$RELEASE_SHA" -- gramps60
+          git add gramps60
+          if git diff --cached --quiet; then
+            echo "experimental_distribution=already-current"
+            exit 0
+          fi
+          git commit -m "ci: publish experimental addon ${RELEASE_SHA:0:12}" \
+            -m "Generated from ${RELEASE_BRANCH} commit ${RELEASE_SHA}."
+          git push origin "HEAD:refs/heads/${RELEASE_BRANCH}"
 
       - name: Create archive checksum
         working-directory: gramps60/download
@@ -492,6 +531,7 @@ jobs:
 
   rollback_grampsweb:
     name: rollback / GrampsWeb to stable release
+    needs: test
     if: >-
       github.event_name == 'workflow_dispatch' &&
       inputs.rollback_version != '' &&
@@ -547,31 +587,33 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set explicit stable rollback marker
-        working-directory: portainer-util
-        run: |
-          version="${ROLLBACK_VERSION#v}"
-          python3 ../addon/ci/update_portainer_rollout.py \
-            docker-compose.yml "$version" "$ROLLBACK_SHA" \
-            --channel stable --allow-rollback
-          git diff --check
-          changed="$(git diff --name-only)"
-          if [[ "$changed" != docker-compose.yml ]]; then
-            echo "::error::rollback must change only docker-compose.yml"
-            exit 1
-          fi
-          git diff -- docker-compose.yml
-
       - name: Commit rollback markers to grostim/portainer-util
         working-directory: portainer-util
         run: |
           set -euo pipefail
+          version="${ROLLBACK_VERSION#v}"
+
+          python3 ../addon/ci/update_portainer_rollout.py \
+            docker-compose.yml "$version" "$ROLLBACK_SHA" \
+            --channel stable --allow-rollback
+          changed="$(git diff --name-only)"
+          if [[ -n "$changed" && "$changed" != docker-compose.yml ]]; then
+            echo "::error::rollback must change only docker-compose.yml"
+            exit 1
+          fi
           endpoint="repos/grostim/portainer-util/contents/docker-compose.yml"
           remote_blob_sha="$(gh api "$endpoint?ref=main" --jq '.sha')"
           local_blob_sha="$(git rev-parse HEAD:docker-compose.yml)"
-          if [[ "$remote_blob_sha" != "$local_blob_sha" ]]; then
+          if [[ -n "$changed" && "$remote_blob_sha" != "$local_blob_sha" ]]; then
             echo "::error::portainer-util/main advanced; refusing a non-fast-forward rollback update"
             exit 1
+          fi
+          if [[ -z "$changed" ]]; then
+            printf '%s' "$(gh api "$endpoint?ref=main" --jq '.content' | tr -d '\r\n')" \
+              | base64 --decode > /tmp/portainer-compose-rollback-readback.yml
+            cmp -- docker-compose.yml /tmp/portainer-compose-rollback-readback.yml
+            echo "rollback_readback=ok"
+            exit 0
           fi
           content="$(base64 -w0 docker-compose.yml)"
           response="$(gh api "$endpoint" --method PUT \

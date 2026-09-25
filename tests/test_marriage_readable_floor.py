@@ -23,6 +23,7 @@ from TwoWayFanChart.geometry import Orientation, PaperRegion, PaperSize
 from TwoWayFanChart.layout import (
     _DESCENDANT_MARRIAGE_FLOOR_MM,
     _DESCENDANT_NAME_FLOOR_MM,
+    _ancestor_arc_text_capacity,
     _descendant_marriage_plan,
     _descendant_ring_layout,
     _marriage_line_capacities,
@@ -176,17 +177,19 @@ class DescendantMarriageReadableFloorTests(unittest.TestCase):
     already treats an unreadable date as omitted, so #90 makes the marriage
     band follow that rule and keeps its colored sector either way.
 
-    These tests hold both halves of that contract: never below the floor, and
-    never wider than the arc it sits on.
+    These tests hold the updated contract: labels at or above the floor are
+    preferred, but an issue-#111 local fallback may go below it when that
+    is the only way to preserve a fitting date; no emblem label may overflow
+    its arc.
     """
 
     def assert_band_contract(self, scene, canvas, generations):
-        """Assert every emitted marriage label is readable and cannot overflow.
+        """Assert every emitted marriage label fits its arc honestly.
 
         The renderer compresses a label through ``textLength`` *unless* it leads
         with the marriage emblem (a textLength would rescale the glyphs and
-        cancel the 1.5x enlargement). So an emblem line must fit its arc on its
-        own; a line without an emblem is allowed to rely on the renderer.
+        cancel the 1.5x enlargement). The local #111 fallback is therefore
+        accepted below the normal floor only when the natural emblem width fits.
         """
         checked = 0
         for node in scene.children:
@@ -196,11 +199,6 @@ class DescendantMarriageReadableFloorTests(unittest.TestCase):
                 continue
             match = re.match(r"^M ([\d.]+) ([\d.]+)", node.path)
             self.assertIsNotNone(match, "marriage text must sit on an arc")
-            self.assertGreaterEqual(
-                node.font_size,
-                _DESCENDANT_MARRIAGE_FLOOR_MM,
-                msg=f"{node.content!r} rendered at {node.font_size:.3f} mm",
-            )
             if split_marriage_emblem(node.content)[0]:
                 natural = estimate_emblem_text_width(node.content, node.font_size)
                 self.assertLessEqual(
@@ -463,6 +461,187 @@ class AncestorMarriageReadableFloorTests(unittest.TestCase):
                 "should now be floored too"
             ),
         )
+
+
+class DescendantMarriageShrinkFallbackTests(unittest.TestCase):
+    """Issue #111: a sector too narrow for the crown's SHARED size shrinks its
+    own label instead of losing it.
+
+    #90 established "readable or absent" for the marriage band, and that stays
+    the rule for the *crown-wide* size: the measurement pass still omits a
+    sector it cannot carry at the readable floor, so `min(sizes)` can never be
+    dragged down by one tight sector and render a whole ring unreadable.
+
+    What changes is the render pass. A sector narrower than the crown's shared
+    size used to render nothing at all — "pourquoi les dates de mariage de Manon
+    et Margaux n'apparaissent pas ?" — because an emblem line cannot be
+    compressed by the renderer's `textLength`. It now shrinks its font until the
+    emblem and the year fit its own arc, bounded above by the crown's shared
+    size (#56: a marriage label never outgrows the names it concerns) and below
+    by the absolute date size.
+    """
+
+    def crown_band(self, crown, generations=4):
+        canvas = a0(generations)
+        return canvas, band_of(canvas, generations, crown)
+
+    def plan(self, lines=(), **kwargs):
+        return _descendant_marriage_plan(FULL, YEAR, **kwargs)
+
+    def test_a_sector_too_narrow_for_the_shared_size_keeps_its_date(self):
+        # Reproduced from the reported tree: crown 3, 1.166 deg of arc, where
+        # the crown's shared size cannot fit the emblem year.
+        _canvas, (inner, outer) = self.crown_band(3)
+        lines, size = self.plan(
+            inner_r=inner,
+            outer_r=outer,
+            sweep=1.1657,
+            common_size=_DESCENDANT_MARRIAGE_FLOOR_MM,
+            depth=3,
+        )
+        self.assertEqual(lines, (YEAR,))
+        self.assertGreater(size, 0.0)
+
+    def test_the_shrunk_label_fits_its_own_arc(self):
+        # The whole point of shrinking: the emblem line is never wider than the
+        # arc it is drawn on, because the renderer cannot compress it.
+        _canvas, (inner, outer) = self.crown_band(3)
+        text_radius = (inner + outer) / 2.0
+        for sweep in (0.8160, 1.1657, 1.4280, 1.7480, 2.1000):
+            with self.subTest(sweep=sweep):
+                lines, size = self.plan(
+                    inner_r=inner,
+                    outer_r=outer,
+                    sweep=sweep,
+                    common_size=_DESCENDANT_MARRIAGE_FLOOR_MM,
+                    depth=3,
+                )
+                self.assertTrue(lines, msg=f"sweep={sweep}: no label emitted")
+                self.assertGreater(size, 0.0)
+                # The date is always the first line; measure it on the radius it
+                # is actually drawn on, exactly as the emitter does.
+                capacities = _marriage_line_capacities(text_radius, sweep, size)
+                self.assertLessEqual(
+                    estimate_emblem_text_width(lines[0], size),
+                    capacities[0] + 1e-9,
+                    msg=(
+                        f"sweep={sweep}: {lines[0]!r} at {size:.3f} mm is "
+                        f"{estimate_emblem_text_width(lines[0], size):.2f} mm wide "
+                        f"but its arc is only {capacities[0]:.2f} mm"
+                    ),
+                )
+
+    def test_a_shrunk_label_never_outgrows_the_crown_shared_size(self):
+        # Issue #56 contract: the shrink may only go DOWN from the crown's
+        # shared size, never above it, so a marriage label still cannot outgrow
+        # the individuals it concerns.
+        _canvas, (inner, outer) = self.crown_band(3)
+        for ceiling in (0.5, 1.0, _DESCENDANT_MARRIAGE_FLOOR_MM, 2.5):
+            with self.subTest(ceiling=ceiling):
+                lines, size = self.plan(
+                    inner_r=inner,
+                    outer_r=outer,
+                    sweep=1.1657,
+                    common_size=ceiling,
+                    depth=3,
+                )
+                self.assertTrue(lines)
+                self.assertLessEqual(size, ceiling + 1e-9)
+
+    def test_a_sector_that_cannot_carry_the_label_even_shrunk_omits_it(self):
+        # Honest omission survives: when the arc cannot hold the year at the
+        # absolute date size, the band keeps its colour and no unreadable label
+        # is emitted.
+        _canvas, (inner, outer) = self.crown_band(3)
+        for sweep in (0.40, 0.70):
+            with self.subTest(sweep=sweep):
+                lines, size = self.plan(
+                    inner_r=inner,
+                    outer_r=outer,
+                    sweep=sweep,
+                    common_size=_DESCENDANT_MARRIAGE_FLOOR_MM,
+                    depth=3,
+                )
+                self.assertEqual(lines, ())
+                self.assertEqual(size, 0.0)
+
+    def test_only_too_narrow_marriage_in_a_generation_still_uses_fallback(self):
+        # If every marriage in a generation is below the measurement floor,
+        # there is no shared candidate. The render pass must still receive a
+        # name-capped ceiling so the local fallback can preserve a fitting date.
+        branches = balanced(3, 6)
+        canvas = a0(3)
+        names = {}
+
+        def collect_names(node):
+            names[node.person.handle] = "Prenom Nom"
+            for union in node.unions:
+                names[union.spouse_handle] = "Conjoint"
+            for child in node.children:
+                collect_names(child)
+
+        for root in branches:
+            collect_names(root)
+        scene = layout_descendants(
+            canvas,
+            branches,
+            name_lookup=lambda handle: names[handle],
+            dates_lookup=lambda _handle: "",
+            descendant_marriages={"family-g3-0": (FULL, YEAR)},
+            show_descendant_marriages=True,
+        )
+        marriage_nodes = [
+            node
+            for node in scene.children
+            if isinstance(node, ScenePathText) and node.content.startswith("⚭")
+        ]
+        self.assertEqual(len(marriage_nodes), 1)
+        self.assertLess(marriage_nodes[0].font_size, _DESCENDANT_MARRIAGE_FLOOR_MM)
+        self.assertLessEqual(
+            estimate_emblem_text_width(
+                marriage_nodes[0].content, marriage_nodes[0].font_size
+            ),
+            marriage_nodes[0].max_width + 1e-9,
+        )
+
+    def test_the_measurement_pass_still_omits_so_the_crown_size_is_intact(self):
+        # The measurement pass (no common size) must NOT shrink: its result is
+        # the crown-wide `min`, so shrinking there would collapse every date of
+        # the ring. Asserted directly, and then on a real dense scene.
+        _canvas, (inner, outer) = self.crown_band(3)
+        lines, size = self.plan(
+            inner_r=inner,
+            outer_r=outer,
+            sweep=1.1657,
+            depth=3,
+        )
+        self.assertEqual(lines, ())
+        self.assertEqual(size, 0.0)
+
+        canvas = a0(4)
+        scene = descendant_scene(balanced(4, 4), canvas, 4)
+        floor_tests = DescendantMarriageReadableFloorTests(
+            "assert_band_contract"
+        )
+        floor_tests.assert_band_contract(scene, canvas, 4)
+        self.assert_crown_sizes_are_not_collapsed(scene, canvas, 4)
+
+    def assert_crown_sizes_are_not_collapsed(self, scene, canvas, generations):
+        """No crown may render at the absolute date size on a healthy fan.
+
+        Guards the regression the first cut of #111 introduced: returning a
+        shrunk size from the measurement pass made `min(sizes)` the tightest
+        single sector, so every crown rendered near 0.33 mm.
+        """
+        labels = emitted_marriages(scene, canvas, generations)
+        self.assertTrue(labels)
+        for crown, sizes in labels.items():
+            with self.subTest(crown=crown):
+                self.assertGreater(
+                    max(sizes),
+                    _DESCENDANT_MARRIAGE_FLOOR_MM,
+                    msg=f"crown {crown} collapsed to {min(sizes):.3f} mm",
+                )
 
 
 if __name__ == "__main__":

@@ -15,7 +15,14 @@ from typing import Any
 try:
     from TwoWayFanChart.config import ChartConfig, PrivacyMode
     from TwoWayFanChart.extract import extract_chart_graph
-    from TwoWayFanChart.facts import extract_union, simple_name, simple_dates
+    from TwoWayFanChart.facts import (
+        extract_union,
+        simple_name,
+        simple_dates,
+        source_ok_vital_dates,
+        source_ok_marriage,
+    )
+    from TwoWayFanChart.names import create_name_displayer
     from TwoWayFanChart.highlight import (
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -42,7 +49,14 @@ try:
 except ModuleNotFoundError:
     from config import ChartConfig, PrivacyMode  # type: ignore[no-redef]
     from extract import extract_chart_graph  # type: ignore[no-redef]
-    from facts import extract_union, simple_name, simple_dates  # type: ignore[no-redef]
+    from facts import (  # type: ignore[no-redef]
+        extract_union,
+        simple_name,
+        simple_dates,
+        source_ok_vital_dates,
+        source_ok_marriage,
+    )
+    from names import create_name_displayer  # type: ignore[no-redef]
     from highlight import (  # type: ignore[no-redef]
         resolve_highlight_tag_handle,
         tagged_person_is_highlighted,
@@ -129,6 +143,12 @@ def _descendant_short_label(label: str, depth: int) -> str:
     return _mockup_name_order(label)
 
 
+def _preserve_name_format(label: str, depth: int) -> str:
+    """Keep a Gramps-selected label verbatim through descendant layout."""
+    del depth
+    return label
+
+
 def _label_initials(label: str) -> str:
     """Build two-letter initials from a display label.
 
@@ -158,14 +178,15 @@ def _center_name_order(label: str) -> str:
     return _mockup_name_order(label)
 
 
-def _public_name(database, handle: str | None) -> str:
+def _public_name(database, handle: str | None, name_displayer=None) -> str:
     """Return the usage-name label used in public output."""
-    return simple_name(database, handle)
+    return simple_name(database, handle, name_displayer=name_displayer)
 
 
-def _public_usage_name(database, handle: str | None) -> str:
+def _public_usage_name(database, handle: str | None, name_displayer=None) -> str:
     """Return the privacy-safe usage-name label for a descendant."""
-    return _mockup_name_order(simple_name(database, handle))
+    label = simple_name(database, handle, name_displayer=name_displayer)
+    return label if name_displayer is not None else _mockup_name_order(label)
 
 
 def _public_dates(database, handle: str | None) -> str:
@@ -237,6 +258,7 @@ def _descendant_marriage_labels(
     visibility_lookup,
     *,
     include_private: bool,
+    source_ok_lookup=None,
 ) -> dict[str, tuple[str, str]]:
     """Return full/year marriage labels for every rendered descendant union."""
     labels: dict[str, tuple[str, str]] = {}
@@ -284,7 +306,13 @@ def _descendant_marriage_labels(
                 continue
             year = fact.date_text
             full = " · ".join(value for value in (year, fact.place) if value)
-            labels[union.family_handle] = (full, year)
+            labels[union.family_handle] = (
+                full,
+                year,
+                bool(source_ok_lookup(union.family_handle))
+                if source_ok_lookup
+                else False,
+            )
     return labels
 
 
@@ -365,6 +393,7 @@ def _build_scene(
     Returns (page, root_scene_node) ready for rendering.
     """
     paper = _build_paper_region(config)
+    name_displayer = create_name_displayer(config.name_format)
     canvas = calculate_canvas(
         paper,
         ancestor_generations=config.ancestor_generations,
@@ -386,6 +415,11 @@ def _build_scene(
 
     highlight_tag_handle = (
         _resolve_highlight_tag_handle() if config.show_highlight_markers else None
+    )
+    source_ok_tag_handle = (
+        resolve_highlight_tag_handle(db, "Source OK")
+        if config.highlight_source_ok_dates
+        else None
     )
 
     def _person_visibility(handle: str | None) -> tuple[Any | None, VisibilityState]:
@@ -422,7 +456,7 @@ def _build_scene(
             return "Personne privée"
         if state is VisibilityState.EXCLUDED:
             return ""
-        return _public_name(db, handle)
+        return _public_name(db, handle, name_displayer)
 
     def _safe_usage_name(handle: str | None) -> str:
         _person, state = _person_visibility(handle)
@@ -430,13 +464,38 @@ def _build_scene(
             return "Personne privée"
         if state is VisibilityState.EXCLUDED:
             return ""
-        return _public_usage_name(db, handle)
+        return _public_usage_name(db, handle, name_displayer)
 
     def _safe_dates(handle: str | None) -> str:
         _person, state = _person_visibility(handle)
         if not decision_for_state(state).expose_details:
             return ""
         return _public_dates(db, handle)
+
+    def _safe_source_ok_dates(handle: str | None) -> bool:
+        """Return whether at least one displayed vital date is source-validated."""
+        if not handle or not source_ok_tag_handle:
+            return False
+        _person, state = _person_visibility(handle)
+        if not decision_for_state(state).expose_details:
+            return False
+        birth_ok, death_ok = source_ok_vital_dates(db, handle, source_ok_tag_handle)
+        return birth_ok or death_ok
+
+    def _safe_source_ok_marriage(family_handle: str | None) -> bool:
+        if not family_handle or not source_ok_tag_handle:
+            return False
+        try:
+            family = db.get_family_from_handle(family_handle)
+            if family is None:
+                return False
+            if not decision_for_state(_person_visibility(family.get_father_handle())[1]).expose_details:
+                return False
+            if not decision_for_state(_person_visibility(family.get_mother_handle())[1]).expose_details:
+                return False
+            return source_ok_marriage(db, family, source_ok_tag_handle)
+        except Exception:
+            return False
 
     def _safe_portrait(handle: str | None) -> str | None:
         if not handle or not config.show_portraits:
@@ -478,10 +537,20 @@ def _build_scene(
     center_right_handle = (
         graph.center_people[1].handle if graph.center_people[1] else None
     )
-    left_label = _center_name_order(_safe_name(center_left_handle)) or "—"
+    left_safe_name = _safe_name(center_left_handle)
+    left_label = (
+        _center_name_order(left_safe_name)
+        if name_displayer is None
+        else left_safe_name
+    ) or "—"
+    right_safe_name = _safe_name(center_right_handle) if center_right_handle else None
     right_label = (
-        _center_name_order(_safe_name(center_right_handle))
-        if center_right_handle
+        (
+            _center_name_order(right_safe_name)
+            if name_displayer is None
+            else right_safe_name
+        )
+        if right_safe_name is not None
         else None
     )
     left_portrait = _safe_portrait(center_left_handle)
@@ -507,7 +576,10 @@ def _build_scene(
         right_label=right_label,
         left_dates=left_dates,
         right_dates=right_dates,
+        left_dates_source_ok=_safe_source_ok_dates(center_left_handle),
+        right_dates_source_ok=_safe_source_ok_dates(center_right_handle),
         marriage_label=center_marriage_label,
+        marriage_source_ok=_safe_source_ok_marriage(graph.center_family_handle),
         left_portrait=left_portrait,
         right_portrait=right_portrait,
         left_fallback=_safe_fallback(center_left_handle, left_label),
@@ -528,11 +600,15 @@ def _build_scene(
 
     # --- Ancestor fan with real person names ---
     # Each slot carries its privacy-safe label, dates and optional portrait.
-    ancestor_slots: list[tuple[str, str, str, str | None, bool]] = []
+    ancestor_slots: list[tuple[str, str, str, str | None, bool, bool]] = []
     for slot in graph.ancestor_slots:
         if slot.person is not None:
             full_label = _safe_name(slot.person.handle)
-            label = _ancestor_short_label(full_label, slot.generation)
+            label = (
+                _ancestor_short_label(full_label, slot.generation)
+                if name_displayer is None
+                else full_label
+            )
             dates_label = _safe_dates(slot.person.handle)
             portrait = _safe_portrait(slot.person.handle)
         else:
@@ -550,6 +626,7 @@ def _build_scene(
                     if config.show_highlight_markers and slot.person
                     else False
                 ),
+                _safe_source_ok_dates(slot.person.handle) if slot.person else False,
             )
         )
     ancestor_marriages = tuple(
@@ -566,6 +643,7 @@ def _build_scene(
                     and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
                 ),
             ),
+            _safe_source_ok_marriage(marriage.family_handle),
         )
         for marriage in graph.ancestor_marriages
     ) if config.show_ancestor_marriages else ()
@@ -584,6 +662,9 @@ def _build_scene(
     def _dates_lookup(handle: str | None) -> str:
         return _safe_dates(handle)
 
+    def _source_ok_dates_lookup(handle: str | None) -> bool:
+        return _safe_source_ok_dates(handle)
+
     descendant_marriages = (
         _descendant_marriage_labels(
             db,
@@ -593,6 +674,7 @@ def _build_scene(
                 config.include_private
                 and config.privacy_mode is not PrivacyMode.PUBLICATION_SAFE
             ),
+            source_ok_lookup=_safe_source_ok_marriage,
         )
         if config.show_descendant_marriages
         else {}
@@ -602,7 +684,12 @@ def _build_scene(
         graph.descendant_branches,
         name_lookup=_name_lookup,
         dates_lookup=_dates_lookup,
-        shortener=_descendant_short_label,
+        source_ok_dates_lookup=_source_ok_dates_lookup,
+        shortener=(
+            _descendant_short_label
+            if name_displayer is None
+            else _preserve_name_format
+        ),
         portrait_lookup=_safe_portrait,
         highlight_lookup=_safe_highlight,
         show_highlight_markers=config.show_highlight_markers,

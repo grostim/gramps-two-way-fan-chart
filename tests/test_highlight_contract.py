@@ -68,6 +68,26 @@ class HighlightContractTests(unittest.TestCase):
         self.assertEqual(db.calls, [tag_name])
         self.assertIsNone(resolve_highlight_tag_handle(db, ""))
 
+    def test_tag_lookup_falls_back_to_exact_iter_tags(self):
+        class Tag:
+            def __init__(self, name, handle):
+                self.name = name
+                self.handle = handle
+
+            def get_name(self):
+                return self.name
+
+            def get_handle(self):
+                return self.handle
+
+        class Database:
+            def get_tag_from_name(self, _name):
+                return None
+
+            def iter_tags(self):
+                return iter((Tag("Source OK", "wrong"), Tag("source OK", "right")))
+
+        self.assertEqual(resolve_highlight_tag_handle(Database(), "source OK"), "right")
     def test_privacy_clears_highlight_for_masked_and_excluded_people(self):
         from TwoWayFanChart.model import VisibilityState
 

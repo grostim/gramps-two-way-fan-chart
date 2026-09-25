@@ -21,7 +21,25 @@ def resolve_highlight_tag_handle(db: Any, tag_name: str) -> str | None:
     try:
         tag = getter(tag_name)
     except Exception:
-        return None
+        tag = None
+    if tag is None:
+        # Gramps database adapters are not uniform: some implement
+        # get_tag_from_name as a stub while iter_tags is fully functional.
+        # Keep the comparison exact; this is a compatibility fallback, not
+        # fuzzy matching.
+        iterator = getattr(db, "iter_tags", None)
+        if callable(iterator):
+            try:
+                tag = next(
+                    (
+                        candidate
+                        for candidate in iterator()
+                        if getattr(candidate, "get_name", lambda: None)() == tag_name
+                    ),
+                    None,
+                )
+            except Exception:
+                tag = None
     if tag is None:
         return None
     handle_getter = getattr(tag, "get_handle", None)

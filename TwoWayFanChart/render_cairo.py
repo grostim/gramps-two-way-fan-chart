@@ -130,6 +130,8 @@ def _measure_scaled(ctx: cairo.Context, text: SceneText) -> float:
 def _render_text(ctx: cairo.Context, text: SceneText) -> None:
     """Render anchored, rotated text with a measured width constraint."""
     ctx.save()
+    # Explicitly select a font containing the marriage emblem (U+26AD).
+    ctx.select_font_face("DejaVu Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
     if text.fill:
         r, g, b = _parse_hex_color(text.fill)
         ctx.set_source_rgb(r, g, b)
@@ -233,6 +235,7 @@ def _render_path_text(ctx: cairo.Context, text: ScenePathText) -> None:
         return
 
     ctx.save()
+    ctx.select_font_face("DejaVu Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
     if text.fill:
         red, green, blue = _parse_hex_color(text.fill)
         ctx.set_source_rgb(red, green, blue)

@@ -19,6 +19,9 @@ class PresetName(StrEnum):
     CUSTOM = "custom"
 
 
+CURRENT_REPORT_NAME_FORMAT = "current_report"
+
+
 class PaperSize(StrEnum):
     A5 = "A5"
     A4 = "A4"
@@ -71,6 +74,8 @@ class ChartConfig:
     years_past_death: int = 0
     highlight_tag: str = ""
     show_highlight_markers: bool = False
+    highlight_source_ok_dates: bool = False
+    name_format: str | int = CURRENT_REPORT_NAME_FORMAT
     show_ancestor_marriages: bool = True
     show_descendant_marriages: bool = True
 
@@ -96,6 +101,11 @@ class ChartConfig:
                 raise ValueError(f"invalid {field_name}")
         if not isinstance(self.highlight_tag, str):
             raise ValueError("highlight_tag must be a string")
+        if self.name_format != CURRENT_REPORT_NAME_FORMAT and (
+            not isinstance(self.name_format, int)
+            or isinstance(self.name_format, bool)
+        ):
+            raise ValueError("name_format must be current_report or a Gramps format ID")
         if self.living_people_mode not in {0, 1, 2, 3, 99}:
             raise ValueError("invalid living people mode")
 

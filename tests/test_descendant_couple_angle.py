@@ -146,15 +146,23 @@ class DescendantCoupleAngleTest(unittest.TestCase):
         couple_text = [
             node for node in scene.children
             if isinstance(node, SceneText)
-            and node.content == (
-                "Margaux Mirieu de Labarre × Jean Kouji Decourt"
+            and (
+                "Margaux Mirieu de Labarre" in node.content
+                or "Jean Kouji Decourt" in node.content
             )
         ]
-        self.assertEqual(
-            len(couple_text), 1,
-            "a narrow couple cell should use one merged line before omission",
+        self.assertIn(
+            len(couple_text),
+            (1, 2),
+            "the couple must render merged or on two non-overlapping rails",
         )
-        self.assertGreaterEqual(couple_text[0].font_size, 2.0)
+        self.assertTrue(
+            any("Margaux Mirieu de Labarre" in node.content for node in couple_text)
+        )
+        self.assertTrue(
+            any("Jean Kouji Decourt" in node.content for node in couple_text)
+        )
+        self.assertGreaterEqual(min(node.font_size for node in couple_text), 2.0)
         self.assertEqual(
             len({round(node.font_size, 9) for node in couple_text}),
             1,

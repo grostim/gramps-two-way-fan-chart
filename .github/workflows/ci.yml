@@ -244,8 +244,10 @@ jobs:
 
   publish_experimental_distribution:
     name: publish experimental distribution
-    needs: [test, pr_version, distribution]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/experimental'
+    needs: [test, pr_version, distribution, release]
+    if: >-
+      needs.release.result == 'success' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/experimental'
     permissions:
       contents: write
     runs-on: ubuntu-24.04
